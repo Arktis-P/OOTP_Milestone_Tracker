@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# 빌드 결과물
+dist/
+build/
+*.spec
+
+# DB (로컬 데이터)
+data/records.db
+
+# 사용자 설정 (경로 등 로컬 의존)
+data/settings.json
+
+# Local OOTP sample files (not committed)
+samples/
+
+# OS
+.DS_Store
+Thumbs.db

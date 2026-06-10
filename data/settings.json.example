@@ -1,0 +1,10 @@
+{
+  "ootp_version": 25,
+  "current_season": 2024,
+  "paths": {
+    "boxscore_dir": "C:/OOTP/saves/MyLeague/news/html/box_scores",
+    "roster_file": "C:/OOTP/saves/MyLeague/players.csv"
+  },
+  "db_path": "data/records.db",
+  "milestones_path": "data/milestones.json"
+}

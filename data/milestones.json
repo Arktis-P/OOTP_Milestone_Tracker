@@ -1,0 +1,34 @@
+{
+  "batting": [
+    {
+      "key": "career_hits_3000",
+      "label": "통산 3000안타",
+      "stat": "career_h",
+      "threshold": 3000,
+      "scope": "career"
+    },
+    {
+      "key": "career_hr_500",
+      "label": "통산 500홈런",
+      "stat": "career_hr",
+      "threshold": 500,
+      "scope": "career"
+    },
+    {
+      "key": "season_avg_400",
+      "label": "시즌 4할 타율",
+      "stat": "season_avg",
+      "threshold": 0.400,
+      "scope": "season"
+    }
+  ],
+  "pitching": [
+    {
+      "key": "career_wins_300",
+      "label": "통산 300승",
+      "stat": "career_w",
+      "threshold": 300,
+      "scope": "career"
+    }
+  ]
+}
