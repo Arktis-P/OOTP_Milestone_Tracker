@@ -85,6 +85,7 @@ class ImportWorker(QThread):
                         season=self.season,
                         season_games_total=self.settings.season_games_total,
                         tracked_teams=self.settings.tracked_teams,
+                        custom_teams=self.settings.custom_mlb_teams,
                     ).update_after_import(result.imported_game_ids)
 
             settings = self.settings_manager.load()

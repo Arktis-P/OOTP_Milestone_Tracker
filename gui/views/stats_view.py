@@ -162,7 +162,10 @@ class StatsView(QWidget):
         self.season_combo.blockSignals(False)
 
     def refresh_players(self) -> None:
-        self._players = self.aggregator.get_tracked_players(self.settings.tracked_teams)
+        self._players = self.aggregator.get_tracked_players(
+            self.settings.tracked_teams,
+            custom_teams=self.settings.custom_mlb_teams,
+        )
         self.player_list.clear()
         if not self._players:
             self.banner.show_info(

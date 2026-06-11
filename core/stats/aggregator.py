@@ -13,6 +13,7 @@ from core.parser.boxscore_html import BoxscoreHTMLParser, peek_is_mlb_boxscore
 from core.parser.common import ParserError
 from core.parser.pitching_notes import get_player_pitching_counts
 from core.stats.ip_utils import ip_to_outs, outs_to_ip_float, outs_to_ip_str
+from core.stats.team_filter import expand_tracked_teams
 from core.stats.models import (
     BatchImportResult,
     BatterLine,
@@ -731,9 +732,14 @@ class Aggregator:
         ).fetchall()
         return [int(row[0]) for row in rows]
 
-    def get_tracked_players(self, tracked_teams: list[str] | None = None) -> list[dict[str, Any]]:
-        teams = [team.strip() for team in (tracked_teams or []) if team.strip()]
-        if not teams:
+    def get_tracked_players(
+        self,
+        tracked_teams: list[str] | None = None,
+        *,
+        custom_teams: dict[str, str] | None = None,
+    ) -> list[dict[str, Any]]:
+        tokens = [team.strip().upper() for team in (tracked_teams or []) if team.strip()]
+        if not tokens:
             rows = self._conn.execute(
                 """
                 SELECT
@@ -751,12 +757,20 @@ class Aggregator:
                     SELECT player_id FROM batting_logs
                     UNION
                     SELECT player_id FROM pitching_logs
+                    UNION
+                    SELECT player_id FROM player_roster
+                    UNION
+                    SELECT player_id FROM career_batting_init
+                    UNION
+                    SELECT player_id FROM career_pitching_init
                 )
                 ORDER BY p.full_name
                 """
             ).fetchall()
         else:
-            placeholders = ",".join("?" * len(teams))
+            names = expand_tracked_teams(tokens, custom_teams)
+            placeholders = ",".join("?" * len(names))
+            token_placeholders = ",".join("?" * len(tokens))
             rows = self._conn.execute(
                 f"""
                 SELECT DISTINCT
@@ -774,12 +788,64 @@ class Aggregator:
                     SELECT player_id FROM batting_logs WHERE team IN ({placeholders})
                     UNION
                     SELECT player_id FROM pitching_logs WHERE team IN ({placeholders})
+                    UNION
+                    SELECT player_id FROM player_roster
+                    WHERE team_abbr IN ({token_placeholders})
+                       OR team_name IN ({placeholders})
+                    UNION
+                    SELECT player_id FROM career_batting_init
+                    WHERE player_id IN (
+                        SELECT player_id FROM player_roster
+                        WHERE team_abbr IN ({token_placeholders})
+                           OR team_name IN ({placeholders})
+                    )
+                    UNION
+                    SELECT player_id FROM career_pitching_init
+                    WHERE player_id IN (
+                        SELECT player_id FROM player_roster
+                        WHERE team_abbr IN ({token_placeholders})
+                           OR team_name IN ({placeholders})
+                    )
                 )
                 ORDER BY p.full_name
                 """,
-                teams + teams,
+                names
+                + names
+                + tokens
+                + names
+                + tokens
+                + names
+                + tokens
+                + names,
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def upsert_player_roster(
+        self, entries: list[dict[str, Any]], *, season: int
+    ) -> int:
+        if not entries:
+            return 0
+        self._conn.executemany(
+            """
+            INSERT INTO player_roster (player_id, season, team_abbr, team_name)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(player_id, season) DO UPDATE SET
+                team_abbr = excluded.team_abbr,
+                team_name = excluded.team_name
+            """,
+            [
+                (
+                    int(entry["player_id"]),
+                    season,
+                    str(entry.get("team_abbr") or "").strip(),
+                    str(entry.get("team_name") or "").strip(),
+                )
+                for entry in entries
+                if entry.get("team_abbr")
+            ],
+        )
+        self._conn.commit()
+        return len(entries)
 
     def player_has_init_stats(self, player_id: int) -> bool:
         batting = self._conn.execute(
@@ -1047,6 +1113,7 @@ class Aggregator:
         *,
         player_id: int | None = None,
         tracked_teams: list[str] | None = None,
+        custom_teams: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         query = """
             SELECT
@@ -1070,15 +1137,21 @@ class Aggregator:
             query += " AND mp.player_id = ?"
             params.append(player_id)
         if tracked_teams:
-            placeholders = ",".join("?" * len(tracked_teams))
+            tokens = [team.strip().upper() for team in tracked_teams if team.strip()]
+            names = expand_tracked_teams(tokens, custom_teams)
+            name_ph = ",".join("?" * len(names))
+            token_ph = ",".join("?" * len(tokens))
             query += f"""
                 AND mp.player_id IN (
-                    SELECT player_id FROM batting_logs WHERE team IN ({placeholders})
+                    SELECT player_id FROM batting_logs WHERE team IN ({name_ph})
                     UNION
-                    SELECT player_id FROM pitching_logs WHERE team IN ({placeholders})
+                    SELECT player_id FROM pitching_logs WHERE team IN ({name_ph})
+                    UNION
+                    SELECT player_id FROM player_roster
+                    WHERE team_abbr IN ({token_ph}) OR team_name IN ({name_ph})
                 )
             """
-            params.extend(tracked_teams + tracked_teams)
+            params.extend(names + names + tokens + names)
         query += " ORDER BY mp.progress_pct DESC, mp.player_name"
         rows = self._conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]

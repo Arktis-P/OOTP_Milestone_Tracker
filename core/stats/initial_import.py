@@ -9,6 +9,7 @@ from typing import Any, Literal
 from core.db.meta import get_init_season_coverage, touch_import_meta
 from core.stats.aggregator import Aggregator
 from core.stats.ip_utils import ip_to_outs
+from core.stats.team_filter import discover_mlb_teams_from_rows, find_unknown_mlb_teams
 
 ImportMode = Literal["first_time", "refresh", "mid_season"]
 SeasonFilter = Literal["lt", "eq", "gap", "all"]
@@ -308,6 +309,8 @@ class InitialImporter:
             result.errors.append(str(exc))
             return result
 
+        self._sync_roster(rows, current_season)
+
         result.total_scanned = len(rows)
         coverage = get_init_season_coverage(self.aggregator.conn)
 
@@ -381,6 +384,71 @@ class InitialImporter:
                         self.aggregator.conn.commit()
 
         return result
+
+    def discover_mlb_teams_in_file(self, filepath: str | Path) -> dict[str, str]:
+        path = Path(filepath)
+        if not path.is_file():
+            return {}
+        col_names = BATTING_COLS if "batting" in path.name.lower() else PITCHING_COLS
+        rows = self._parse_file(path, col_names)
+        return discover_mlb_teams_from_rows(rows)
+
+    def discover_unknown_mlb_teams(
+        self,
+        batting_path: str | Path | None,
+        pitching_path: str | Path | None,
+        known_teams: dict[str, str],
+    ) -> dict[str, str]:
+        discovered: dict[str, str] = {}
+        for path in (batting_path, pitching_path):
+            if path:
+                discovered.update(self.discover_mlb_teams_in_file(path))
+        return find_unknown_mlb_teams(discovered, known_teams)
+
+    def sync_roster_file(
+        self, filepath: str | Path, current_season: int
+    ) -> int:
+        """Load current-season team affiliations from an export file."""
+        path = Path(filepath)
+        if not path.is_file():
+            return 0
+        col_names = BATTING_COLS if "batting" in path.name.lower() else PITCHING_COLS
+        rows = self._parse_file(path, col_names)
+        return self._sync_roster(rows, current_season)
+
+    def _sync_roster(self, rows: list[dict[str, Any]], current_season: int) -> int:
+        for season in (current_season, current_season - 1):
+            entries = self._roster_entries_for_season(rows, season)
+            if entries:
+                for entry in entries:
+                    self._player_name(int(entry["player_id"]), entry)
+                return self.aggregator.upsert_player_roster(
+                    entries, season=current_season
+                )
+        return 0
+
+    @staticmethod
+    def _roster_entries_for_season(
+        rows: list[dict[str, Any]], season: int
+    ) -> list[dict[str, Any]]:
+        by_player: dict[int, dict[str, Any]] = {}
+        for row in rows:
+            if row["league_level_id"] != 1 or row["split_id"] != 1:
+                continue
+            if int(row["season"]) != season:
+                continue
+            abbr = str(row.get("team_abbr") or "").strip()
+            if not abbr:
+                continue
+            player_id = int(row["player_id"])
+            by_player[player_id] = {
+                "player_id": player_id,
+                "team_abbr": abbr,
+                "team_name": str(row.get("team_name") or "").strip(),
+                "firstname": row.get("firstname", ""),
+                "lastname": row.get("lastname", ""),
+            }
+        return list(by_player.values())
 
     def _parse_file(self, filepath: Path, col_names: list[str]) -> list[dict[str, Any]]:
         parsed: list[dict[str, Any]] = []

@@ -23,6 +23,7 @@ from core.config import AppSettings, SettingsManager
 from core.stats.aggregator import Aggregator
 from core.stats.initial_import import ImportMode, InitialImporter, InitImportResult
 from gui.widgets.init_compare_dialog import InitCompareDialog
+from gui.widgets.mlb_team_discovery import prompt_unknown_mlb_teams
 from gui.workers.initial_import_worker import InitialImportWorker
 
 
@@ -198,6 +199,15 @@ class InitialImportView(QWidget):
         if not self._should_persist_after_preview(results, mode, season):
             self._update_status()
             return
+
+        self.settings = prompt_unknown_mlb_teams(
+            self,
+            self.importer,
+            self.settings,
+            batting_path=batting_path,
+            pitching_path=pitching_path,
+        )
+        self.settings_manager.save(self.settings)
 
         self._pending_import = {
             "batting_path": batting_path if kind in ("batting", "all") else None,

@@ -49,12 +49,14 @@ class PredictionStore:
         season: int,
         season_games_total: int,
         tracked_teams: list[str] | None = None,
+        custom_teams: dict[str, str] | None = None,
     ) -> None:
         self.aggregator = aggregator
         self.milestones = milestones
         self.season = season
         self.season_games_total = season_games_total
         self.tracked_teams = tracked_teams or []
+        self.custom_teams = custom_teams or {}
         self._career_milestones = [
             milestone
             for milestone in milestones.all_milestones
@@ -98,7 +100,9 @@ class PredictionStore:
         }
         players_by_id = {
             int(player["player_id"]): player
-            for player in self.aggregator.get_tracked_players(self.tracked_teams)
+            for player in self.aggregator.get_tracked_players(
+                self.tracked_teams, custom_teams=self.custom_teams
+            )
             if int(player["player_id"]) in player_ids
         }
 
@@ -169,6 +173,7 @@ class PredictionStore:
             self.season,
             player_id=player_id,
             tracked_teams=self.tracked_teams or None,
+            custom_teams=self.custom_teams or None,
         )
         results: list[CachedPrediction] = []
         for row in rows:
@@ -195,7 +200,9 @@ class PredictionStore:
 
     def _build_watch_rows(self) -> list[dict[str, Any]]:
         achieved = self._achieved_career_keys()
-        players = self.aggregator.get_tracked_players(self.tracked_teams)
+        players = self.aggregator.get_tracked_players(
+            self.tracked_teams, custom_teams=self.custom_teams
+        )
         if not players:
             return []
 
@@ -294,7 +301,9 @@ class PredictionStore:
     def _tracked_player_ids(self) -> set[int]:
         return {
             int(player["player_id"])
-            for player in self.aggregator.get_tracked_players(self.tracked_teams)
+            for player in self.aggregator.get_tracked_players(
+                self.tracked_teams, custom_teams=self.custom_teams
+            )
         }
 
     @staticmethod

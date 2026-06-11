@@ -31,6 +31,7 @@ from core.config import (
     is_valid_save_root,
     scan_saves,
 )
+from gui.widgets.tracked_teams_widget import TrackedTeamsWidget
 
 
 class SetupView(QWidget):
@@ -113,10 +114,8 @@ class SetupView(QWidget):
             QLabel("진행 중인 OOTP 시즌과 일치시키세요. (예: 2026 시즌 진행 중 → 2026)"),
         )
 
-        self.tracked_teams_input = QLineEdit()
-        self.tracked_teams_input.setPlaceholderText("예: SF, NYY (비우면 전체 선수)")
-        if self.settings.tracked_teams:
-            self.tracked_teams_input.setText(", ".join(self.settings.tracked_teams))
+        self.tracked_teams_widget = TrackedTeamsWidget(self)
+        self.tracked_teams_widget.load_from_settings(self.settings)
 
         self.season_games_spin = QSpinBox()
         self.season_games_spin.setRange(1, 200)
@@ -124,11 +123,14 @@ class SetupView(QWidget):
 
         tracking_group = QGroupBox("추적 설정")
         tracking_layout = QFormLayout(tracking_group)
-        tracking_layout.addRow("추적 팀 (약칭):", self.tracked_teams_input)
+        tracking_layout.addRow("추적 팀:", self.tracked_teams_widget)
         tracking_layout.addRow("시즌 총 경기:", self.season_games_spin)
         tracking_layout.addRow(
             "",
-            QLabel("추적 팀을 지정하면 선수 기록·마일스톤 예측에 해당 팀 선수만 표시됩니다."),
+            QLabel(
+                "MLB 30개 팀 중 선택하거나 수동으로 추가하세요. "
+                "초기값 임포트 시 새 MLB 팀이 발견되면 추가 여부를 묻습니다."
+            ),
         )
 
         self.selected_path_label = QLabel("")
@@ -212,8 +214,7 @@ class SetupView(QWidget):
 
         self.season_spin.setValue(self.settings.current_season)
         self.season_games_spin.setValue(self.settings.season_games_total)
-        if self.settings.tracked_teams:
-            self.tracked_teams_input.setText(", ".join(self.settings.tracked_teams))
+        self.tracked_teams_widget.load_from_settings(self.settings)
 
     def _browse_save_root(self) -> None:
         start_dir = self.save_root_input.text().strip() or str(Path.home() / "Documents")
@@ -361,11 +362,6 @@ class SetupView(QWidget):
         )
         updated.current_season = self.season_spin.value()
         updated.season_games_total = self.season_games_spin.value()
-        raw_teams = self.tracked_teams_input.text().strip()
-        updated.tracked_teams = (
-            [part.strip() for part in raw_teams.split(",") if part.strip()]
-            if raw_teams
-            else []
-        )
+        self.tracked_teams_widget.apply_to_settings(updated)
         self.settings_manager.save(updated)
         self.setup_completed.emit(updated)

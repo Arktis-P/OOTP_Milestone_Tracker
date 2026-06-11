@@ -202,6 +202,7 @@ def _migrate_post_schema(conn: sqlite3.Connection) -> None:
     _migrate_init_schema_v2(conn)
     _ensure_pitching_special_columns(conn)
     _migrate_milestone_records(conn)
+    _ensure_player_roster(conn)
     _ensure_milestone_predictions(conn)
 
 
@@ -328,6 +329,20 @@ def _migrate_milestone_records(conn: sqlite3.Connection) -> None:
     )
     conn.execute("DROP TABLE milestone_records")
     conn.execute("ALTER TABLE milestone_records_v2 RENAME TO milestone_records")
+
+
+def _ensure_player_roster(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS player_roster (
+            player_id   INTEGER NOT NULL,
+            season      INTEGER NOT NULL,
+            team_abbr   TEXT NOT NULL,
+            team_name   TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (player_id, season)
+        )
+        """
+    )
 
 
 def _ensure_milestone_predictions(conn: sqlite3.Connection) -> None:

@@ -96,6 +96,7 @@ class PredictView(QWidget):
             season=self.settings.current_season,
             season_games_total=self.settings.season_games_total,
             tracked_teams=self.settings.tracked_teams,
+            custom_teams=self.settings.custom_mlb_teams,
         )
 
     def _reload_player_filter(self) -> None:
@@ -103,7 +104,10 @@ class PredictView(QWidget):
         self.player_filter.blockSignals(True)
         self.player_filter.clear()
         self.player_filter.addItem("전체 선수", None)
-        for player in self.aggregator.get_tracked_players(self.settings.tracked_teams):
+        for player in self.aggregator.get_tracked_players(
+            self.settings.tracked_teams,
+            custom_teams=self.settings.custom_mlb_teams,
+        ):
             name = str(player.get("full_name") or player.get("short_name"))
             self.player_filter.addItem(name, int(player["player_id"]))
         if current is not None:

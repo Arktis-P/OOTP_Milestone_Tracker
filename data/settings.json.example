@@ -18,6 +18,7 @@
   },
   "initial_stats_dir": "",
   "tracked_teams": [],
+  "custom_mlb_teams": {},
   "import_mlb_only": true,
   "season_games_total": 162,
   "ratio_qualifiers": {
