@@ -40,7 +40,7 @@ ootp_milestone_tracker/
 ├── main.py              # 진입점
 ├── core/                # 파싱, 집계, 마일스톤 로직
 ├── gui/                 # PyQt6 UI
-├── data/                # milestones.json, settings.json, records.db
+├── data/                # milestones.csv, settings.json, records.db
 └── docs/                # 파일 포맷 명세, 개발 노트
 ```
 
@@ -83,7 +83,7 @@ samples/
 
 ## 설정 파일
 
-- `data/milestones.json` — 마일스톤 기준 정의 (Git 포함)
+- `data/milestones.csv` — 마일스톤 기준 정의 (Git 포함, Excel 편집 가능)
 - `data/settings.json` — 앱 설정, OOTP 파일 경로 (Git 제외, 로컬)
 - `data/records.db` — SQLite DB (자동 생성, Git 제외)
 

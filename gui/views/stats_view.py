@@ -15,11 +15,12 @@ from PyQt6.QtWidgets import (
 
 from core.config import AppSettings
 from core.config.settings_manager import SettingsManager
+from core.milestone.definitions import MilestoneDefinitions
 from core.stats.aggregator import Aggregator
 from core.stats.ip_utils import outs_to_ip_str
-from core.stats.models import BatchImportResult
+from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.widgets.table_widgets import TablePanel
-from gui.workers.import_worker import ImportWorker
+from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
 
 
 class StatsView(QWidget):
@@ -29,12 +30,14 @@ class StatsView(QWidget):
         self,
         aggregator: Aggregator,
         settings: AppSettings,
+        milestones: MilestoneDefinitions,
         settings_manager: SettingsManager | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.aggregator = aggregator
         self.settings = settings
+        self.milestones = milestones
         self.settings_manager = settings_manager or SettingsManager()
         self._import_worker: ImportWorker | None = None
 
@@ -79,6 +82,8 @@ class StatsView(QWidget):
         self._import_worker = ImportWorker(
             self.aggregator,
             self.settings_manager,
+            self.milestones,
+            self.settings,
             boxscore_dir,
             self.settings.current_season,
             since_mtime=since_mtime,
@@ -88,11 +93,14 @@ class StatsView(QWidget):
         self._import_worker.error.connect(self._on_import_error)
         self._import_worker.start()
 
-    def _on_import_finished(self, result: BatchImportResult) -> None:
+    def _on_import_finished(self, payload: ImportFinishedPayload) -> None:
         self.import_button.setEnabled(True)
         self.refresh()
 
+        result = payload.batch
         parts = [f"{result.imported}경기 추가됨"]
+        if payload.milestones_recorded:
+            parts.append(f"마일스톤 {payload.milestones_recorded}건 달성")
         if result.skipped_existing:
             parts.append(f"DB 기존 {result.skipped_existing}건 스킵")
         if result.skipped_mtime:
@@ -111,10 +119,20 @@ class StatsView(QWidget):
                 "가져오기 완료 (일부 오류)",
                 f"{message}\n\n오류:\n{details}",
             )
-        elif result.imported == 0 and result.skipped > 0:
-            QMessageBox.information(self, "가져오기 완료", f"새 경기 없음 ({result.skipped}건 이미 있음)")
+        elif result.imported == 0 and not payload.milestones:
+            QMessageBox.information(self, "가져오기 완료", message or "새 경기 없음")
         else:
-            QMessageBox.information(self, "가져오기 완료", message)
+            box = QMessageBox(self)
+            box.setWindowTitle("가져오기 완료")
+            box.setText(message)
+            if payload.milestones:
+                detail_button = box.addButton("자세히 보기", QMessageBox.ButtonRole.ActionRole)
+                box.addButton(QMessageBox.StandardButton.Ok)
+                box.exec()
+                if box.clickedButton() == detail_button:
+                    MilestoneAchievedDialog(payload.milestones, self).exec()
+            else:
+                box.exec()
 
     def _on_import_error(self, message: str) -> None:
         self.import_button.setEnabled(True)

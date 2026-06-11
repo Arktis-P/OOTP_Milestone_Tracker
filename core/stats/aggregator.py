@@ -93,11 +93,19 @@ class Aggregator:
                 )
             for pitcher in data.away_pitching:
                 self._insert_pitching_log(
-                    data, pitcher, season, away_pitch_events.get(pitcher.player_name)
+                    data,
+                    pitcher,
+                    season,
+                    away_pitch_events.get(pitcher.player_name),
+                    data.away_pitching,
                 )
             for pitcher in data.home_pitching:
                 self._insert_pitching_log(
-                    data, pitcher, season, home_pitch_events.get(pitcher.player_name)
+                    data,
+                    pitcher,
+                    season,
+                    home_pitch_events.get(pitcher.player_name),
+                    data.home_pitching,
                 )
             self._conn.commit()
             return ImportResult(game_id=game_id, skipped=False)
@@ -156,6 +164,7 @@ class Aggregator:
                 known_ids.add(game_id)
             else:
                 result.imported += 1
+                result.imported_game_ids.append(game_id)
                 known_ids.add(game_id)
 
         return result
@@ -254,7 +263,10 @@ class Aggregator:
         pitcher: PitcherLine,
         season: int,
         pitch_events,
+        team_pitchers: list[PitcherLine],
     ) -> None:
+        from core.stats.pitching_special import detect_special_game
+
         self.upsert_player(pitcher.player_id, pitcher.player_name)
         notes_text = (
             data.away_pitching_notes
@@ -265,6 +277,9 @@ class Aggregator:
         win = 1 if pitcher.decision == "W" else 0
         loss = 1 if pitcher.decision == "L" else 0
         save = 1 if pitcher.decision == "S" else 0
+        special = detect_special_game(
+            pitcher, team_pitchers, data.meta, pitcher.team, data
+        )
 
         self._conn.execute(
             """
@@ -272,8 +287,9 @@ class Aggregator:
                 game_id, player_id, season, team, date,
                 ip_outs, h, r, er, bb, k, hr, bf, pi,
                 decision, win, loss, save, season_era,
-                game_score, wild_pitch, hit_batsmen
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                game_score, wild_pitch, hit_batsmen,
+                is_cg, is_sho, is_no_hitter, is_perfect_game
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data.meta.game_id,
@@ -298,6 +314,10 @@ class Aggregator:
                 events.game_score,
                 events.wild_pitch,
                 events.hit_batsmen,
+                special["is_cg"],
+                special["is_sho"],
+                special["is_no_hitter"],
+                special["is_perfect_game"],
             ),
         )
 
@@ -315,7 +335,7 @@ class Aggregator:
 
     def get_batting_season(self, player_id: int, season: int) -> dict[str, Any] | None:
         row = self._conn.execute(
-            """
+            f"""
             SELECT
                 b.player_id,
                 p.short_name,
@@ -331,7 +351,7 @@ class Aggregator:
                 SUM(b.home_runs) AS hr,
                 SUM(b.stolen_bases) AS sb,
                 SUM(b.hit_by_pitch) AS hbp,
-                ROUND(CAST(SUM(b.h) AS REAL) / NULLIF(SUM(b.ab), 0), 3) AS avg,
+                {_batting_ratio_sql()}
                 COUNT(DISTINCT b.game_id) AS games_played
             FROM batting_logs b
             JOIN players p ON p.player_id = b.player_id
@@ -344,26 +364,25 @@ class Aggregator:
 
     def get_batting_career(self, player_id: int) -> dict[str, Any] | None:
         row = self._conn.execute(
-            """
+            f"""
             SELECT
-                b.player_id,
+                totals.player_id,
                 p.short_name,
                 p.full_name,
-                SUM(b.ab) AS career_ab,
-                SUM(b.h) AS career_h,
-                SUM(b.home_runs) AS career_hr,
-                SUM(b.rbi) AS career_rbi,
-                SUM(b.bb) AS career_bb,
-                SUM(b.k) AS career_k,
-                SUM(b.doubles) AS career_doubles,
-                SUM(b.triples) AS career_triples,
-                SUM(b.stolen_bases) AS career_sb,
-                ROUND(CAST(SUM(b.h) AS REAL) / NULLIF(SUM(b.ab), 0), 3) AS career_avg,
-                COUNT(DISTINCT b.game_id) AS career_games
-            FROM batting_logs b
-            JOIN players p ON p.player_id = b.player_id
-            WHERE b.player_id = ?
-            GROUP BY b.player_id
+                totals.career_ab,
+                totals.career_h,
+                totals.career_hr,
+                totals.career_rbi,
+                totals.career_bb,
+                totals.career_k,
+                totals.career_doubles,
+                totals.career_triples,
+                totals.career_sb,
+                ROUND(CAST(totals.career_h AS REAL) / NULLIF(totals.career_ab, 0), 3) AS career_avg,
+                totals.career_games
+            FROM ({_career_batting_union_sql()}) totals
+            JOIN players p ON p.player_id = totals.player_id
+            WHERE totals.player_id = ?
             """,
             (player_id,),
         ).fetchone()
@@ -371,7 +390,7 @@ class Aggregator:
 
     def get_pitching_season(self, player_id: int, season: int) -> dict[str, Any] | None:
         row = self._conn.execute(
-            """
+            f"""
             SELECT
                 pl.player_id,
                 p.short_name,
@@ -385,9 +404,7 @@ class Aggregator:
                 SUM(pl.win) AS wins,
                 SUM(pl.loss) AS losses,
                 SUM(pl.save) AS saves,
-                ROUND(
-                    CAST(SUM(pl.er) * 27 AS REAL) / NULLIF(SUM(pl.ip_outs), 0), 2
-                ) AS era,
+                {_pitching_ratio_sql()}
                 COUNT(DISTINCT pl.game_id) AS games
             FROM pitching_logs pl
             JOIN players p ON p.player_id = pl.player_id
@@ -405,24 +422,27 @@ class Aggregator:
 
     def get_pitching_career(self, player_id: int) -> dict[str, Any] | None:
         row = self._conn.execute(
-            """
+            f"""
             SELECT
-                pl.player_id,
+                totals.player_id,
                 p.short_name,
                 p.full_name,
-                SUM(pl.ip_outs) AS career_ip_outs,
-                SUM(pl.win) AS career_wins,
-                SUM(pl.loss) AS career_losses,
-                SUM(pl.save) AS career_saves,
-                SUM(pl.k) AS career_k,
-                SUM(pl.er) AS career_er,
+                totals.career_ip_outs,
+                totals.career_wins,
+                totals.career_losses,
+                totals.career_saves,
+                totals.career_k,
+                totals.career_er,
                 ROUND(
-                    CAST(SUM(pl.er) * 27 AS REAL) / NULLIF(SUM(pl.ip_outs), 0), 2
-                ) AS career_era
-            FROM pitching_logs pl
-            JOIN players p ON p.player_id = pl.player_id
-            WHERE pl.player_id = ?
-            GROUP BY pl.player_id
+                    CAST(totals.career_er * 27 AS REAL) / NULLIF(totals.career_ip_outs, 0), 2
+                ) AS career_era,
+                ROUND(
+                    CAST(totals.career_bb + totals.career_ha AS REAL)
+                    / NULLIF(totals.career_ip_outs / 3.0, 0), 3
+                ) AS career_whip
+            FROM ({_career_pitching_union_sql()}) totals
+            JOIN players p ON p.player_id = totals.player_id
+            WHERE totals.player_id = ?
             """,
             (player_id,),
         ).fetchone()
@@ -459,7 +479,7 @@ class Aggregator:
 
     def get_season_batting_totals(self, season: int) -> list[dict[str, Any]]:
         rows = self._conn.execute(
-            """
+            f"""
             SELECT
                 b.player_id AS id,
                 p.short_name AS name,
@@ -475,7 +495,7 @@ class Aggregator:
                 SUM(b.stolen_bases) AS sb,
                 SUM(b.doubles) AS doubles,
                 SUM(b.triples) AS triples,
-                ROUND(CAST(SUM(b.h) AS REAL) / NULLIF(SUM(b.ab), 0), 3) AS avg,
+                {_batting_ratio_sql()}
                 COUNT(DISTINCT b.game_id) AS games_played
             FROM batting_logs b
             JOIN players p ON p.player_id = b.player_id
@@ -489,27 +509,26 @@ class Aggregator:
 
     def get_career_batting_totals(self) -> list[dict[str, Any]]:
         rows = self._conn.execute(
-            """
+            f"""
             SELECT
-                b.player_id AS id,
+                totals.player_id AS id,
                 p.short_name AS name,
                 p.full_name,
-                MAX(b.team) AS team,
-                SUM(b.ab) AS ab,
-                SUM(b.h) AS h,
-                SUM(b.r) AS r,
-                SUM(b.rbi) AS rbi,
-                SUM(b.bb) AS bb,
-                SUM(b.k) AS k,
-                SUM(b.home_runs) AS hr,
-                SUM(b.stolen_bases) AS sb,
-                SUM(b.doubles) AS doubles,
-                SUM(b.triples) AS triples,
-                ROUND(CAST(SUM(b.h) AS REAL) / NULLIF(SUM(b.ab), 0), 3) AS avg,
-                COUNT(DISTINCT b.game_id) AS career_games
-            FROM batting_logs b
-            JOIN players p ON p.player_id = b.player_id
-            GROUP BY b.player_id
+                '' AS team,
+                totals.career_ab AS ab,
+                totals.career_h AS h,
+                totals.career_r AS r,
+                totals.career_rbi AS rbi,
+                totals.career_bb AS bb,
+                totals.career_k AS k,
+                totals.career_hr AS hr,
+                totals.career_sb AS sb,
+                totals.career_doubles AS doubles,
+                totals.career_triples AS triples,
+                ROUND(CAST(totals.career_h AS REAL) / NULLIF(totals.career_ab, 0), 3) AS avg,
+                totals.career_games AS career_games
+            FROM ({_career_batting_union_sql()}) totals
+            JOIN players p ON p.player_id = totals.player_id
             ORDER BY p.short_name
             """,
         ).fetchall()
@@ -517,7 +536,7 @@ class Aggregator:
 
     def get_season_pitching_totals(self, season: int) -> list[dict[str, Any]]:
         rows = self._conn.execute(
-            """
+            f"""
             SELECT
                 pl.player_id AS id,
                 p.short_name AS name,
@@ -532,9 +551,7 @@ class Aggregator:
                 SUM(pl.win) AS w,
                 SUM(pl.loss) AS l,
                 SUM(pl.save) AS sv,
-                ROUND(
-                    CAST(SUM(pl.er) * 27 AS REAL) / NULLIF(SUM(pl.ip_outs), 0), 2
-                ) AS era,
+                {_pitching_ratio_sql()}
                 COUNT(DISTINCT pl.game_id) AS games
             FROM pitching_logs pl
             JOIN players p ON p.player_id = pl.player_id
@@ -553,27 +570,26 @@ class Aggregator:
 
     def get_career_pitching_totals(self) -> list[dict[str, Any]]:
         rows = self._conn.execute(
-            """
+            f"""
             SELECT
-                pl.player_id AS id,
+                totals.player_id AS id,
                 p.short_name AS name,
                 p.full_name,
-                MAX(pl.team) AS team,
-                SUM(pl.ip_outs) AS ip_outs,
-                SUM(pl.h) AS h,
-                SUM(pl.er) AS er,
-                SUM(pl.bb) AS bb,
-                SUM(pl.k) AS k,
-                SUM(pl.hr) AS hr,
-                SUM(pl.win) AS w,
-                SUM(pl.loss) AS l,
-                SUM(pl.save) AS sv,
+                '' AS team,
+                totals.career_ip_outs AS ip_outs,
+                totals.career_ha AS h,
+                totals.career_er AS er,
+                totals.career_bb AS bb,
+                totals.career_k AS k,
+                totals.career_hr AS hr,
+                totals.career_wins AS w,
+                totals.career_losses AS l,
+                totals.career_saves AS sv,
                 ROUND(
-                    CAST(SUM(pl.er) * 27 AS REAL) / NULLIF(SUM(pl.ip_outs), 0), 2
+                    CAST(totals.career_er * 27 AS REAL) / NULLIF(totals.career_ip_outs, 0), 2
                 ) AS era
-            FROM pitching_logs pl
-            JOIN players p ON p.player_id = pl.player_id
-            GROUP BY pl.player_id
+            FROM ({_career_pitching_union_sql()}) totals
+            JOIN players p ON p.player_id = totals.player_id
             ORDER BY p.short_name
             """,
         ).fetchall()
@@ -583,6 +599,237 @@ class Aggregator:
             data["ip"] = outs_to_ip_float(int(data["ip_outs"]))
             result.append(data)
         return result
+
+    def get_career_batting_stat(self, player_id: int, stat: str) -> float:
+        career = self.get_batting_career(player_id)
+        if not career:
+            return 0.0
+        return float(career.get(stat, 0) or 0)
+
+    def get_career_pitching_stat(self, player_id: int, stat: str) -> float:
+        career = self.get_pitching_career(player_id)
+        if not career:
+            return 0.0
+        return float(career.get(stat, 0) or 0)
+
+    def get_game_contribution_batting(
+        self, player_id: int, game_id: int, stat: str
+    ) -> float:
+        column = _BATTING_GAME_STAT_COLUMNS.get(stat, stat)
+        row = self._conn.execute(
+            f"SELECT {column} AS value FROM batting_logs WHERE player_id = ? AND game_id = ?",
+            (player_id, game_id),
+        ).fetchone()
+        return float(row["value"]) if row else 0.0
+
+    def get_game_contribution_pitching(
+        self, player_id: int, game_id: int, stat: str
+    ) -> float:
+        column = _PITCHING_GAME_STAT_COLUMNS.get(stat, stat)
+        row = self._conn.execute(
+            f"SELECT {column} AS value FROM pitching_logs WHERE player_id = ? AND game_id = ?",
+            (player_id, game_id),
+        ).fetchone()
+        return float(row["value"]) if row else 0.0
+
+    def get_max_prior_season_stat(
+        self, player_id: int, season: int, game_id: int, stat: str
+    ) -> float | None:
+        column = _SEASON_TRACKING_COLUMNS.get(stat)
+        if not column:
+            return None
+        row = self._conn.execute(
+            f"""
+            SELECT MAX({column}) AS prior_value
+            FROM batting_logs
+            WHERE player_id = ? AND season = ? AND game_id <> ?
+            """,
+            (player_id, season, game_id),
+        ).fetchone()
+        if row and row["prior_value"] is not None:
+            return float(row["prior_value"])
+        return None
+
+    def get_max_prior_season_pitching_stat(
+        self, player_id: int, season: int, game_id: int, stat: str
+    ) -> float:
+        if stat == "season_k_pit":
+            row = self._conn.execute(
+                """
+                SELECT COALESCE(SUM(k), 0) AS prior_value
+                FROM pitching_logs
+                WHERE player_id = ? AND season = ? AND game_id <> ?
+                """,
+                (player_id, season, game_id),
+            ).fetchone()
+            return float(row["prior_value"]) if row else 0.0
+        if stat == "season_wins":
+            row = self._conn.execute(
+                """
+                SELECT COALESCE(SUM(win), 0) AS prior_value
+                FROM pitching_logs
+                WHERE player_id = ? AND season = ? AND game_id <> ?
+                """,
+                (player_id, season, game_id),
+            ).fetchone()
+            return float(row["prior_value"]) if row else 0.0
+        if stat == "season_saves":
+            row = self._conn.execute(
+                """
+                SELECT COALESCE(SUM(save), 0) AS prior_value
+                FROM pitching_logs
+                WHERE player_id = ? AND season = ? AND game_id <> ?
+                """,
+                (player_id, season, game_id),
+            ).fetchone()
+            return float(row["prior_value"]) if row else 0.0
+        return 0.0
+
+    def get_players_in_game(self, game_id: int) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT DISTINCT player_id, COALESCE(p.short_name, p.full_name) AS player_name
+            FROM (
+                SELECT player_id FROM batting_logs WHERE game_id = ?
+                UNION
+                SELECT player_id FROM pitching_logs WHERE game_id = ?
+            ) ids
+            JOIN players p ON p.player_id = ids.player_id
+            """,
+            (game_id, game_id),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+_BATTING_GAME_STAT_COLUMNS = {
+    "h": "h",
+    "hr": "home_runs",
+    "rbi": "rbi",
+    "bb": "bb",
+    "sb": "stolen_bases",
+    "doubles": "doubles",
+    "k_bat": "k",
+}
+
+_PITCHING_GAME_STAT_COLUMNS = {
+    "k_pit": "k",
+    "ip_outs": "ip_outs",
+    "cg": "is_cg",
+    "sho": "is_sho",
+    "no_hitter": "is_no_hitter",
+    "perfect_game": "is_perfect_game",
+    "wins": "win",
+    "saves": "save",
+}
+
+_SEASON_TRACKING_COLUMNS = {
+    "season_hr": "season_hr",
+    "season_h": "season_hr",  # fallback; season_h uses sum instead
+    "season_rbi": "season_rbi",
+    "season_sb": "season_hr",
+}
+
+
+def _batting_ratio_sql() -> str:
+    return """
+                ROUND(CAST(SUM(b.h) AS REAL) / NULLIF(SUM(b.ab), 0), 3) AS avg,
+                ROUND(
+                    CAST(SUM(b.h) + SUM(b.bb) + SUM(b.hit_by_pitch) AS REAL)
+                    / NULLIF(SUM(b.ab) + SUM(b.bb) + SUM(b.hit_by_pitch), 0), 3
+                ) AS obp,
+                ROUND(
+                    CAST(
+                        SUM(b.h - b.doubles - b.triples - b.home_runs)
+                        + 2 * SUM(b.doubles)
+                        + 3 * SUM(b.triples)
+                        + 4 * SUM(b.home_runs)
+                    AS REAL) / NULLIF(SUM(b.ab), 0), 3
+                ) AS slg,
+                ROUND(
+                    (
+                        CAST(SUM(b.h) + SUM(b.bb) + SUM(b.hit_by_pitch) AS REAL)
+                        / NULLIF(SUM(b.ab) + SUM(b.bb) + SUM(b.hit_by_pitch), 0)
+                    ) + (
+                        CAST(
+                            SUM(b.h - b.doubles - b.triples - b.home_runs)
+                            + 2 * SUM(b.doubles)
+                            + 3 * SUM(b.triples)
+                            + 4 * SUM(b.home_runs)
+                        AS REAL) / NULLIF(SUM(b.ab), 0)
+                    ), 3
+                ) AS ops,
+    """
+
+
+def _pitching_ratio_sql() -> str:
+    return """
+                ROUND(
+                    CAST(SUM(pl.er) * 27 AS REAL) / NULLIF(SUM(pl.ip_outs), 0), 2
+                ) AS era,
+                ROUND(
+                    CAST(SUM(pl.bb) + SUM(pl.h) AS REAL)
+                    / NULLIF(SUM(pl.ip_outs) / 3.0, 0), 3
+                ) AS whip,
+    """
+
+
+def _career_batting_union_sql() -> str:
+    return """
+        SELECT
+            player_id,
+            SUM(g) AS career_games,
+            SUM(ab) AS career_ab,
+            SUM(h) AS career_h,
+            SUM(doubles) AS career_doubles,
+            SUM(triples) AS career_triples,
+            SUM(hr) AS career_hr,
+            SUM(rbi) AS career_rbi,
+            SUM(r) AS career_r,
+            SUM(sb) AS career_sb,
+            SUM(bb) AS career_bb,
+            SUM(k) AS career_k
+        FROM (
+            SELECT player_id, g, ab, h, doubles, triples, hr, rbi, r, sb, bb, k
+            FROM career_batting_init
+            UNION ALL
+            SELECT
+                player_id,
+                COUNT(DISTINCT game_id) AS g,
+                SUM(ab), SUM(h), SUM(doubles), SUM(triples), SUM(home_runs),
+                SUM(rbi), SUM(r), SUM(stolen_bases), SUM(bb), SUM(k)
+            FROM batting_logs
+            GROUP BY player_id
+        )
+        GROUP BY player_id
+    """
+
+
+def _career_pitching_union_sql() -> str:
+    return """
+        SELECT
+            player_id,
+            SUM(ip_outs) AS career_ip_outs,
+            SUM(w) AS career_wins,
+            SUM(l) AS career_losses,
+            SUM(s) AS career_saves,
+            SUM(k) AS career_k,
+            SUM(er) AS career_er,
+            SUM(ha) AS career_ha,
+            SUM(bb) AS career_bb,
+            SUM(hr) AS career_hr
+        FROM (
+            SELECT player_id, ip_outs, w, l, s, k, er, ha, bb, hr
+            FROM career_pitching_init
+            UNION ALL
+            SELECT
+                player_id,
+                SUM(ip_outs), SUM(win), SUM(loss), SUM(save), SUM(k),
+                SUM(er), SUM(h), SUM(bb), SUM(hr)
+            FROM pitching_logs
+            GROUP BY player_id
+        )
+        GROUP BY player_id
+    """
 
 
 def _game_id_from_filename(filename: str) -> int:

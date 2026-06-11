@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from core.config.settings_manager import SettingsManager
+from core.config.settings_manager import AppSettings, SettingsManager
+from core.milestone.checker import MilestoneAchievement, MilestoneChecker
+from core.milestone.definitions import MilestoneDefinitions
 from core.stats.aggregator import Aggregator
 from core.stats.models import BatchImportResult
+
+
+@dataclass
+class ImportFinishedPayload:
+    batch: BatchImportResult
+    milestones: list[MilestoneAchievement] = field(default_factory=list)
+    milestones_recorded: int = 0
 
 
 class ImportWorker(QThread):
@@ -17,6 +28,8 @@ class ImportWorker(QThread):
         self,
         aggregator: Aggregator,
         settings_manager: SettingsManager,
+        milestones: MilestoneDefinitions,
+        settings: AppSettings,
         boxscore_dir: str,
         season: int,
         since_mtime: float | None = None,
@@ -25,6 +38,8 @@ class ImportWorker(QThread):
         super().__init__(parent)
         self.aggregator = aggregator
         self.settings_manager = settings_manager
+        self.milestones = milestones
+        self.settings = settings
         self.boxscore_dir = boxscore_dir
         self.season = season
         self.since_mtime = since_mtime
@@ -41,6 +56,22 @@ class ImportWorker(QThread):
                 settings, self.boxscore_dir
             )
             self.settings_manager.save(updated)
-            self.finished.emit(result)
+
+            checker = MilestoneChecker(
+                self.aggregator,
+                self.milestones,
+                season_games_total=self.settings.season_games_total,
+                ratio_qualifiers=self.settings.get_ratio_qualifiers(),
+            )
+            achievements = checker.check_new_games(result.imported_game_ids, self.season)
+            recorded = checker.record_achievements(achievements)
+
+            self.finished.emit(
+                ImportFinishedPayload(
+                    batch=result,
+                    milestones=achievements,
+                    milestones_recorded=recorded,
+                )
+            )
         except Exception as exc:
             self.error.emit(str(exc))

@@ -183,6 +183,7 @@ class BatchImportResult:
     errors: list[ImportResult] = field(default_factory=list)
     total_scanned: int = 0
     candidates: int = 0
+    imported_game_ids: list[int] = field(default_factory=list)
 
 
 @dataclass

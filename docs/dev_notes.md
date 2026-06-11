@@ -1,20 +1,27 @@
 # 개발 노트
 
+## 2025-06-11 — Phase 3: 마일스톤 체커 & 초기값 임포트
+
+### 완료
+- `career_batting_init` / `career_pitching_init` 테이블 + `InitialImporter`
+- 통산 집계: init + 박스스코어 UNION (`aggregator` career 쿼리)
+- `pitching_logs` 특수 기록 플래그 (`is_cg`, `is_sho`, `is_no_hitter`, `is_perfect_game`)
+- `MilestoneChecker` — game / season / career / season_ratio scope
+- Import 직후 자동 마일스톤 체크 (`ImportWorker`)
+- GUI: 마일스톤 달성 다이얼로그, 이력 탭 필터, 시즌 종료 체크, 초기값 설정 탭
+- `tests/test_milestone_checker.py`, `tests/test_initial_import.py`
+
 ## 2025-06-11 — Phase 2: DB 스키마 & 집계
 
 ### 완료
 - `core/db/schema.py` — games, players, batting_logs, pitching_logs, milestone_records
-- `core/stats/aggregator.py` — import_boxscore, import_all_new, 집계 쿼리
+- `core/stats/aggregator.py` — import_boxscore, import_all_new (mtime 필터), 집계 쿼리
 - `core/stats/ip_utils.py` — IP ↔ 아웃카운트 변환
 - `core/parser/batting_notes.py` — doubles/hr/sb/gidp 등 노트 파싱
 - `core/parser/pitching_notes.py` — game_score 등
 - GUI `박스스코어 가져오기` 버튼 + `ImportWorker` (QThread)
-- `data/milestones.json` — career/season/game scope 예시 12개
-- `tests/test_aggregator.py` — 6건 추가 (총 15건 통과)
-
-### 다음 (Phase 3)
-- import 직후 자동 마일스톤 체크 (game/season/career scope)
-- predictor 갱신
+- `data/milestones.json` — career/season/game scope 예시
+- `tests/test_aggregator.py`
 
 ## 2025-06-11 — Phase 1: 박스스코어 / 게임 로그 HTML 파서
 

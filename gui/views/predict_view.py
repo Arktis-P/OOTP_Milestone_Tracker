@@ -45,7 +45,12 @@ class PredictView(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
-        checker = MilestoneChecker(self.aggregator, self.milestones)
+        checker = MilestoneChecker(
+            self.aggregator,
+            self.milestones,
+            season_games_total=self.settings.season_games_total,
+            ratio_qualifiers=self.settings.get_ratio_qualifiers(),
+        )
         predictor = MilestonePredictor(checker, self.settings.current_season)
         predictions = predictor.predict_all()
 

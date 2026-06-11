@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from core.config.save_scanner import is_valid_league_folder
+from core.stats.qualifiers import RatioQualifiers
 
 
 @dataclass
@@ -18,8 +19,16 @@ class AppSettings:
     active_save_path: str = ""
     paths: dict[str, str] = field(default_factory=dict)
     db_path: str = "data/records.db"
-    milestones_path: str = "data/milestones.json"
+    milestones_path: str = "data/milestones.csv"
     import_state: dict[str, str] = field(default_factory=dict)
+    initial_stats_dir: str = ""
+    season_games_total: int = 162
+    ratio_qualifiers: dict[str, float] = field(
+        default_factory=lambda: {
+            "batting_ab_per_game": 3.1,
+            "pitching_ip_per_game": 1.0,
+        }
+    )
 
     @property
     def boxscore_dir(self) -> str:
@@ -42,6 +51,13 @@ class AppSettings:
         if self.paths.get("roster_file"):
             return self.paths["roster_file"]
         return ""
+
+    def get_ratio_qualifiers(self) -> RatioQualifiers:
+        raw = self.ratio_qualifiers or {}
+        return RatioQualifiers(
+            batting_ab_per_game=float(raw.get("batting_ab_per_game", 3.1)),
+            pitching_ip_per_game=float(raw.get("pitching_ip_per_game", 1.0)),
+        )
 
 
 def get_project_root() -> Path:
@@ -83,6 +99,9 @@ class SettingsManager:
             "db_path": settings.db_path,
             "milestones_path": settings.milestones_path,
             "import_state": dict(settings.import_state),
+            "initial_stats_dir": settings.initial_stats_dir,
+            "season_games_total": settings.season_games_total,
+            "ratio_qualifiers": dict(settings.ratio_qualifiers),
         }
         self.path.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
@@ -135,8 +154,16 @@ class SettingsManager:
             active_save_path=str(raw.get("active_save_path", "")),
             paths=dict(raw.get("paths", {})),
             db_path=str(raw.get("db_path", "data/records.db")),
-            milestones_path=str(raw.get("milestones_path", "data/milestones.json")),
+            milestones_path=str(raw.get("milestones_path", "data/milestones.csv")),
             import_state=dict(raw.get("import_state", {})),
+            initial_stats_dir=str(raw.get("initial_stats_dir", "")),
+            season_games_total=int(raw.get("season_games_total", 162)),
+            ratio_qualifiers=dict(
+                raw.get(
+                    "ratio_qualifiers",
+                    {"batting_ab_per_game": 3.1, "pitching_ip_per_game": 1.0},
+                )
+            ),
         )
 
     def get_last_boxscore_import_at(self, settings: AppSettings, boxscore_dir: str) -> float | None:

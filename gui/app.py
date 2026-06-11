@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 from core.config import AppSettings, SettingsManager, resolve_data_path
 from core.milestone.definitions import load_milestones
 from core.stats.aggregator import Aggregator
+from gui.views.initial_import_view import InitialImportView
 from gui.views.milestone_view import MilestoneView
 from gui.views.predict_view import PredictView
 from gui.views.roster_view import RosterView
@@ -58,7 +59,10 @@ class MainWindow(QMainWindow):
             "마일스톤 기록",
         )
         stats_view = StatsView(
-            self._aggregator, self.settings, self.settings_manager
+            self._aggregator,
+            self.settings,
+            self._milestones,
+            self.settings_manager,
         )
         stats_view.import_finished.connect(self._on_boxscore_import_finished)
         self._tabs.addTab(stats_view, "선수/팀 기록")
@@ -67,6 +71,10 @@ class MainWindow(QMainWindow):
             "마일스톤 예측",
         )
         self._tabs.addTab(RosterView(self.settings), "로스터 편집")
+        self._tabs.addTab(
+            InitialImportView(self._aggregator, self.settings, self.settings_manager),
+            "초기값 설정",
+        )
 
     def _on_boxscore_import_finished(self, message: str) -> None:
         league = self.settings.active_save or "(리그 미선택)"

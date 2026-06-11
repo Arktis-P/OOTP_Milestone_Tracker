@@ -45,7 +45,7 @@ def build() -> None:
         "--windowed",
         "--noconfirm",
         "--add-data",
-        f"data/milestones.json{';' if sys.platform == 'win32' else ':'}data",
+        f"data/milestones.csv{';' if sys.platform == 'win32' else ':'}data",
         "--add-data",
         f"data/settings.json.example{';' if sys.platform == 'win32' else ':'}data",
         "main.py",

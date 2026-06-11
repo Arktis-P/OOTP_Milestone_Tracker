@@ -10,9 +10,15 @@
     "roster_file": ""
   },
   "db_path": "data/records.db",
-  "milestones_path": "data/milestones.json",
+  "milestones_path": "data/milestones.csv",
   "import_state": {
     "boxscore_dir": "",
     "last_import_at": ""
+  },
+  "initial_stats_dir": "",
+  "season_games_total": 162,
+  "ratio_qualifiers": {
+    "batting_ab_per_game": 3.1,
+    "pitching_ip_per_game": 1.0
   }
 }

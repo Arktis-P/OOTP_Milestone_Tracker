@@ -1,0 +1,27 @@
+category,key,label,scope,stat,threshold,direction,grade
+batting,game_hits_4,한 경기 4안타,game,h,4,higher,uncommon
+batting,game_hr_2,한 경기 멀티 홈런,game,hr,2,higher,rare
+batting,game_rbi_5,한 경기 5타점,game,rbi,5,higher,uncommon
+batting,season_hr_40,시즌 40홈런,season,season_hr,40,higher,rare
+batting,season_hr_50,시즌 50홈런,season,season_hr,50,higher,epic
+batting,season_rbi_100,시즌 100타점,season,season_rbi,100,higher,rare
+batting,season_sb_40,시즌 40도루,season,season_sb,40,higher,epic
+batting,season_avg_400,시즌 4할 타율,season_ratio,season_avg,0.4,higher,legendary
+batting,career_h_3000,통산 3000안타,career,career_h,3000,higher,legendary
+batting,career_hr_500,통산 500홈런,career,career_hr,500,higher,legendary
+batting,career_hr_600,통산 600홈런,career,career_hr,600,higher,legendary
+batting,career_rbi_1500,통산 1500타점,career,career_rbi,1500,higher,epic
+batting,career_sb_500,통산 500도루,career,career_sb,500,higher,legendary
+pitching,game_k_10,한 경기 10탈삼진,game,k_pit,10,higher,uncommon
+pitching,game_k_15,한 경기 15탈삼진,game,k_pit,15,higher,rare
+pitching,game_cg,완투,game,cg,1,higher,uncommon
+pitching,game_sho,완봉,game,sho,1,higher,rare
+pitching,game_no_hitter,노히터,game,no_hitter,1,higher,epic
+pitching,game_perfect,퍼펙트게임,game,perfect_game,1,higher,legendary
+pitching,season_wins_20,시즌 20승,season,season_wins,20,higher,epic
+pitching,season_k_200,시즌 200탈삼진,season,season_k_pit,200,higher,rare
+pitching,season_k_300,시즌 300탈삼진,season,season_k_pit,300,higher,epic
+pitching,season_era_200,시즌 2점대 ERA,season_ratio,season_era,2.99,lower,legendary
+pitching,career_wins_300,통산 300승,career,career_wins,300,higher,legendary
+pitching,career_k_3000,통산 3000탈삼진,career,career_k_pit,3000,higher,legendary
+pitching,career_saves_400,통산 400세이브,career,career_saves,400,higher,legendary
