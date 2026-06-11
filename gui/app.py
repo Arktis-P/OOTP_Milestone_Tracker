@@ -90,7 +90,7 @@ class MainWindow(QMainWindow):
         self._initial_import_view.import_finished.connect(self._on_init_import_finished)
         self._tabs.addTab(self._initial_import_view, "초기값 설정")
 
-        self._tabs.addTab(RosterView(self.settings), "로스터 편집")
+        self._tabs.addTab(RosterView(self.settings), "레이팅 편집")
 
         setup_tab = SetupView(self.settings_manager, self.settings, embedded=True)
         setup_tab.setup_completed.connect(self._on_setup_tab_saved)
