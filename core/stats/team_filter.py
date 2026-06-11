@@ -38,13 +38,42 @@ CANONICAL_MLB_TEAMS: dict[str, str] = {
     "WSH": "Washington Nationals",
 }
 
-# Legacy / alternate abbreviations seen in exports or box scores.
+# Legacy / alternate abbreviations seen in OOTP exports or box scores.
 MLB_TEAM_ALIASES: dict[str, str] = {
     "ATH": "Oakland Athletics",
+    "AZ": "Arizona Diamondbacks",
+    "ATL": "Atlanta Braves",
+    "BAL": "Baltimore Orioles",
+    "BOS": "Boston Red Sox",
+    "CHC": "Chicago Cubs",
+    "CIN": "Cincinnati Reds",
+    "CLE": "Cleveland Guardians",
+    "COL": "Colorado Rockies",
+    "CWS": "Chicago White Sox",
+    "DET": "Detroit Tigers",
+    "HOU": "Houston Astros",
+    "KC": "Kansas City Royals",
     "KCR": "Kansas City Royals",
+    "LAA": "Los Angeles Angels",
+    "LAD": "Los Angeles Dodgers",
+    "MIA": "Miami Marlins",
+    "MIL": "Milwaukee Brewers",
+    "MIN": "Minnesota Twins",
+    "NYM": "New York Mets",
+    "NYY": "New York Yankees",
+    "PHI": "Philadelphia Phillies",
+    "PIT": "Pittsburgh Pirates",
+    "SD": "San Diego Padres",
     "SDP": "San Diego Padres",
+    "SEA": "Seattle Mariners",
+    "SF": "San Francisco Giants",
     "SFG": "San Francisco Giants",
+    "STL": "St. Louis Cardinals",
+    "TB": "Tampa Bay Rays",
     "TBR": "Tampa Bay Rays",
+    "TEX": "Texas Rangers",
+    "TOR": "Toronto Blue Jays",
+    "WSH": "Washington Nationals",
     "WSN": "Washington Nationals",
 }
 
@@ -91,11 +120,34 @@ def expand_tracked_teams(
     return sorted(expanded)
 
 
+def is_ootp_mlb_league_row(row: dict[str, Any]) -> bool:
+    """True for OOTP player-stats rows in MLB (not WBC/KBO/minors)."""
+    if int(row.get("split_id") or 0) != 1:
+        return False
+    if int(row.get("league_level_id") or 0) != 1:
+        return False
+    return str(row.get("league_abbr") or "").strip().upper() == "MLB"
+
+
+def franchise_name_matches_known(team_name: str, known: dict[str, str]) -> bool:
+    """Return True if export team name matches an existing MLB franchise."""
+    export_name = str(team_name or "").strip().lower()
+    if not export_name:
+        return False
+    for franchise in known.values():
+        canonical = str(franchise).strip().lower()
+        if not canonical:
+            continue
+        if export_name == canonical or export_name in canonical or canonical in export_name:
+            return True
+    return False
+
+
 def discover_mlb_teams_from_rows(rows: list[dict[str, Any]]) -> dict[str, str]:
     """Collect MLB team abbreviations and names from OOTP export rows."""
     teams: dict[str, str] = {}
     for row in rows:
-        if int(row.get("league_level_id") or 0) != 1:
+        if not is_ootp_mlb_league_row(row):
             continue
         abbr = str(row.get("team_abbr") or "").strip().upper()
         name = str(row.get("team_name") or "").strip()
@@ -110,13 +162,16 @@ def find_unknown_mlb_teams(
     discovered: dict[str, str],
     known: dict[str, str],
 ) -> dict[str, str]:
-    """Return export teams not present in the known team map."""
+    """Return MLB franchises not already in the known team map."""
     known_keys = {str(key).upper() for key in known}
     unknown: dict[str, str] = {}
     for abbr, name in discovered.items():
         key = abbr.upper()
-        if key not in known_keys:
-            unknown[key] = name
+        if key in known_keys:
+            continue
+        if franchise_name_matches_known(name, known):
+            continue
+        unknown[key] = name
     return unknown
 
 

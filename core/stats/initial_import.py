@@ -9,7 +9,11 @@ from typing import Any, Literal
 from core.db.meta import get_init_season_coverage, touch_import_meta
 from core.stats.aggregator import Aggregator
 from core.stats.ip_utils import ip_to_outs
-from core.stats.team_filter import discover_mlb_teams_from_rows, find_unknown_mlb_teams
+from core.stats.team_filter import (
+    discover_mlb_teams_from_rows,
+    find_unknown_mlb_teams,
+    is_ootp_mlb_league_row,
+)
 
 ImportMode = Literal["first_time", "refresh", "mid_season"]
 SeasonFilter = Literal["lt", "eq", "gap", "all"]
@@ -415,7 +419,7 @@ class InitialImporter:
         seen: set[int] = set()
         updated = 0
         for row in rows:
-            if int(row.get("league_level_id") or 0) != 1:
+            if not is_ootp_mlb_league_row(row):
                 continue
             player_id = int(row["player_id"])
             if player_id in seen:
@@ -454,7 +458,7 @@ class InitialImporter:
     ) -> list[dict[str, Any]]:
         by_player: dict[int, dict[str, Any]] = {}
         for row in rows:
-            if row["league_level_id"] != 1 or row["split_id"] != 1:
+            if not is_ootp_mlb_league_row(row):
                 continue
             if int(row["season"]) != season:
                 continue
@@ -511,7 +515,7 @@ class InitialImporter:
             sum_fields = BATTING_SUM_FIELDS
 
         for row in rows:
-            if row["league_level_id"] != 1 or row["split_id"] != 1:
+            if not is_ootp_mlb_league_row(row):
                 continue
             season = int(row["season"])
             if not self._season_matches(

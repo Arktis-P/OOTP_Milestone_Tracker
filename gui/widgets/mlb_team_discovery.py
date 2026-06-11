@@ -32,7 +32,8 @@ def prompt_unknown_mlb_teams(
     reply = QMessageBox.question(
         parent,
         "새 MLB 팀 발견",
-        "player stats export에서 기존 목록에 없는 MLB 팀이 발견되었습니다.\n\n"
+        "player stats export에서 기존 MLB 30개 팀에 없는 "
+        "신규 MLB 구단(확장 팀 등)이 발견되었습니다.\n\n"
         f"{lines}\n\n"
         "추적 팀 선택 목록에 추가할까요?",
         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
