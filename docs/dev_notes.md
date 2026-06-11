@@ -1,5 +1,15 @@
 # 개발 노트
 
+## 2025-06-11 — Phase 0: OOTP 세이브 폴더 감지 및 설정
+
+### 완료
+- `core/config/path_detector.py` — Windows/macOS 자동 탐지 (OOTP 20–26)
+- `core/config/save_scanner.py` — 리그 폴더 스캔 및 유효성 검증
+- `core/config/settings_manager.py` — settings.json read/write
+- `gui/views/setup_view.py` — 최초 실행 설정 화면
+- 앱 시작 분기: 설정 유효 → 메인 / 무효 → SetupView
+- 상태바 클릭으로 리그 설정 변경
+
 ## 2025-06-11 — 프로젝트 초기화
 
 ### 완료
