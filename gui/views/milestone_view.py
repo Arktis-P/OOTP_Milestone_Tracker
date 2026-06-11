@@ -57,7 +57,7 @@ class MilestoneView(QWidget):
             ["선수", "마일스톤", "등급", "scope", "달성일", "달성 수치", "시즌", "경기"],
             placeholder="선수 또는 마일스톤 검색...",
         )
-        self.table_panel.search_input.textChanged.connect(self.refresh)
+        self.table_panel.filter_bar.search_input.textChanged.connect(self.refresh)
 
         self.refresh_button = QPushButton("새로고침")
         self.season_end_button = QPushButton("시즌 종료 체크")
@@ -90,7 +90,7 @@ class MilestoneView(QWidget):
         )
         scope = self.scope_combo.currentData()
         season = self.season_spin.value() or None
-        search = self.table_panel.search_input.text().strip()
+        search = self.table_panel.filter_bar.search_input.text().strip()
         self._records = checker.get_recorded_milestones(
             scope=scope or None,
             season=season,
