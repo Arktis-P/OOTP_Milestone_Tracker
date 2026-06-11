@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from core.parser.boxscore_html import BoxscoreHTMLParser, ParserError
+from core.parser.boxscore_html import BoxscoreHTMLParser, ParserError, peek_is_mlb_boxscore
 from core.parser.game_log_html import GameLogHTMLParser
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -32,6 +32,16 @@ def log_13() -> Path:
 @pytest.fixture
 def log_14() -> Path:
     return SAMPLES_LOG / "log_14.html"
+
+
+def test_peek_is_mlb_boxscore(box_13: Path, tmp_path: Path) -> None:
+    assert peek_is_mlb_boxscore(box_13) is True
+    non_mlb = tmp_path / "game_box_99999.html"
+    non_mlb.write_text(
+        "<html><head><title>WBC Box Score, Korea at Japan</title></head></html>",
+        encoding="utf-8",
+    )
+    assert peek_is_mlb_boxscore(non_mlb) is False
 
 
 def test_boxscore_meta(box_13: Path) -> None:

@@ -73,7 +73,7 @@ class MainWindow(QMainWindow):
             InitialImportView(self._aggregator, self.settings, self.settings_manager),
             "초기값 설정",
         )
-        setup_tab = SetupView(self.settings_manager, self.settings)
+        setup_tab = SetupView(self.settings_manager, self.settings, embedded=True)
         setup_tab.setup_completed.connect(self._on_setup_tab_saved)
         setup_tab.confirm_button.setText("설정 저장")
         self._tabs.addTab(setup_tab, "설정")

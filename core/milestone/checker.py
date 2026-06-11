@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -84,12 +85,62 @@ class MilestoneChecker:
         self.definitions = definitions
         self.season_games_total = season_games_total
         self.ratio_qualifiers = ratio_qualifiers or RatioQualifiers()
+        self._batting_season_cache: dict[tuple[int, int], dict[str, Any] | None] = {}
+        self._pitching_season_cache: dict[tuple[int, int], dict[str, Any] | None] = {}
+        self._career_batting_cache: dict[int, dict[str, Any] | None] = {}
+        self._career_pitching_cache: dict[int, dict[str, Any] | None] = {}
 
-    def check_new_games(self, game_ids: list[int], season: int) -> list[MilestoneAchievement]:
+    def check_new_games(
+        self,
+        game_ids: list[int],
+        season: int,
+        *,
+        progress_callback: Callable[[int, int, str], None] | None = None,
+    ) -> list[MilestoneAchievement]:
+        self._clear_stat_caches()
         achievements: list[MilestoneAchievement] = []
-        for game_id in game_ids:
+        total = len(game_ids)
+        for index, game_id in enumerate(game_ids, start=1):
+            if progress_callback:
+                progress_callback(index, total, f"game {game_id}")
             achievements.extend(self._check_single_game(game_id, season))
         return [item for item in achievements if item.achieved]
+
+    def _clear_stat_caches(self) -> None:
+        self._batting_season_cache.clear()
+        self._pitching_season_cache.clear()
+        self._career_batting_cache.clear()
+        self._career_pitching_cache.clear()
+
+    def _batting_season_cached(self, player_id: int, season: int) -> dict[str, Any] | None:
+        key = (player_id, season)
+        if key not in self._batting_season_cache:
+            self._batting_season_cache[key] = self.aggregator.get_batting_season(
+                player_id, season
+            )
+        return self._batting_season_cache[key]
+
+    def _pitching_season_cached(self, player_id: int, season: int) -> dict[str, Any] | None:
+        key = (player_id, season)
+        if key not in self._pitching_season_cache:
+            self._pitching_season_cache[key] = self.aggregator.get_pitching_season(
+                player_id, season
+            )
+        return self._pitching_season_cache[key]
+
+    def _career_batting_cached(self, player_id: int) -> dict[str, Any] | None:
+        if player_id not in self._career_batting_cache:
+            self._career_batting_cache[player_id] = self.aggregator.get_batting_career(
+                player_id
+            )
+        return self._career_batting_cache[player_id]
+
+    def _career_pitching_cached(self, player_id: int) -> dict[str, Any] | None:
+        if player_id not in self._career_pitching_cache:
+            self._career_pitching_cache[player_id] = self.aggregator.get_pitching_career(
+                player_id
+            )
+        return self._career_pitching_cache[player_id]
 
     def check_season_ratios(self, season: int) -> list[MilestoneAchievement]:
         achievements: list[MilestoneAchievement] = []
@@ -400,14 +451,16 @@ class MilestoneChecker:
     ) -> MilestoneAchievement | None:
         if milestone.stat in CAREER_BATTING_STATS:
             column = CAREER_BATTING_STATS[milestone.stat]
-            current = self.aggregator.get_career_batting_stat(player_id, column)
+            row = self._career_batting_cached(player_id)
+            current = float(row.get(column, 0) or 0) if row else 0.0
             game_col = CAREER_GAME_CONTRIBUTION[milestone.stat]
             prior = current - self.aggregator.get_game_contribution_batting(
                 player_id, game_id, game_col
             )
         elif milestone.stat in CAREER_PITCHING_STATS:
             column = CAREER_PITCHING_STATS[milestone.stat]
-            current = self.aggregator.get_career_pitching_stat(player_id, column)
+            row = self._career_pitching_cached(player_id)
+            current = float(row.get(column, 0) or 0) if row else 0.0
             if milestone.stat == "career_era":
                 return None
             game_col = CAREER_GAME_CONTRIBUTION[milestone.stat]
@@ -431,7 +484,7 @@ class MilestoneChecker:
         )
 
     def _season_batting_total(self, player_id: int, season: int, stat: str) -> float:
-        row = self.aggregator.get_batting_season(player_id, season)
+        row = self._batting_season_cached(player_id, season)
         if not row:
             return 0.0
         if stat == "season_h":
@@ -441,7 +494,7 @@ class MilestoneChecker:
         return float(row.get(stat.replace("season_", ""), 0) or 0)
 
     def _season_pitching_total(self, player_id: int, season: int, stat: str) -> float:
-        row = self.aggregator.get_pitching_season(player_id, season)
+        row = self._pitching_season_cached(player_id, season)
         if not row:
             return 0.0
         if stat == "season_k_pit":

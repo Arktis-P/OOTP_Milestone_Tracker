@@ -215,7 +215,7 @@ class InitialImportView(QWidget):
         self.progress_bar.setValue(0)
         payload = self._pending_import
         self._import_worker = InitialImportWorker(
-            self.aggregator,
+            self.aggregator.db_path,
             batting_path=payload["batting_path"],
             pitching_path=payload["pitching_path"],
             mode=payload["mode"],

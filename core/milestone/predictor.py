@@ -13,6 +13,19 @@ from core.milestone.checker import (
 )
 from core.milestone.definitions import MilestoneDefinition
 
+_PITCHING_TOTALS_COL = {
+    "career_wins": "w",
+    "career_k_pit": "k",
+    "career_saves": "sv",
+    "career_era": "era",
+}
+
+_SEASON_PITCHING_COL = {
+    "career_wins": "w",
+    "career_k_pit": "k",
+    "career_saves": "sv",
+}
+
 
 @dataclass
 class MilestonePrediction:
@@ -87,12 +100,25 @@ class MilestonePredictor:
         player_ids: list[int] | None = None,
         *,
         achieved_keys: set[tuple[int, str]] | None = None,
+        tracked_teams: list[str] | None = None,
     ) -> list[CareerMilestonePrediction]:
         achieved = achieved_keys or set()
-        players = self.checker.aggregator.get_tracked_players()
+        players = self.checker.aggregator.get_tracked_players(tracked_teams)
         if player_ids is not None:
             id_set = set(player_ids)
             players = [player for player in players if player["player_id"] in id_set]
+        if not players:
+            return []
+
+        agg = self.checker.aggregator
+        batting_by_id = {int(row["id"]): row for row in agg.get_career_batting_totals()}
+        pitching_by_id = {int(row["id"]): row for row in agg.get_career_pitching_totals()}
+        season_batting_by_id = {
+            int(row["id"]): row for row in agg.get_season_batting_totals(self.season)
+        }
+        season_pitching_by_id = {
+            int(row["id"]): row for row in agg.get_season_pitching_totals(self.season)
+        }
 
         predictions: list[CareerMilestonePrediction] = []
         for milestone in self.checker.definitions.all_milestones:
@@ -102,7 +128,9 @@ class MilestonePredictor:
                 player_id = int(player["player_id"])
                 if (player_id, milestone.key) in achieved:
                     continue
-                current = self._career_value(player_id, milestone)
+                current = self._career_value_from_totals(
+                    player_id, milestone, batting_by_id, pitching_by_id
+                )
                 if current is None:
                     continue
                 if self.checker._is_achieved(current, milestone):
@@ -117,7 +145,13 @@ class MilestonePredictor:
                     if milestone.threshold and milestone.direction == "higher"
                     else 0.0
                 )
-                season_info = self._estimate_this_season(player_id, milestone, remaining)
+                season_info = self._estimate_this_season_from_totals(
+                    player_id,
+                    milestone,
+                    remaining,
+                    season_batting_by_id,
+                    season_pitching_by_id,
+                )
                 predictions.append(
                     CareerMilestonePrediction(
                         player_id=player_id,
@@ -135,6 +169,77 @@ class MilestonePredictor:
         predictions.sort(key=lambda item: item.progress_pct, reverse=True)
         return predictions
 
+    def _career_value_from_totals(
+        self,
+        player_id: int,
+        milestone: MilestoneDefinition,
+        batting_by_id: dict[int, dict[str, Any]],
+        pitching_by_id: dict[int, dict[str, Any]],
+    ) -> float | None:
+        stat = milestone.stat
+        if stat in CAREER_BATTING_STATS:
+            row = batting_by_id.get(player_id)
+            if not row:
+                return None
+            col = CAREER_BATTING_STATS[stat].replace("career_", "")
+            return float(row.get(col, 0) or 0)
+        if stat in CAREER_PITCHING_STATS:
+            row = pitching_by_id.get(player_id)
+            if not row:
+                return None
+            col = _PITCHING_TOTALS_COL.get(stat, stat.replace("career_", ""))
+            return float(row.get(col, 0) or 0)
+        return None
+
+    def _estimate_this_season_from_totals(
+        self,
+        player_id: int,
+        milestone: MilestoneDefinition,
+        remaining: float,
+        season_batting_by_id: dict[int, dict[str, Any]],
+        season_pitching_by_id: dict[int, dict[str, Any]],
+    ) -> dict[str, Any]:
+        stat_key = milestone.stat
+        if milestone.category == "batting":
+            season_stats = season_batting_by_id.get(player_id)
+            col = CAREER_BATTING_STATS.get(stat_key, stat_key).replace("career_", "")
+        else:
+            season_stats = season_pitching_by_id.get(player_id)
+            col = _SEASON_PITCHING_COL.get(stat_key, stat_key)
+
+        if not season_stats:
+            return {
+                "possible": None,
+                "projected_add": 0.0,
+                "note": "데이터 없음",
+            }
+
+        games_played = int(
+            season_stats.get("games_played") or season_stats.get("games") or 0
+        )
+        current_val = float(season_stats.get(col, 0) or 0)
+        if games_played == 0:
+            return {
+                "possible": False,
+                "projected_add": 0.0,
+                "note": "데이터 없음",
+            }
+
+        per_game = current_val / games_played
+        games_remaining = max(self.season_games_total - games_played, 0)
+        projected_add = per_game * games_remaining
+        possible = projected_add >= remaining
+        if possible:
+            note = f"가능 (+{projected_add:.0f})"
+        else:
+            after = max(remaining - projected_add, 0)
+            note = f"불가 (+{projected_add:.0f}, 시즌 후 {after:.0f} 남음)"
+        return {
+            "possible": possible,
+            "projected_add": round(projected_add, 1),
+            "note": note,
+        }
+
     def _estimate_this_season(
         self, player_id: int, milestone: MilestoneDefinition, remaining: float
     ) -> dict[str, Any]:
@@ -142,26 +247,9 @@ class MilestonePredictor:
         if milestone.category == "batting":
             season_stats = self.checker.aggregator.get_batting_season(player_id, self.season)
             col = CAREER_BATTING_STATS.get(stat_key, stat_key).replace("career_", "")
-            if col == "k":
-                col = "k"
-            elif col == "hr":
-                col = "hr"
-            elif col == "h":
-                col = "h"
-            elif col == "rbi":
-                col = "rbi"
-            elif col == "sb":
-                col = "sb"
-            elif col == "bb":
-                col = "bb"
         else:
             season_stats = self.checker.aggregator.get_pitching_season(player_id, self.season)
-            col_map = {
-                "career_wins": "wins",
-                "career_k_pit": "k",
-                "career_saves": "saves",
-            }
-            col = col_map.get(stat_key, stat_key)
+            col = _SEASON_PITCHING_COL.get(stat_key, stat_key)
 
         if not season_stats:
             return {

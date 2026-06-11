@@ -43,6 +43,8 @@ class SetupView(QWidget):
         settings_manager: SettingsManager,
         settings: AppSettings | None = None,
         parent: QWidget | None = None,
+        *,
+        embedded: bool = False,
     ) -> None:
         super().__init__(parent)
         self.settings_manager = settings_manager
@@ -153,8 +155,12 @@ class SetupView(QWidget):
         self.league_combo.currentIndexChanged.connect(self._update_selected_path_label)
         self.manual_radio.toggled.connect(self._on_mode_changed)
 
-        self._run_auto_detection()
-        self._restore_saved_values()
+        if embedded and self.settings.active_save_path:
+            self.manual_radio.setChecked(True)
+            self._restore_saved_values()
+        else:
+            self._run_auto_detection()
+            self._restore_saved_values()
 
     def _run_auto_detection(self) -> None:
         self._detected_roots = detect_save_roots()

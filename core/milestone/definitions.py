@@ -27,6 +27,15 @@ class MilestoneDefinition:
     category: str
     direction: Direction = "higher"
     grade: Grade = "common"
+    track_from: float | None = None
+
+    def effective_track_from(self) -> float:
+        """Minimum stat value before this milestone enters the prediction watch list."""
+        if self.track_from is not None:
+            return self.track_from
+        if self.scope == "career" and self.direction == "higher":
+            return self.threshold * 0.8
+        return 0.0
 
 
 class MilestoneDefinitions:
@@ -90,6 +99,9 @@ def _load_csv(file_path: Path) -> MilestoneDefinitions:
             if direction not in {"higher", "lower"}:
                 raise ValueError(f"invalid direction '{direction}' at line {line_no}")
 
+            track_raw = (row.get("track_from") or "").strip()
+            track_from = float(track_raw) if track_raw else None
+
             item = MilestoneDefinition(
                 key=key,
                 label=(row.get("label") or "").strip(),
@@ -99,6 +111,7 @@ def _load_csv(file_path: Path) -> MilestoneDefinitions:
                 category=category,
                 direction=direction,  # type: ignore[arg-type]
                 grade=grade,  # type: ignore[arg-type]
+                track_from=track_from,
             )
             if category == "batting":
                 batting.append(item)
@@ -121,6 +134,7 @@ def _parse_definition(item: dict, category: str) -> MilestoneDefinition:
     grade = str(item.get("grade", "common")).lower()
     if grade not in VALID_GRADES:
         grade = "common"
+    track_from = item.get("track_from")
     return MilestoneDefinition(
         key=item["key"],
         label=item["label"],
@@ -130,4 +144,5 @@ def _parse_definition(item: dict, category: str) -> MilestoneDefinition:
         category=category,
         direction=item.get("direction", "higher"),
         grade=grade,  # type: ignore[arg-type]
+        track_from=float(track_from) if track_from is not None else None,
     )

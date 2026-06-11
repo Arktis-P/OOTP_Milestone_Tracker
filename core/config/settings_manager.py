@@ -23,6 +23,7 @@ class AppSettings:
     import_state: dict[str, str] = field(default_factory=dict)
     initial_stats_dir: str = ""
     tracked_teams: list[str] = field(default_factory=list)
+    import_mlb_only: bool = True
     season_games_total: int = 162
     ratio_qualifiers: dict[str, float] = field(
         default_factory=lambda: {
@@ -125,6 +126,7 @@ class SettingsManager:
             "import_state": dict(settings.import_state),
             "initial_stats_dir": settings.initial_stats_dir,
             "tracked_teams": list(settings.tracked_teams),
+            "import_mlb_only": settings.import_mlb_only,
             "season_games_total": settings.season_games_total,
             "ratio_qualifiers": dict(settings.ratio_qualifiers),
         }
@@ -189,6 +191,7 @@ class SettingsManager:
                 for team in raw.get("tracked_teams", [])
                 if str(team).strip()
             ],
+            import_mlb_only=bool(raw.get("import_mlb_only", True)),
             season_games_total=int(raw.get("season_games_total", 162)),
             ratio_qualifiers=dict(
                 raw.get(

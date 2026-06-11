@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLabel,
@@ -60,6 +61,12 @@ class StatsView(QWidget):
         self.banner = ErrorBanner(self)
         self.import_button = QPushButton("박스스코어 가져오기")
         self.import_button.clicked.connect(self.start_import)
+        self.mlb_only_checkbox = QCheckBox("MLB만")
+        self.mlb_only_checkbox.setChecked(self.settings.import_mlb_only)
+        self.mlb_only_checkbox.setToolTip(
+            "메이저리그 박스스코어만 가져옵니다. KBO·WBC 등은 건너뜁니다."
+        )
+        self.mlb_only_checkbox.toggled.connect(self._on_mlb_only_toggled)
         self.progress_label = QLabel("")
         self.progress_label.setVisible(False)
         self.progress_bar = QProgressBar()
@@ -95,6 +102,7 @@ class StatsView(QWidget):
 
         controls = QHBoxLayout()
         controls.addWidget(self.import_button)
+        controls.addWidget(self.mlb_only_checkbox)
         controls.addWidget(self.progress_label)
         controls.addWidget(self.progress_bar, stretch=1)
         controls.addWidget(QLabel("시즌:"))
@@ -328,7 +336,12 @@ class StatsView(QWidget):
             self,
         ).exec()
 
+    def _on_mlb_only_toggled(self, checked: bool) -> None:
+        self.settings.import_mlb_only = checked
+        self.settings_manager.save(self.settings)
+
     def start_import(self) -> None:
+        self.settings.import_mlb_only = self.mlb_only_checkbox.isChecked()
         boxscore_dir = self.settings.boxscore_dir
         if not boxscore_dir:
             self.banner.show_warning(
@@ -345,7 +358,7 @@ class StatsView(QWidget):
             self.settings, boxscore_dir
         )
         self._import_worker = ImportWorker(
-            self.aggregator,
+            self.aggregator.db_path,
             self.settings_manager,
             self.milestones,
             self.settings,
@@ -359,11 +372,19 @@ class StatsView(QWidget):
         self._import_worker.error.connect(self._on_import_error)
         self._import_worker.start()
 
-    def _on_import_progress(self, current: int, total: int, filename: str) -> None:
-        pct = int(current / total * 100) if total else 0
+    def _on_import_progress(
+        self, current: int, total: int, filename: str, phase: str = "import"
+    ) -> None:
         self.progress_bar.setMaximum(max(total, 1))
         self.progress_bar.setValue(current)
-        self.progress_label.setText(f"가져오는 중... ({current}/{total}) {filename}")
+        if phase == "milestone":
+            self.progress_label.setText(
+                f"마일스톤 확인 중... ({current}/{total}) {filename}"
+            )
+        else:
+            self.progress_label.setText(
+                f"박스스코어 가져오는 중... ({current}/{total}) {filename}"
+            )
 
     def _on_import_finished(self, payload: ImportFinishedPayload) -> None:
         self.import_button.setEnabled(True)
@@ -375,6 +396,8 @@ class StatsView(QWidget):
 
         result = payload.batch
         parts = [f"{result.imported}경기 추가됨"]
+        if result.skipped_non_mlb:
+            parts.append(f"MLB 외 {result.skipped_non_mlb}건 스킵")
         if payload.milestones_recorded:
             parts.append(f"마일스톤 {payload.milestones_recorded}건 달성")
         message = " · ".join(parts)

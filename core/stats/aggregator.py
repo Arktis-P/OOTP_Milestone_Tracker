@@ -9,7 +9,7 @@ from typing import Any
 
 from core.db.schema import init_database
 from core.parser.batting_notes import get_player_event_counts
-from core.parser.boxscore_html import BoxscoreHTMLParser
+from core.parser.boxscore_html import BoxscoreHTMLParser, peek_is_mlb_boxscore
 from core.parser.common import ParserError
 from core.parser.pitching_notes import get_player_pitching_counts
 from core.stats.ip_utils import ip_to_outs, outs_to_ip_float, outs_to_ip_str
@@ -119,6 +119,7 @@ class Aggregator:
         season: int,
         *,
         since_mtime: float | None = None,
+        mlb_only: bool = True,
         progress_callback: Any | None = None,
     ) -> BatchImportResult:
         directory = Path(boxscore_dir)
@@ -132,44 +133,51 @@ class Aggregator:
         result = BatchImportResult(total_scanned=len(files))
 
         for index, file_path in enumerate(files, start=1):
-            if progress_callback:
-                progress_callback(index, len(files), file_path.name)
-
-            if since_mtime is not None and file_path.stat().st_mtime <= since_mtime:
-                result.skipped_mtime += 1
-                continue
-
-            game_id = _game_id_from_filename(file_path.name)
-            if game_id < 0:
-                result.errors.append(
-                    ImportResult(game_id=game_id, error=f"Invalid filename: {file_path.name}")
-                )
-                continue
-
-            if game_id in known_ids:
-                result.skipped_existing += 1
-                continue
-
-            result.candidates += 1
             try:
-                data = BoxscoreHTMLParser(file_path).parse()
-                import_result = self.import_boxscore(data, season)
-            except ParserError as exc:
-                result.errors.append(ImportResult(game_id=game_id, error=str(exc)))
-                continue
-            except Exception as exc:
-                result.errors.append(ImportResult(game_id=game_id, error=str(exc)))
-                continue
+                if since_mtime is not None and file_path.stat().st_mtime <= since_mtime:
+                    result.skipped_mtime += 1
+                    continue
 
-            if import_result.error:
-                result.errors.append(import_result)
-            elif import_result.skipped:
-                result.skipped += 1
-                known_ids.add(game_id)
-            else:
-                result.imported += 1
-                result.imported_game_ids.append(game_id)
-                known_ids.add(game_id)
+                game_id = _game_id_from_filename(file_path.name)
+                if game_id < 0:
+                    result.errors.append(
+                        ImportResult(
+                            game_id=game_id, error=f"Invalid filename: {file_path.name}"
+                        )
+                    )
+                    continue
+
+                if game_id in known_ids:
+                    result.skipped_existing += 1
+                    continue
+
+                if mlb_only and not peek_is_mlb_boxscore(file_path):
+                    result.skipped_non_mlb += 1
+                    continue
+
+                result.candidates += 1
+                try:
+                    data = BoxscoreHTMLParser(file_path).parse()
+                    import_result = self.import_boxscore(data, season)
+                except ParserError as exc:
+                    result.errors.append(ImportResult(game_id=game_id, error=str(exc)))
+                    continue
+                except Exception as exc:
+                    result.errors.append(ImportResult(game_id=game_id, error=str(exc)))
+                    continue
+
+                if import_result.error:
+                    result.errors.append(import_result)
+                elif import_result.skipped:
+                    result.skipped += 1
+                    known_ids.add(game_id)
+                else:
+                    result.imported += 1
+                    result.imported_game_ids.append(game_id)
+                    known_ids.add(game_id)
+            finally:
+                if progress_callback:
+                    progress_callback(index, len(files), file_path.name)
 
         return result
 
@@ -948,6 +956,131 @@ class Aggregator:
             """,
             (game_id, game_id),
         ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_player_ids_for_games(self, game_ids: list[int]) -> set[int]:
+        if not game_ids:
+            return set()
+        placeholders = ",".join("?" * len(game_ids))
+        rows = self._conn.execute(
+            f"""
+            SELECT DISTINCT player_id FROM (
+                SELECT player_id FROM batting_logs WHERE game_id IN ({placeholders})
+                UNION
+                SELECT player_id FROM pitching_logs WHERE game_id IN ({placeholders})
+            )
+            """,
+            game_ids + game_ids,
+        ).fetchall()
+        return {int(row[0]) for row in rows}
+
+    def count_milestone_predictions(self, season: int) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM milestone_predictions WHERE season = ?",
+            (season,),
+        ).fetchone()
+        return int(row[0])
+
+    def clear_milestone_predictions(self, season: int) -> None:
+        self._conn.execute(
+            "DELETE FROM milestone_predictions WHERE season = ?",
+            (season,),
+        )
+        self._conn.commit()
+
+    def delete_milestone_predictions(
+        self, season: int, keys: list[tuple[int, str]]
+    ) -> None:
+        if not keys:
+            return
+        self._conn.executemany(
+            """
+            DELETE FROM milestone_predictions
+            WHERE season = ? AND player_id = ? AND milestone_key = ?
+            """,
+            [(season, player_id, milestone_key) for player_id, milestone_key in keys],
+        )
+        self._conn.commit()
+
+    def upsert_milestone_predictions(self, rows: list[dict[str, Any]]) -> None:
+        if not rows:
+            return
+        self._conn.executemany(
+            """
+            INSERT INTO milestone_predictions (
+                player_id, milestone_key, season, player_name, milestone_label,
+                grade, current_value, threshold, remaining, progress_pct, season_note
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(player_id, milestone_key, season) DO UPDATE SET
+                player_name = excluded.player_name,
+                milestone_label = excluded.milestone_label,
+                grade = excluded.grade,
+                current_value = excluded.current_value,
+                threshold = excluded.threshold,
+                remaining = excluded.remaining,
+                progress_pct = excluded.progress_pct,
+                season_note = excluded.season_note,
+                updated_at = datetime('now')
+            """,
+            [
+                (
+                    row["player_id"],
+                    row["milestone_key"],
+                    row["season"],
+                    row["player_name"],
+                    row["milestone_label"],
+                    row["grade"],
+                    row["current_value"],
+                    row["threshold"],
+                    row["remaining"],
+                    row["progress_pct"],
+                    row["season_note"],
+                )
+                for row in rows
+            ],
+        )
+        self._conn.commit()
+
+    def get_milestone_predictions(
+        self,
+        season: int,
+        *,
+        player_id: int | None = None,
+        tracked_teams: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        query = """
+            SELECT
+                mp.player_id,
+                mp.milestone_key,
+                mp.season,
+                mp.player_name,
+                mp.milestone_label,
+                mp.grade,
+                mp.current_value,
+                mp.threshold,
+                mp.remaining,
+                mp.progress_pct,
+                mp.season_note,
+                mp.updated_at
+            FROM milestone_predictions mp
+            WHERE mp.season = ?
+        """
+        params: list[Any] = [season]
+        if player_id is not None:
+            query += " AND mp.player_id = ?"
+            params.append(player_id)
+        if tracked_teams:
+            placeholders = ",".join("?" * len(tracked_teams))
+            query += f"""
+                AND mp.player_id IN (
+                    SELECT player_id FROM batting_logs WHERE team IN ({placeholders})
+                    UNION
+                    SELECT player_id FROM pitching_logs WHERE team IN ({placeholders})
+                )
+            """
+            params.extend(tracked_teams + tracked_teams)
+        query += " ORDER BY mp.progress_pct DESC, mp.player_name"
+        rows = self._conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
 

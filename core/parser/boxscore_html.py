@@ -33,6 +33,22 @@ from core.stats.models import (
 
 BoxScoreHtmlParseError = ParserError
 
+_BOXSCORE_TITLE_RE = re.compile(r"<title>(.*?)</title>", re.I | re.S)
+
+
+def peek_is_mlb_boxscore(filepath: str | Path, *, read_limit: int = 8192) -> bool:
+    """Return True if the file looks like an MLB box score (header peek only)."""
+    path = Path(filepath)
+    if not path.is_file():
+        return False
+    head = path.read_text(encoding="utf-8", errors="replace")[:read_limit]
+    match = _BOXSCORE_TITLE_RE.search(head)
+    if match and match.group(1).strip().startswith("MLB Box Score"):
+        return True
+    if "MAJOR LEAGUE BASEBALL" in head and "major_league_baseball.png" in head:
+        return True
+    return False
+
 
 class BoxscoreHTMLParser:
     def __init__(self, filepath: str | Path) -> None:

@@ -180,6 +180,7 @@ class BatchImportResult:
     skipped: int = 0
     skipped_mtime: int = 0
     skipped_existing: int = 0
+    skipped_non_mlb: int = 0
     errors: list[ImportResult] = field(default_factory=list)
     total_scanned: int = 0
     candidates: int = 0

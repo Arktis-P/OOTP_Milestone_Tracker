@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QShowEvent
 from PyQt6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -14,9 +15,8 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings
-from core.milestone.checker import MilestoneChecker
 from core.milestone.definitions import MilestoneDefinitions
-from core.milestone.predictor import MilestonePredictor
+from core.milestone.prediction_store import PredictionStore
 from core.stats.aggregator import Aggregator
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.grade_styles import apply_grade_style
@@ -35,10 +35,15 @@ class PredictView(QWidget):
         self.aggregator = aggregator
         self.milestones = milestones
         self.settings = settings
+        self._initial_load_done = False
 
         self.banner = ErrorBanner(self)
-        self.refresh_button = QPushButton("새로고침")
-        self.refresh_button.clicked.connect(self.refresh)
+        self.refresh_button = QPushButton("목록 재생성")
+        self.refresh_button.setToolTip(
+            "추적 대상 통산 마일스톤 목록을 처음부터 다시 만듭니다.\n"
+            "평소에는 박스스코어 가져오기 시 자동으로 갱신됩니다."
+        )
+        self.refresh_button.clicked.connect(lambda: self.refresh(force_reseed=True))
 
         self.player_filter = QComboBox()
         self.player_filter.addItem("전체 선수", None)
@@ -77,7 +82,21 @@ class PredictView(QWidget):
         layout.addWidget(self.table)
 
         self._reload_player_filter()
-        self.refresh()
+
+    def showEvent(self, event: QShowEvent) -> None:
+        super().showEvent(event)
+        if not self._initial_load_done:
+            self._initial_load_done = True
+            self.refresh()
+
+    def _prediction_store(self) -> PredictionStore:
+        return PredictionStore(
+            self.aggregator,
+            self.milestones,
+            season=self.settings.current_season,
+            season_games_total=self.settings.season_games_total,
+            tracked_teams=self.settings.tracked_teams,
+        )
 
     def _reload_player_filter(self) -> None:
         current = self.player_filter.currentData()
@@ -93,40 +112,36 @@ class PredictView(QWidget):
                 self.player_filter.setCurrentIndex(index)
         self.player_filter.blockSignals(False)
 
-    def refresh(self) -> None:
-        checker = MilestoneChecker(
-            self.aggregator,
-            self.milestones,
-            season_games_total=self.settings.season_games_total,
-            ratio_qualifiers=self.settings.get_ratio_qualifiers(),
-        )
-        achieved_rows = checker.get_recorded_milestones(scope="career")
-        achieved = {
-            (int(row["player_id"]), str(row["milestone_key"]))
-            for row in achieved_rows
-        }
+    def refresh(self, *, force_reseed: bool = False) -> None:
+        store = self._prediction_store()
+        if force_reseed:
+            store.reseed()
+        else:
+            store.ensure_seeded()
 
         player_id = self.player_filter.currentData()
-        player_ids = [int(player_id)] if player_id is not None else None
-        predictor = MilestonePredictor(checker, self.settings.current_season)
-        predictions = predictor.predict_career_all(player_ids, achieved_keys=achieved)
-
         grade_filter = self.grade_filter.currentData() or ""
-        if grade_filter:
-            predictions = [p for p in predictions if p.milestone.grade == grade_filter]
+        predictions = store.list_cached(
+            player_id=int(player_id) if player_id is not None else None,
+            grade=grade_filter,
+        )
 
         if not predictions:
-            self.banner.show_info("표시할 통산 마일스톤 예측이 없습니다.")
+            self.banner.show_info(
+                "표시할 통산 마일스톤 예측이 없습니다.\n"
+                "track_from 기준을 넘은 선수가 없거나, 추적 팀·박스스코어를 확인하세요."
+            )
         else:
             self.banner.hide()
 
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(predictions))
         for row_idx, item in enumerate(predictions):
+            grade = item.milestone.grade if item.milestone else item.grade
             values = [
                 item.player_name,
-                item.milestone.label,
-                item.milestone.grade,
+                item.milestone_label,
+                grade,
                 f"{item.current_value:,.0f}",
                 f"{item.threshold:,.0f}",
                 f"{item.remaining:,.0f}",
@@ -137,6 +152,6 @@ class PredictView(QWidget):
                 cell = QTableWidgetItem(str(value))
                 cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 if col_idx == 2:
-                    apply_grade_style(cell, item.milestone.grade)
+                    apply_grade_style(cell, grade)
                 self.table.setItem(row_idx, col_idx, cell)
         self.table.setSortingEnabled(True)

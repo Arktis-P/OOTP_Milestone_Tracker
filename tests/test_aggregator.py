@@ -110,6 +110,25 @@ def test_import_all_new(aggregator: Aggregator) -> None:
     assert again.candidates == 0
 
 
+def test_import_mlb_only_filter(aggregator: Aggregator, tmp_path: Path) -> None:
+    mlb = tmp_path / "game_box_90001.html"
+    mlb.write_bytes((SAMPLES_BOX / "game_box_13.html").read_bytes())
+    wbc = tmp_path / "game_box_90002.html"
+    wbc.write_text(
+        "<html><head><title>WBC Box Score, Korea at Japan</title></head></html>",
+        encoding="utf-8",
+    )
+
+    mlb_only = aggregator.import_all_new(tmp_path, season=2026, mlb_only=True)
+    assert mlb_only.imported == 1
+    assert mlb_only.skipped_non_mlb == 1
+
+    again = aggregator.import_all_new(tmp_path, season=2026, mlb_only=True)
+    assert again.imported == 0
+    assert again.skipped_existing == 1
+    assert again.skipped_non_mlb == 1
+
+
 def test_import_mtime_filter(aggregator: Aggregator) -> None:
     import time
 
