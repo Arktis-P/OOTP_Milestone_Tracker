@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 
-Scope = Literal["career", "season"]
+Scope = Literal["career", "season", "game"]
 
 
 @dataclass(frozen=True)

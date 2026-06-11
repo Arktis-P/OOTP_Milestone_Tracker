@@ -1,5 +1,21 @@
 # 개발 노트
 
+## 2025-06-11 — Phase 2: DB 스키마 & 집계
+
+### 완료
+- `core/db/schema.py` — games, players, batting_logs, pitching_logs, milestone_records
+- `core/stats/aggregator.py` — import_boxscore, import_all_new, 집계 쿼리
+- `core/stats/ip_utils.py` — IP ↔ 아웃카운트 변환
+- `core/parser/batting_notes.py` — doubles/hr/sb/gidp 등 노트 파싱
+- `core/parser/pitching_notes.py` — game_score 등
+- GUI `박스스코어 가져오기` 버튼 + `ImportWorker` (QThread)
+- `data/milestones.json` — career/season/game scope 예시 12개
+- `tests/test_aggregator.py` — 6건 추가 (총 15건 통과)
+
+### 다음 (Phase 3)
+- import 직후 자동 마일스톤 체크 (game/season/career scope)
+- predictor 갱신
+
 ## 2025-06-11 — Phase 1: 박스스코어 / 게임 로그 HTML 파서
 
 ### 완료

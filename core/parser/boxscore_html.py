@@ -51,6 +51,7 @@ class BoxscoreHTMLParser:
         away_batting, home_batting = self._parse_batting_tables(soup, linescore)
         away_pitching, home_pitching = self._parse_pitching_tables(soup, linescore)
         away_notes, home_notes = self._parse_batting_notes(soup)
+        away_pitch_notes, home_pitch_notes = self._parse_pitching_notes(soup)
         game_notes = self._parse_game_notes(soup)
 
         return BoxscoreData(
@@ -61,6 +62,8 @@ class BoxscoreHTMLParser:
             home_pitching=home_pitching,
             away_batting_notes=away_notes,
             home_batting_notes=home_notes,
+            away_pitching_notes=away_pitch_notes,
+            home_pitching_notes=home_pitch_notes,
             game_notes=game_notes,
         )
 
@@ -316,6 +319,21 @@ class BoxscoreHTMLParser:
                 batting_tag = databg.find("b", string=re.compile(r"BATTING", re.I))
                 if batting_tag:
                     text = batting_tag.find_parent("td").get_text("\n", strip=True)
+            notes.append(text)
+        while len(notes) < 2:
+            notes.append("")
+        return notes[0], notes[1]
+
+    def _parse_pitching_notes(self, soup: BeautifulSoup) -> tuple[str, str]:
+        pitching_tables = self._find_stat_tables(soup, required_header="IP")
+        notes: list[str] = []
+        for table in pitching_tables[:2]:
+            databg = table.find_parent("td", class_="databg")
+            text = ""
+            if databg:
+                pitching_tag = databg.find("b", string=re.compile(r"^PITCHING$", re.I))
+                if pitching_tag:
+                    text = pitching_tag.find_parent("td").get_text("\n", strip=True)
             notes.append(text)
         while len(notes) < 2:
             notes.append("")

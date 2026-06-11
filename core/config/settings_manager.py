@@ -19,6 +19,7 @@ class AppSettings:
     paths: dict[str, str] = field(default_factory=dict)
     db_path: str = "data/records.db"
     milestones_path: str = "data/milestones.json"
+    import_state: dict[str, str] = field(default_factory=dict)
 
     @property
     def boxscore_dir(self) -> str:
@@ -81,6 +82,7 @@ class SettingsManager:
             "paths": dict(settings.paths),
             "db_path": settings.db_path,
             "milestones_path": settings.milestones_path,
+            "import_state": dict(settings.import_state),
         }
         self.path.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
@@ -134,7 +136,34 @@ class SettingsManager:
             paths=dict(raw.get("paths", {})),
             db_path=str(raw.get("db_path", "data/records.db")),
             milestones_path=str(raw.get("milestones_path", "data/milestones.json")),
+            import_state=dict(raw.get("import_state", {})),
         )
+
+    def get_last_boxscore_import_at(self, settings: AppSettings, boxscore_dir: str) -> float | None:
+        """Return last import epoch for a boxscore directory, if recorded."""
+        state_dir = settings.import_state.get("boxscore_dir", "")
+        if state_dir != str(Path(boxscore_dir).resolve()):
+            return None
+        raw = settings.import_state.get("last_import_at")
+        if not raw:
+            return None
+        try:
+            from datetime import datetime
+
+            return datetime.fromisoformat(raw).timestamp()
+        except ValueError:
+            return None
+
+    def update_boxscore_import_timestamp(
+        self, settings: AppSettings, boxscore_dir: str
+    ) -> AppSettings:
+        from datetime import datetime, timezone
+
+        settings.import_state = {
+            "boxscore_dir": str(Path(boxscore_dir).resolve()),
+            "last_import_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        return settings
 
 
 def load_settings(path: str | Path | None = None) -> AppSettings:

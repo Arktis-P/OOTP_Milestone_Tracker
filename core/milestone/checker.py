@@ -64,7 +64,7 @@ class MilestoneChecker:
     ) -> int:
         """Persist newly achieved milestones; skip duplicates."""
         recorded = 0
-        conn = self.aggregator._conn
+        conn = self.aggregator.conn
         for item in achievements:
             if not item.achieved:
                 continue
@@ -90,13 +90,21 @@ class MilestoneChecker:
         return recorded
 
     def get_recorded_milestones(self) -> list[dict[str, Any]]:
-        rows = self.aggregator._conn.execute(
+        rows = self.aggregator.conn.execute(
             """
-            SELECT mr.id, p.name AS player_name, mr.milestone_key,
-                   mr.achieved_date, mr.achieved_value, mr.season, mr.notes
+            SELECT mr.id,
+                   COALESCE(p.short_name, p.full_name) AS player_name,
+                   mr.milestone_key,
+                   mr.milestone_label,
+                   mr.scope,
+                   mr.game_id,
+                   mr.achieved_date,
+                   mr.achieved_value,
+                   mr.season,
+                   mr.notes
             FROM milestone_records mr
-            JOIN players p ON p.id = mr.player_id
-            ORDER BY mr.achieved_date DESC, p.name
+            JOIN players p ON p.player_id = mr.player_id
+            ORDER BY mr.achieved_date DESC, player_name
             """
         ).fetchall()
         return [dict(row) for row in rows]

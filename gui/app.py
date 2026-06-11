@@ -57,12 +57,22 @@ class MainWindow(QMainWindow):
             MilestoneView(self._aggregator, self._milestones, self.settings),
             "마일스톤 기록",
         )
-        self._tabs.addTab(StatsView(self._aggregator, self.settings), "선수/팀 기록")
+        stats_view = StatsView(
+            self._aggregator, self.settings, self.settings_manager
+        )
+        stats_view.import_finished.connect(self._on_boxscore_import_finished)
+        self._tabs.addTab(stats_view, "선수/팀 기록")
         self._tabs.addTab(
             PredictView(self._aggregator, self._milestones, self.settings),
             "마일스톤 예측",
         )
         self._tabs.addTab(RosterView(self.settings), "로스터 편집")
+
+    def _on_boxscore_import_finished(self, message: str) -> None:
+        league = self.settings.active_save or "(리그 미선택)"
+        self._status.showMessage(
+            f"{message} · 활성 리그: {league} · 시즌 {self.settings.current_season}"
+        )
 
     def _update_status_message(self) -> None:
         league = self.settings.active_save or "(리그 미선택)"

@@ -10,5 +10,9 @@
     "roster_file": ""
   },
   "db_path": "data/records.db",
-  "milestones_path": "data/milestones.json"
+  "milestones_path": "data/milestones.json",
+  "import_state": {
+    "boxscore_dir": "",
+    "last_import_at": ""
+  }
 }

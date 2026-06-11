@@ -162,7 +162,27 @@ class BoxscoreData:
     home_pitching: list[PitcherLine]
     away_batting_notes: str
     home_batting_notes: str
-    game_notes: GameNotes
+    away_pitching_notes: str = ""
+    home_pitching_notes: str = ""
+    game_notes: GameNotes = field(default_factory=GameNotes)
+
+
+@dataclass
+class ImportResult:
+    game_id: int
+    skipped: bool = False
+    error: str | None = None
+
+
+@dataclass
+class BatchImportResult:
+    imported: int = 0
+    skipped: int = 0
+    skipped_mtime: int = 0
+    skipped_existing: int = 0
+    errors: list[ImportResult] = field(default_factory=list)
+    total_scanned: int = 0
+    candidates: int = 0
 
 
 @dataclass

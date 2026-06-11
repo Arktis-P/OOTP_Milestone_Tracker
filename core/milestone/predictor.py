@@ -66,7 +66,7 @@ class MilestonePredictor:
 
     def _games_played(self, row: dict[str, Any], milestone: MilestoneDefinition) -> int:
         player_id = int(row["id"])
-        conn = self.checker.aggregator._conn
+        conn = self.checker.aggregator.conn
         if milestone.category == "pitching":
             result = conn.execute(
                 """
