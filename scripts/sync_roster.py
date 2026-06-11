@@ -32,10 +32,12 @@ def main() -> None:
         total = 0
         if batting:
             total += importer.sync_roster_file(batting, settings.current_season)
-            print(f"batting roster rows: {batting.name}")
+            names = importer.backfill_player_names_from_file(batting)
+            print(f"batting roster rows: {batting.name} (names refreshed: {names})")
         if pitching:
             total += importer.sync_roster_file(pitching, settings.current_season)
-            print(f"pitching roster rows: {pitching.name}")
+            names = importer.backfill_player_names_from_file(pitching)
+            print(f"pitching roster rows: {pitching.name} (names refreshed: {names})")
         sf = agg.conn.execute(
             "SELECT COUNT(*) FROM player_roster WHERE team_abbr = 'SF'"
         ).fetchone()[0]

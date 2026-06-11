@@ -405,6 +405,27 @@ class InitialImporter:
                 discovered.update(self.discover_mlb_teams_in_file(path))
         return find_unknown_mlb_teams(discovered, known_teams)
 
+    def backfill_player_names_from_file(self, filepath: str | Path) -> int:
+        """Refresh players.full_name from an OOTP export (firstname + lastname)."""
+        path = Path(filepath)
+        if not path.is_file():
+            return 0
+        col_names = BATTING_COLS if "batting" in path.name.lower() else PITCHING_COLS
+        rows = self._parse_file(path, col_names)
+        seen: set[int] = set()
+        updated = 0
+        for row in rows:
+            if int(row.get("league_level_id") or 0) != 1:
+                continue
+            player_id = int(row["player_id"])
+            if player_id in seen:
+                continue
+            seen.add(player_id)
+            self._player_name(player_id, row)
+            updated += 1
+        self.aggregator.conn.commit()
+        return updated
+
     def sync_roster_file(
         self, filepath: str | Path, current_season: int
     ) -> int:

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMessageBox,
@@ -24,6 +25,11 @@ from core.db.meta import get_init_season_coverage
 from core.milestone.definitions import MilestoneDefinitions
 from core.stats.aggregator import Aggregator
 from core.stats.ip_utils import outs_to_ip_str
+from core.stats.player_display import (
+    best_display_name,
+    format_player_header,
+    format_player_list_label,
+)
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.widgets.player_game_log_dialog import PlayerGameLogDialog
@@ -56,6 +62,7 @@ class StatsView(QWidget):
         self.settings_manager = settings_manager or SettingsManager()
         self._import_worker: ImportWorker | None = None
         self._players: list[dict] = []
+        self._players_by_id: dict[int, dict] = {}
         self._career_mode = False
 
         self.banner = ErrorBanner(self)
@@ -79,13 +86,26 @@ class StatsView(QWidget):
         self.season_combo = QComboBox()
         self.season_combo.currentIndexChanged.connect(self._on_season_changed)
 
-        self.player_search = QComboBox()
-        self.player_search.setEditable(True)
-        self.player_search.lineEdit().setPlaceholderText("선수 검색...")
-        self.player_search.lineEdit().textChanged.connect(lambda _t: self.refresh_players())
+        self.player_search = QLineEdit()
+        self.player_search.setPlaceholderText("선수 검색...")
+        self.player_search.setClearButtonEnabled(True)
+        self.player_search.setToolTip(
+            "이름·ID로 목록을 필터합니다. 입력마다 DB를 다시 읽지 않습니다."
+        )
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(250)
+        self._search_timer.timeout.connect(self._apply_player_filter)
 
         self.player_list = QListWidget()
         self.player_list.currentRowChanged.connect(self._on_list_selection)
+
+        self.player_header = QLabel()
+        self.player_header.setWordWrap(True)
+        self.player_header.setTextFormat(Qt.TextFormat.RichText)
+        self.player_header.setStyleSheet(
+            "padding: 8px; background: #2a2a2a; border-radius: 4px;"
+        )
 
         self.info_label = QLabel()
         self.info_label.setWordWrap(True)
@@ -108,9 +128,10 @@ class StatsView(QWidget):
         controls.addWidget(QLabel("시즌:"))
         controls.addWidget(self.season_combo)
         controls.addWidget(QLabel("검색:"))
-        controls.addWidget(self.player_search)
+        controls.addWidget(self.player_search, stretch=1)
 
         right_panel = QVBoxLayout()
+        right_panel.addWidget(self.player_header)
         right_panel.addWidget(self.info_label)
         right_panel.addWidget(QLabel("타격"))
         right_panel.addWidget(self.batting_table)
@@ -132,8 +153,12 @@ class StatsView(QWidget):
         layout.addLayout(controls)
         layout.addWidget(splitter)
 
+        self.player_search.textChanged.connect(self._on_search_text_changed)
         self._reload_seasons()
-        self.refresh_players()
+        self.reload_players()
+
+    def _on_search_text_changed(self, _text: str) -> None:
+        self._search_timer.start()
 
     def _on_career_toggled(self, checked: bool) -> None:
         self._career_mode = checked
@@ -161,34 +186,58 @@ class StatsView(QWidget):
         self.season_combo.addItem("통산", "career")
         self.season_combo.blockSignals(False)
 
-    def refresh_players(self) -> None:
+    def reload_players(self) -> None:
+        """Load player list from DB once (after import or settings change)."""
         self._players = self.aggregator.get_tracked_players(
             self.settings.tracked_teams,
             custom_teams=self.settings.custom_mlb_teams,
         )
-        self.player_list.clear()
+        self._players_by_id = {int(p["player_id"]): p for p in self._players}
         if not self._players:
+            self.player_list.clear()
             self.banner.show_info(
                 "표시할 선수가 없습니다. 박스스코어를 가져오거나 tracked_teams 설정을 확인하세요."
             )
             return
         self.banner.hide()
-        needle = self.player_search.currentText().strip().lower()
+        self._apply_player_filter()
+
+    def refresh_players(self) -> None:
+        """Backward-compatible alias."""
+        self.reload_players()
+
+    def _apply_player_filter(self) -> None:
+        needle = self.player_search.text().strip().lower()
+        previous_id = self._selected_player_id()
+        self.player_list.blockSignals(True)
+        self.player_list.clear()
         for player in self._players:
-            name = str(player.get("full_name") or player.get("short_name") or "")
-            if needle and needle not in name.lower():
+            full = str(player.get("full_name") or "")
+            short = str(player.get("short_name") or "")
+            display = best_display_name(full, short)
+            player_id = str(player["player_id"])
+            haystack = " ".join((display, full, short, player_id)).lower()
+            if needle and needle not in haystack:
                 continue
-            icons = []
-            if player.get("is_batter"):
-                icons.append("B")
-            if player.get("is_pitcher"):
-                icons.append("P")
-            prefix = "/".join(icons)
-            item = QListWidgetItem(f"[{prefix}] {name}" if prefix else name)
+            item = QListWidgetItem(format_player_list_label(player))
             item.setData(Qt.ItemDataRole.UserRole, int(player["player_id"]))
             self.player_list.addItem(item)
-        if self.player_list.count() and self.player_list.currentRow() < 0:
+        if previous_id is not None:
+            for row in range(self.player_list.count()):
+                item = self.player_list.item(row)
+                if item and int(item.data(Qt.ItemDataRole.UserRole)) == previous_id:
+                    self.player_list.setCurrentRow(row)
+                    break
+        elif self.player_list.count():
             self.player_list.setCurrentRow(0)
+        self.player_list.blockSignals(False)
+        if self.player_list.currentRow() >= 0:
+            self._refresh_player_stats()
+        else:
+            self.player_header.setText("선수를 선택하세요.")
+            self.info_label.setText("")
+            self.batting_table.setRowCount(0)
+            self.pitching_table.setRowCount(0)
 
     def _on_list_selection(self, row: int) -> None:
         if row >= 0:
@@ -200,13 +249,23 @@ class StatsView(QWidget):
             return None
         return int(item.data(Qt.ItemDataRole.UserRole))
 
-    def _refresh_player_stats(self) -> None:
+    def _selected_player(self) -> dict | None:
         player_id = self._selected_player_id()
         if player_id is None:
-            self.info_label.setText("선수를 선택하세요.")
+            return None
+        return self._players_by_id.get(player_id)
+
+    def _refresh_player_stats(self) -> None:
+        player = self._selected_player()
+        player_id = self._selected_player_id()
+        if player_id is None or player is None:
+            self.player_header.setText("선수를 선택하세요.")
+            self.info_label.setText("")
             self.batting_table.setRowCount(0)
             self.pitching_table.setRowCount(0)
             return
+
+        self.player_header.setText(format_player_header(player))
 
         career_mode = self._career_mode or self.season_combo.currentData() == "career"
         if career_mode:
@@ -321,15 +380,13 @@ class StatsView(QWidget):
         if self._career_mode:
             return
         player_id = self._selected_player_id()
-        if player_id is None:
+        player = self._selected_player()
+        if player_id is None or player is None:
             return
         season_data = self.season_combo.currentData()
         if season_data == "career":
             return
-        item = self.player_list.currentItem()
-        if not item:
-            return
-        name = item.text().split("] ", 1)[-1]
+        name = best_display_name(player.get("full_name"), player.get("short_name"))
         PlayerGameLogDialog(
             self.aggregator,
             self.settings,
@@ -394,8 +451,7 @@ class StatsView(QWidget):
         self.progress_bar.setVisible(False)
         self.progress_label.setVisible(False)
         self._reload_seasons()
-        self.refresh_players()
-        self._refresh_player_stats()
+        self.reload_players()
 
         result = payload.batch
         parts = [f"{result.imported}경기 추가됨"]

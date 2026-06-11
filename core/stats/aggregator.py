@@ -55,21 +55,46 @@ class Aggregator:
         return {int(row["game_id"]) for row in rows}
 
     def upsert_player(self, player_id: int, short_name: str, full_name: str | None = None) -> None:
-        display = full_name or short_name
+        from core.stats.player_display import looks_abbreviated
+
+        new_short = short_name.strip()
+        row = self._conn.execute(
+            "SELECT full_name, short_name FROM players WHERE player_id = ?",
+            (player_id,),
+        ).fetchone()
+        existing_full = str(row["full_name"]).strip() if row else ""
+        new_full = self._merge_player_full_name(
+            existing_full, new_short, full_name, looks_abbreviated
+        )
         self._conn.execute(
             """
             INSERT INTO players (player_id, full_name, short_name)
             VALUES (?, ?, ?)
             ON CONFLICT(player_id) DO UPDATE SET
-                short_name = COALESCE(excluded.short_name, players.short_name),
-                full_name = CASE
-                    WHEN length(excluded.full_name) > length(players.full_name)
-                    THEN excluded.full_name
-                    ELSE players.full_name
-                END
+                short_name = excluded.short_name,
+                full_name = excluded.full_name
             """,
-            (player_id, display, short_name),
+            (player_id, new_full, new_short),
         )
+
+    @staticmethod
+    def _merge_player_full_name(
+        existing_full: str,
+        short_name: str,
+        full_name: str | None,
+        looks_abbreviated,
+    ) -> str:
+        if full_name:
+            candidate = full_name.strip()
+            if existing_full and looks_abbreviated(candidate):
+                if not looks_abbreviated(existing_full):
+                    return existing_full
+            if len(candidate) >= len(existing_full):
+                return candidate
+            return existing_full or candidate
+        if existing_full and not looks_abbreviated(existing_full):
+            return existing_full
+        return short_name
 
     def import_boxscore(self, data: BoxscoreData, season: int) -> ImportResult:
         game_id = data.meta.game_id
