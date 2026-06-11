@@ -29,6 +29,14 @@ class AppSettings:
         return ""
 
     @property
+    def game_logs_dir(self) -> str:
+        if self.paths.get("game_logs_dir"):
+            return self.paths["game_logs_dir"]
+        if self.active_save_path:
+            return str(Path(self.active_save_path) / "news" / "html" / "game_logs")
+        return ""
+
+    @property
     def roster_file(self) -> str:
         if self.paths.get("roster_file"):
             return self.paths["roster_file"]
@@ -110,6 +118,7 @@ class SettingsManager:
         league = Path(save_path)
         derived = dict(existing)
         derived["boxscore_dir"] = str(league / "news" / "html" / "box_scores")
+        derived["game_logs_dir"] = str(league / "news" / "html" / "game_logs")
         derived.setdefault("roster_file", "")
         return derived
 

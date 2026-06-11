@@ -65,6 +65,22 @@ python build.py
 
 빌드 결과물: `dist/ootp_milestone_tracker/` 및 `dist/ootp_milestone_tracker_vX.X.X.zip`
 
+## 테스트
+
+```bash
+pytest tests/test_parsers.py -v
+```
+
+## 로컬 샘플 파일
+
+OOTP 출력 파일은 `samples/`에 넣어 파서 개발·테스트에 사용합니다 (Git 제외).
+
+```
+samples/
+├── boxscore_html/     ← {리그}/news/html/box_scores/
+└── game_logs_html/    ← {리그}/news/html/game_logs/ (검증용)
+```
+
 ## 설정 파일
 
 - `data/milestones.json` — 마일스톤 기준 정의 (Git 포함)

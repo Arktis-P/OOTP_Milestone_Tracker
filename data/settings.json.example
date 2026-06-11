@@ -6,6 +6,7 @@
   "active_save_path": "",
   "paths": {
     "boxscore_dir": "",
+    "game_logs_dir": "",
     "roster_file": ""
   },
   "db_path": "data/records.db",

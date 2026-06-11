@@ -51,10 +51,162 @@ class PitchingLog:
 
 
 @dataclass
-class GameLog:
+class ParsedGameLog:
+    """Legacy aggregate used by aggregator (Phase 2)."""
+
     game_date: str = ""
     season: int = 0
     home_team: str = ""
     away_team: str = ""
     batting: list[BattingLog] = field(default_factory=list)
     pitching: list[PitchingLog] = field(default_factory=list)
+
+
+# Phase 1 parsed box score / game log structures
+
+
+@dataclass
+class GameMeta:
+    game_id: int
+    date: str
+    away_team: str
+    home_team: str
+    away_score: int
+    home_score: int
+    away_record: str = ""
+    home_record: str = ""
+    away_innings: list[int] = field(default_factory=list)
+    home_innings: list[int] = field(default_factory=list)
+    away_hits: int = 0
+    home_hits: int = 0
+    away_errors: int = 0
+    home_errors: int = 0
+    ballpark: str = ""
+    attendance: int = 0
+    game_time: str = ""
+
+
+@dataclass
+class LineScore:
+    away_team: str
+    home_team: str
+    away_record: str
+    home_record: str
+    away_innings: list[int]
+    home_innings: list[int]
+    away_score: int
+    home_score: int
+    away_hits: int
+    home_hits: int
+    away_errors: int
+    home_errors: int
+
+
+@dataclass
+class BatterLine:
+    player_name: str
+    player_id: int
+    team: str
+    position: str
+    is_substitute: bool
+    sub_label: str
+    ab: int
+    r: int
+    h: int
+    rbi: int
+    bb: int
+    k: int
+    lob: int
+    avg: float
+    season_hr: int
+    season_rbi: int
+
+
+@dataclass
+class PitcherLine:
+    player_name: str
+    player_id: int
+    team: str
+    decision: str
+    decision_record: str
+    ip: float
+    h: int
+    r: int
+    er: int
+    bb: int
+    k: int
+    hr: int
+    bf: int
+    pi: int
+    era: float
+
+
+@dataclass
+class GameNotes:
+    player_of_game: str = ""
+    player_of_game_id: int | None = None
+    ballpark: str = ""
+    weather: str = ""
+    start_time: str = ""
+    game_time: str = ""
+    attendance: int = 0
+    special_notes: str = ""
+
+
+@dataclass
+class BoxscoreData:
+    meta: GameMeta
+    away_batting: list[BatterLine]
+    home_batting: list[BatterLine]
+    away_pitching: list[PitcherLine]
+    home_pitching: list[PitcherLine]
+    away_batting_notes: str
+    home_batting_notes: str
+    game_notes: GameNotes
+
+
+@dataclass
+class InningSummary:
+    runs: int
+    hits: int
+    errors: int
+    lob: int
+    away_score: int
+    home_score: int
+    away_team: str = ""
+    home_team: str = ""
+
+
+@dataclass
+class AtBatData:
+    inning: int
+    half: str
+    batter_name: str
+    batter_id: int
+    batter_hand: str
+    pitcher_name: str = ""
+    pitcher_id: int | None = None
+    pitch_sequence: str = ""
+    result: str = ""
+    hit_type: str = ""
+    exit_velocity: float | None = None
+    distance: int | None = None
+
+
+@dataclass
+class InningData:
+    inning_num: int
+    half: str
+    batting_team: str
+    pitching_team: str
+    at_bats: list[AtBatData] = field(default_factory=list)
+    summary: InningSummary | None = None
+
+
+@dataclass
+class GameLogData:
+    game_id: int
+    date: str
+    away_team: str
+    home_team: str
+    innings: list[InningData] = field(default_factory=list)
