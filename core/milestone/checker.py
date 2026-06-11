@@ -243,9 +243,9 @@ class MilestoneChecker:
 
     def _check_single_game(self, game_id: int, season: int) -> list[MilestoneAchievement]:
         game = self.aggregator.conn.execute(
-            "SELECT date FROM games WHERE game_id = ?", (game_id,)
+            "SELECT date, is_mlb FROM games WHERE game_id = ?", (game_id,)
         ).fetchone()
-        if not game:
+        if not game or not int(game["is_mlb"]):
             return []
         achieved_date = str(game["date"])
         results: list[MilestoneAchievement] = []

@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS games (
     player_of_game_id   INTEGER,
     player_of_game_name TEXT,
     special_notes   TEXT,
+    is_mlb          INTEGER NOT NULL DEFAULT 1,
     imported_at     TEXT DEFAULT (datetime('now'))
 );
 
@@ -204,6 +205,7 @@ def _migrate_post_schema(conn: sqlite3.Connection) -> None:
     _migrate_milestone_records(conn)
     _ensure_player_roster(conn)
     _ensure_milestone_predictions(conn)
+    _ensure_games_is_mlb(conn)
 
 
 def _ensure_db_meta(conn: sqlite3.Connection) -> None:
@@ -343,6 +345,55 @@ def _ensure_player_roster(conn: sqlite3.Connection) -> None:
         )
         """
     )
+
+
+def _ensure_games_is_mlb(conn: sqlite3.Connection) -> None:
+    columns = _table_columns(conn, "games")
+    if not columns:
+        return
+    if "is_mlb" not in columns:
+        conn.execute(
+            "ALTER TABLE games ADD COLUMN is_mlb INTEGER NOT NULL DEFAULT 0"
+        )
+        from core.stats.team_filter import CANONICAL_MLB_TEAMS
+
+        mlb_names = tuple(CANONICAL_MLB_TEAMS.values())
+        if mlb_names:
+            placeholders = ",".join("?" * len(mlb_names))
+            conn.execute(
+                f"""
+                UPDATE games
+                SET is_mlb = 1
+                WHERE away_team IN ({placeholders})
+                   OR home_team IN ({placeholders})
+                """,
+                mlb_names + mlb_names,
+            )
+        non_mlb_ids = [
+            row[0]
+            for row in conn.execute(
+                "SELECT game_id FROM games WHERE is_mlb = 0"
+            ).fetchall()
+        ]
+        if non_mlb_ids:
+            placeholders = ",".join("?" * len(non_mlb_ids))
+            conn.execute(
+                f"DELETE FROM batting_logs WHERE game_id IN ({placeholders})",
+                non_mlb_ids,
+            )
+            conn.execute(
+                f"DELETE FROM pitching_logs WHERE game_id IN ({placeholders})",
+                non_mlb_ids,
+            )
+            if _table_columns(conn, "milestone_records"):
+                conn.execute(
+                    f"DELETE FROM milestone_records WHERE game_id IN ({placeholders})",
+                    non_mlb_ids,
+                )
+            conn.execute(
+                f"DELETE FROM games WHERE game_id IN ({placeholders})",
+                non_mlb_ids,
+            )
 
 
 def _ensure_milestone_predictions(conn: sqlite3.Connection) -> None:

@@ -53,6 +53,7 @@ def main() -> int:
         print("Reset settings.json import_state")
 
     print("Done - DB is empty and ready for import.")
+    print("Next: 1) 초기값 설정 (최초 설정)  2) 박스스코어 가져오기 (MLB만 체크)")
     return 0
 
 

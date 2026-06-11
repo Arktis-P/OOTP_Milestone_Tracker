@@ -23,6 +23,8 @@ from core.stats.models import (
 )
 
 GAME_BOX_GLOB = "game_box_*.html"
+_MLB_GAME_JOIN_B = "JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1"
+_MLB_GAME_JOIN_PL = "JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1"
 
 
 class Aggregator:
@@ -96,14 +98,16 @@ class Aggregator:
             return existing_full
         return short_name
 
-    def import_boxscore(self, data: BoxscoreData, season: int) -> ImportResult:
+    def import_boxscore(
+        self, data: BoxscoreData, season: int, *, is_mlb: bool = True
+    ) -> ImportResult:
         game_id = data.meta.game_id
         if self.game_exists(game_id):
             return ImportResult(game_id=game_id, skipped=True)
 
         try:
             self._conn.execute("BEGIN")
-            self._insert_game(data, season)
+            self._insert_game(data, season, is_mlb=is_mlb)
             away_events = self._batting_events_for_team(data.away_batting_notes)
             home_events = self._batting_events_for_team(data.home_batting_notes)
             away_pitch_events = self._pitching_events_for_team(data.away_pitching_notes)
@@ -184,7 +188,9 @@ class Aggregator:
                 result.candidates += 1
                 try:
                     data = BoxscoreHTMLParser(file_path).parse()
-                    import_result = self.import_boxscore(data, season)
+                    import_result = self.import_boxscore(
+                        data, season, is_mlb=mlb_only
+                    )
                 except ParserError as exc:
                     result.errors.append(ImportResult(game_id=game_id, error=str(exc)))
                     continue
@@ -207,7 +213,9 @@ class Aggregator:
 
         return result
 
-    def _insert_game(self, data: BoxscoreData, season: int) -> None:
+    def _insert_game(
+        self, data: BoxscoreData, season: int, *, is_mlb: bool = True
+    ) -> None:
         meta = data.meta
         notes = data.game_notes
         self._conn.execute(
@@ -217,8 +225,9 @@ class Aggregator:
                 away_score, home_score, away_innings, home_innings,
                 away_hits, home_hits, away_errors, home_errors,
                 ballpark, attendance, game_time, weather,
-                player_of_game_id, player_of_game_name, special_notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                player_of_game_id, player_of_game_name, special_notes,
+                is_mlb
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 meta.game_id,
@@ -241,6 +250,7 @@ class Aggregator:
                 notes.player_of_game_id,
                 notes.player_of_game,
                 notes.special_notes,
+                1 if is_mlb else 0,
             ),
         )
 
@@ -392,6 +402,7 @@ class Aggregator:
                 {_batting_ratio_sql()}
                 COUNT(DISTINCT b.game_id) AS games_played
             FROM batting_logs b
+            {_MLB_GAME_JOIN_B}
             JOIN players p ON p.player_id = b.player_id
             WHERE b.season = ? AND b.player_id = ?
             GROUP BY b.player_id
@@ -448,6 +459,7 @@ class Aggregator:
                 {_pitching_ratio_sql()}
                 COUNT(DISTINCT pl.game_id) AS games
             FROM pitching_logs pl
+            {_MLB_GAME_JOIN_PL}
             JOIN players p ON p.player_id = pl.player_id
             WHERE pl.season = ? AND pl.player_id = ?
             GROUP BY pl.player_id
@@ -539,6 +551,7 @@ class Aggregator:
                 {_batting_ratio_sql()}
                 COUNT(DISTINCT b.game_id) AS games_played
             FROM batting_logs b
+            {_MLB_GAME_JOIN_B}
             JOIN players p ON p.player_id = b.player_id
             WHERE b.season = ?
             GROUP BY b.player_id
@@ -595,6 +608,7 @@ class Aggregator:
                 {_pitching_ratio_sql()}
                 COUNT(DISTINCT pl.game_id) AS games
             FROM pitching_logs pl
+            {_MLB_GAME_JOIN_PL}
             JOIN players p ON p.player_id = pl.player_id
             WHERE pl.season = ?
             GROUP BY pl.player_id
@@ -682,8 +696,9 @@ class Aggregator:
         row = self._conn.execute(
             f"""
             SELECT MAX({column}) AS prior_value
-            FROM batting_logs
-            WHERE player_id = ? AND season = ? AND game_id <> ?
+            FROM batting_logs b
+            JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
+            WHERE b.player_id = ? AND b.season = ? AND b.game_id <> ?
             """,
             (player_id, season, game_id),
         ).fetchone()
@@ -698,8 +713,9 @@ class Aggregator:
             row = self._conn.execute(
                 """
                 SELECT COALESCE(SUM(k), 0) AS prior_value
-                FROM pitching_logs
-                WHERE player_id = ? AND season = ? AND game_id <> ?
+                FROM pitching_logs pl
+                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id <> ?
                 """,
                 (player_id, season, game_id),
             ).fetchone()
@@ -708,8 +724,9 @@ class Aggregator:
             row = self._conn.execute(
                 """
                 SELECT COALESCE(SUM(win), 0) AS prior_value
-                FROM pitching_logs
-                WHERE player_id = ? AND season = ? AND game_id <> ?
+                FROM pitching_logs pl
+                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id <> ?
                 """,
                 (player_id, season, game_id),
             ).fetchone()
@@ -718,8 +735,9 @@ class Aggregator:
             row = self._conn.execute(
                 """
                 SELECT COALESCE(SUM(save), 0) AS prior_value
-                FROM pitching_logs
-                WHERE player_id = ? AND season = ? AND game_id <> ?
+                FROM pitching_logs pl
+                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id <> ?
                 """,
                 (player_id, season, game_id),
             ).fetchone()
@@ -732,13 +750,17 @@ class Aggregator:
         return get_init_season_coverage(self._conn)
 
     def get_db_summary(self) -> dict[str, int]:
-        games = self._conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+        games = self._conn.execute(
+            "SELECT COUNT(*) FROM games WHERE is_mlb = 1"
+        ).fetchone()[0]
         players = self._conn.execute(
             """
             SELECT COUNT(DISTINCT player_id) FROM (
-                SELECT player_id FROM batting_logs
+                SELECT b.player_id FROM batting_logs b
+                JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
                 UNION
-                SELECT player_id FROM pitching_logs
+                SELECT pl.player_id FROM pitching_logs pl
+                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
             )
             """
         ).fetchone()[0]
@@ -748,9 +770,11 @@ class Aggregator:
         rows = self._conn.execute(
             """
             SELECT DISTINCT season FROM (
-                SELECT season FROM batting_logs
+                SELECT b.season FROM batting_logs b
+                JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
                 UNION
-                SELECT season FROM pitching_logs
+                SELECT pl.season FROM pitching_logs pl
+                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
             )
             ORDER BY season DESC
             """
@@ -772,16 +796,22 @@ class Aggregator:
                     p.full_name,
                     p.short_name,
                     EXISTS(
-                        SELECT 1 FROM batting_logs b WHERE b.player_id = p.player_id
+                        SELECT 1 FROM batting_logs b
+                        JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
+                        WHERE b.player_id = p.player_id
                     ) AS is_batter,
                     EXISTS(
-                        SELECT 1 FROM pitching_logs pl WHERE pl.player_id = p.player_id
+                        SELECT 1 FROM pitching_logs pl
+                        JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                        WHERE pl.player_id = p.player_id
                     ) AS is_pitcher
                 FROM players p
                 WHERE p.player_id IN (
-                    SELECT player_id FROM batting_logs
+                    SELECT b.player_id FROM batting_logs b
+                    JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
                     UNION
-                    SELECT player_id FROM pitching_logs
+                    SELECT pl.player_id FROM pitching_logs pl
+                    JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
                     UNION
                     SELECT player_id FROM player_roster
                     UNION
@@ -803,16 +833,24 @@ class Aggregator:
                     p.full_name,
                     p.short_name,
                     EXISTS(
-                        SELECT 1 FROM batting_logs b2 WHERE b2.player_id = p.player_id
+                        SELECT 1 FROM batting_logs b2
+                        JOIN games g2 ON g2.game_id = b2.game_id AND g2.is_mlb = 1
+                        WHERE b2.player_id = p.player_id
                     ) AS is_batter,
                     EXISTS(
-                        SELECT 1 FROM pitching_logs pl2 WHERE pl2.player_id = p.player_id
+                        SELECT 1 FROM pitching_logs pl2
+                        JOIN games g2 ON g2.game_id = pl2.game_id AND g2.is_mlb = 1
+                        WHERE pl2.player_id = p.player_id
                     ) AS is_pitcher
                 FROM players p
                 WHERE p.player_id IN (
-                    SELECT player_id FROM batting_logs WHERE team IN ({placeholders})
+                    SELECT b.player_id FROM batting_logs b
+                    JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
+                    WHERE b.team IN ({placeholders})
                     UNION
-                    SELECT player_id FROM pitching_logs WHERE team IN ({placeholders})
+                    SELECT pl.player_id FROM pitching_logs pl
+                    JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                    WHERE pl.team IN ({placeholders})
                     UNION
                     SELECT player_id FROM player_roster
                     WHERE team_abbr IN ({token_placeholders})
@@ -898,7 +936,7 @@ class Aggregator:
                 b.doubles, b.triples, b.r, b.stolen_bases AS sb,
                 b.season_avg
             FROM batting_logs b
-            JOIN games g ON g.game_id = b.game_id
+            JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
             WHERE b.player_id = ? AND b.season = ?
             ORDER BY b.date, b.game_id
             """,
@@ -931,7 +969,7 @@ class Aggregator:
                 pl.is_cg, pl.is_sho,
                 pl.decision
             FROM pitching_logs pl
-            JOIN games g ON g.game_id = pl.game_id
+            JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
             WHERE pl.player_id = ? AND pl.season = ?
             ORDER BY pl.date, pl.game_id
             """,
@@ -1017,15 +1055,27 @@ class Aggregator:
             (player_id,),
         ).fetchone()
         log_games = self._conn.execute(
-            "SELECT COUNT(DISTINCT game_id) FROM pitching_logs WHERE player_id = ?",
+            """
+            SELECT COUNT(DISTINCT pl.game_id) FROM pitching_logs pl
+            JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+            WHERE pl.player_id = ?
+            """,
             (player_id,),
         ).fetchone()[0]
         log_cg = self._conn.execute(
-            "SELECT COALESCE(SUM(is_cg),0) FROM pitching_logs WHERE player_id = ?",
+            """
+            SELECT COALESCE(SUM(pl.is_cg),0) FROM pitching_logs pl
+            JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+            WHERE pl.player_id = ?
+            """,
             (player_id,),
         ).fetchone()[0]
         log_sho = self._conn.execute(
-            "SELECT COALESCE(SUM(is_sho),0) FROM pitching_logs WHERE player_id = ?",
+            """
+            SELECT COALESCE(SUM(pl.is_sho),0) FROM pitching_logs pl
+            JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+            WHERE pl.player_id = ?
+            """,
             (player_id,),
         ).fetchone()[0]
         data["g"] = int(init[0]) + int(log_games)
@@ -1168,9 +1218,13 @@ class Aggregator:
             token_ph = ",".join("?" * len(tokens))
             query += f"""
                 AND mp.player_id IN (
-                    SELECT player_id FROM batting_logs WHERE team IN ({name_ph})
+                    SELECT b.player_id FROM batting_logs b
+                    JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
+                    WHERE b.team IN ({name_ph})
                     UNION
-                    SELECT player_id FROM pitching_logs WHERE team IN ({name_ph})
+                    SELECT pl.player_id FROM pitching_logs pl
+                    JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                    WHERE pl.team IN ({name_ph})
                     UNION
                     SELECT player_id FROM player_roster
                     WHERE team_abbr IN ({token_ph}) OR team_name IN ({name_ph})
@@ -1275,12 +1329,13 @@ def _career_batting_union_sql(max_init_season: int) -> str:
             WHERE season <= {int(max_init_season)}
             UNION ALL
             SELECT
-                player_id,
-                COUNT(DISTINCT game_id) AS g,
-                SUM(ab), SUM(h), SUM(doubles), SUM(triples), SUM(home_runs),
-                SUM(rbi), SUM(r), SUM(stolen_bases), SUM(bb), SUM(k)
-            FROM batting_logs
-            GROUP BY player_id
+                bl.player_id,
+                COUNT(DISTINCT bl.game_id) AS g,
+                SUM(bl.ab), SUM(bl.h), SUM(bl.doubles), SUM(bl.triples), SUM(bl.home_runs),
+                SUM(bl.rbi), SUM(bl.r), SUM(bl.stolen_bases), SUM(bl.bb), SUM(bl.k)
+            FROM batting_logs bl
+            JOIN games gm ON gm.game_id = bl.game_id AND gm.is_mlb = 1
+            GROUP BY bl.player_id
         )
         GROUP BY player_id
     """
@@ -1305,11 +1360,12 @@ def _career_pitching_union_sql(max_init_season: int) -> str:
             WHERE season <= {int(max_init_season)}
             UNION ALL
             SELECT
-                player_id,
-                SUM(ip_outs), SUM(win), SUM(loss), SUM(save), SUM(k),
-                SUM(er), SUM(h), SUM(bb), SUM(hr)
-            FROM pitching_logs
-            GROUP BY player_id
+                pl.player_id,
+                SUM(pl.ip_outs), SUM(pl.win), SUM(pl.loss), SUM(pl.save), SUM(pl.k),
+                SUM(pl.er), SUM(pl.h), SUM(pl.bb), SUM(pl.hr)
+            FROM pitching_logs pl
+            JOIN games gm ON gm.game_id = pl.game_id AND gm.is_mlb = 1
+            GROUP BY pl.player_id
         )
         GROUP BY player_id
     """
