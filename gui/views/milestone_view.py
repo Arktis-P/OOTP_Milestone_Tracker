@@ -5,6 +5,7 @@ from __future__ import annotations
 import webbrowser
 from pathlib import Path
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -12,6 +13,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QSpinBox,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -20,6 +22,7 @@ from core.config import AppSettings
 from core.milestone.checker import MilestoneChecker
 from core.milestone.definitions import MilestoneDefinitions
 from core.stats.aggregator import Aggregator
+from gui.widgets.grade_styles import apply_grade_style
 from gui.widgets.table_widgets import TablePanel
 
 
@@ -96,24 +99,29 @@ class MilestoneView(QWidget):
             season=season,
             search=search,
         )
-        rows = []
-        for record in self._records:
+        self.table_panel.table.setSortingEnabled(False)
+        self.table_panel.table.setRowCount(len(self._records))
+        for row_idx, record in enumerate(self._records):
             milestone = self.milestones.get_by_key(record["milestone_key"])
             label = milestone.label if milestone else record.get("milestone_label", record["milestone_key"])
             grade = milestone.grade if milestone else "common"
-            rows.append(
-                [
-                    record["player_name"],
-                    label,
-                    grade,
-                    record.get("scope") or "",
-                    record["achieved_date"],
-                    record["achieved_value"],
-                    record.get("season") or "",
-                    record.get("game_id") or "",
-                ]
-            )
-        self.table_panel.table.populate(rows)
+            values = [
+                record["player_name"],
+                label,
+                grade,
+                record.get("scope") or "",
+                record["achieved_date"],
+                record["achieved_value"],
+                record.get("season") or "",
+                record.get("game_id") or "",
+            ]
+            for col_idx, value in enumerate(values):
+                item = QTableWidgetItem("" if value is None else str(value))
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                if col_idx == 2:
+                    apply_grade_style(item, grade)
+                self.table_panel.table.setItem(row_idx, col_idx, item)
+        self.table_panel.table.setSortingEnabled(True)
 
     def run_season_end_check(self) -> None:
         season = self.settings.current_season

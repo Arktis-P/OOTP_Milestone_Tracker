@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QRadioButton,
     QVBoxLayout,
@@ -22,6 +23,7 @@ from core.config import AppSettings, SettingsManager
 from core.stats.aggregator import Aggregator
 from core.stats.initial_import import ImportMode, InitialImporter, InitImportResult
 from gui.widgets.init_compare_dialog import InitCompareDialog
+from gui.workers.initial_import_worker import InitialImportWorker
 
 
 class InitialImportView(QWidget):
@@ -37,8 +39,14 @@ class InitialImportView(QWidget):
         self.settings = settings
         self.settings_manager = settings_manager
         self.importer = InitialImporter(aggregator)
+        self._import_worker: InitialImportWorker | None = None
+        self._pending_import: dict | None = None
 
         self.status_label = QLabel()
+        self.progress_label = QLabel()
+        self.progress_label.setVisible(False)
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
         self._update_status()
 
         self.batting_path = QLineEdit()
@@ -91,6 +99,8 @@ class InitialImportView(QWidget):
         layout.addWidget(files_group)
         layout.addWidget(mode_group_box)
         layout.addLayout(button_row)
+        layout.addWidget(self.progress_label)
+        layout.addWidget(self.progress_bar)
         layout.addStretch()
 
         self._prefill_paths()
@@ -189,15 +199,51 @@ class InitialImportView(QWidget):
             self._update_status()
             return
 
-        if preview:
-            self.importer.import_all(batting_path, pitching_path, mode, season, persist=True)
-        else:
-            path = batting_path if kind == "batting" else pitching_path
-            fn = self.importer.import_batting if kind == "batting" else self.importer.import_pitching
-            fn(path, mode, season, persist=True)
+        self._pending_import = {
+            "batting_path": batting_path if kind in ("batting", "all") else None,
+            "pitching_path": pitching_path if kind in ("pitching", "all") else None,
+            "mode": mode,
+            "season": season,
+        }
+        self._start_persist_worker()
 
+    def _start_persist_worker(self) -> None:
+        if not self._pending_import:
+            return
+        self.progress_bar.setVisible(True)
+        self.progress_label.setVisible(True)
+        self.progress_bar.setValue(0)
+        payload = self._pending_import
+        self._import_worker = InitialImportWorker(
+            self.aggregator,
+            batting_path=payload["batting_path"],
+            pitching_path=payload["pitching_path"],
+            mode=payload["mode"],
+            current_season=payload["season"],
+            persist=True,
+            parent=self,
+        )
+        self._import_worker.progress.connect(self._on_import_progress)
+        self._import_worker.finished.connect(self._on_import_finished)
+        self._import_worker.error.connect(self._on_import_error)
+        self._import_worker.start()
+
+    def _on_import_progress(self, current: int, total: int, filename: str) -> None:
+        self.progress_bar.setMaximum(max(total, 1))
+        self.progress_bar.setValue(current)
+        self.progress_label.setText(f"저장 중... ({current}/{total}) {filename}")
+
+    def _on_import_finished(self, _results: object) -> None:
+        self.progress_bar.setVisible(False)
+        self.progress_label.setVisible(False)
+        self._pending_import = None
         self._update_status()
         QMessageBox.information(self, "완료", "임포트가 완료되었습니다.")
+
+    def _on_import_error(self, message: str) -> None:
+        self.progress_bar.setVisible(False)
+        self.progress_label.setVisible(False)
+        QMessageBox.critical(self, "임포트 실패", message)
 
     def _should_persist_after_preview(
         self, results: list[InitImportResult], mode: ImportMode, season: int

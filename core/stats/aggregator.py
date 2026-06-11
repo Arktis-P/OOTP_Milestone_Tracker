@@ -119,6 +119,7 @@ class Aggregator:
         season: int,
         *,
         since_mtime: float | None = None,
+        progress_callback: Any | None = None,
     ) -> BatchImportResult:
         directory = Path(boxscore_dir)
         if not directory.is_dir():
@@ -130,7 +131,10 @@ class Aggregator:
         known_ids = self.get_known_game_ids()
         result = BatchImportResult(total_scanned=len(files))
 
-        for file_path in files:
+        for index, file_path in enumerate(files, start=1):
+            if progress_callback:
+                progress_callback(index, len(files), file_path.name)
+
             if since_mtime is not None and file_path.stat().st_mtime <= since_mtime:
                 result.skipped_mtime += 1
                 continue
@@ -405,6 +409,8 @@ class Aggregator:
                 SUM(pl.win) AS wins,
                 SUM(pl.loss) AS losses,
                 SUM(pl.save) AS saves,
+                SUM(pl.is_cg) AS cg,
+                SUM(pl.is_sho) AS sho,
                 {_pitching_ratio_sql()}
                 COUNT(DISTINCT pl.game_id) AS games
             FROM pitching_logs pl
@@ -690,6 +696,244 @@ class Aggregator:
         from core.db.meta import get_init_season_coverage
 
         return get_init_season_coverage(self._conn)
+
+    def get_db_summary(self) -> dict[str, int]:
+        games = self._conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+        players = self._conn.execute(
+            """
+            SELECT COUNT(DISTINCT player_id) FROM (
+                SELECT player_id FROM batting_logs
+                UNION
+                SELECT player_id FROM pitching_logs
+            )
+            """
+        ).fetchone()[0]
+        return {"games": int(games), "players": int(players)}
+
+    def get_available_seasons(self) -> list[int]:
+        rows = self._conn.execute(
+            """
+            SELECT DISTINCT season FROM (
+                SELECT season FROM batting_logs
+                UNION
+                SELECT season FROM pitching_logs
+            )
+            ORDER BY season DESC
+            """
+        ).fetchall()
+        return [int(row[0]) for row in rows]
+
+    def get_tracked_players(self, tracked_teams: list[str] | None = None) -> list[dict[str, Any]]:
+        teams = [team.strip() for team in (tracked_teams or []) if team.strip()]
+        if not teams:
+            rows = self._conn.execute(
+                """
+                SELECT
+                    p.player_id,
+                    p.full_name,
+                    p.short_name,
+                    EXISTS(
+                        SELECT 1 FROM batting_logs b WHERE b.player_id = p.player_id
+                    ) AS is_batter,
+                    EXISTS(
+                        SELECT 1 FROM pitching_logs pl WHERE pl.player_id = p.player_id
+                    ) AS is_pitcher
+                FROM players p
+                WHERE p.player_id IN (
+                    SELECT player_id FROM batting_logs
+                    UNION
+                    SELECT player_id FROM pitching_logs
+                )
+                ORDER BY p.full_name
+                """
+            ).fetchall()
+        else:
+            placeholders = ",".join("?" * len(teams))
+            rows = self._conn.execute(
+                f"""
+                SELECT DISTINCT
+                    p.player_id,
+                    p.full_name,
+                    p.short_name,
+                    EXISTS(
+                        SELECT 1 FROM batting_logs b2 WHERE b2.player_id = p.player_id
+                    ) AS is_batter,
+                    EXISTS(
+                        SELECT 1 FROM pitching_logs pl2 WHERE pl2.player_id = p.player_id
+                    ) AS is_pitcher
+                FROM players p
+                WHERE p.player_id IN (
+                    SELECT player_id FROM batting_logs WHERE team IN ({placeholders})
+                    UNION
+                    SELECT player_id FROM pitching_logs WHERE team IN ({placeholders})
+                )
+                ORDER BY p.full_name
+                """,
+                teams + teams,
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def player_has_init_stats(self, player_id: int) -> bool:
+        batting = self._conn.execute(
+            "SELECT 1 FROM career_batting_init WHERE player_id = ? LIMIT 1",
+            (player_id,),
+        ).fetchone()
+        pitching = self._conn.execute(
+            "SELECT 1 FROM career_pitching_init WHERE player_id = ? LIMIT 1",
+            (player_id,),
+        ).fetchone()
+        return batting is not None or pitching is not None
+
+    def get_player_batting_game_logs(
+        self, player_id: int, season: int
+    ) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT
+                b.game_id,
+                b.date,
+                b.team,
+                g.away_team,
+                g.home_team,
+                b.ab, b.h, b.home_runs AS hr, b.rbi, b.bb, b.k,
+                b.doubles, b.triples, b.r, b.stolen_bases AS sb,
+                b.season_avg
+            FROM batting_logs b
+            JOIN games g ON g.game_id = b.game_id
+            WHERE b.player_id = ? AND b.season = ?
+            ORDER BY b.date, b.game_id
+            """,
+            (player_id, season),
+        ).fetchall()
+        result = []
+        for row in rows:
+            data = dict(row)
+            if data["team"] == data["away_team"]:
+                data["opponent"] = data["home_team"]
+            else:
+                data["opponent"] = data["away_team"]
+            result.append(data)
+        return result
+
+    def get_player_pitching_game_logs(
+        self, player_id: int, season: int
+    ) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT
+                pl.game_id,
+                pl.date,
+                pl.team,
+                g.away_team,
+                g.home_team,
+                pl.ip_outs,
+                pl.h, pl.er, pl.bb, pl.k, pl.hr,
+                pl.win, pl.loss, pl.save,
+                pl.is_cg, pl.is_sho,
+                pl.decision
+            FROM pitching_logs pl
+            JOIN games g ON g.game_id = pl.game_id
+            WHERE pl.player_id = ? AND pl.season = ?
+            ORDER BY pl.date, pl.game_id
+            """,
+            (player_id, season),
+        ).fetchall()
+        result = []
+        for row in rows:
+            data = dict(row)
+            data["ip"] = outs_to_ip_str(int(data["ip_outs"]))
+            if data["team"] == data["away_team"]:
+                data["opponent"] = data["home_team"]
+            else:
+                data["opponent"] = data["away_team"]
+            result.append(data)
+        return result
+
+    def get_player_career_batting_row(self, player_id: int) -> dict[str, Any] | None:
+        max_init = self._get_max_init_season()
+        row = self._conn.execute(
+            f"""
+            SELECT
+                totals.player_id,
+                p.full_name,
+                totals.career_games AS g,
+                totals.career_ab AS ab,
+                totals.career_h AS h,
+                totals.career_doubles AS doubles,
+                totals.career_triples AS triples,
+                totals.career_hr AS hr,
+                totals.career_rbi AS rbi,
+                totals.career_r AS r,
+                totals.career_bb AS bb,
+                totals.career_k AS k,
+                totals.career_sb AS sb,
+                ROUND(CAST(totals.career_h AS REAL) / NULLIF(totals.career_ab, 0), 3) AS avg
+            FROM ({_career_batting_union_sql(max_init)}) totals
+            JOIN players p ON p.player_id = totals.player_id
+            WHERE totals.player_id = ?
+            """,
+            (player_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_player_career_pitching_row(self, player_id: int) -> dict[str, Any] | None:
+        max_init = self._get_max_init_season()
+        row = self._conn.execute(
+            f"""
+            SELECT
+                totals.player_id,
+                p.full_name,
+                totals.career_ip_outs AS ip_outs,
+                totals.career_ha AS h,
+                totals.career_er AS er,
+                totals.career_bb AS bb,
+                totals.career_k AS k,
+                totals.career_hr AS hr,
+                totals.career_wins AS w,
+                totals.career_losses AS l,
+                totals.career_saves AS s,
+                ROUND(
+                    CAST(totals.career_er * 27 AS REAL) / NULLIF(totals.career_ip_outs, 0), 2
+                ) AS era,
+                ROUND(
+                    CAST(totals.career_bb + totals.career_ha AS REAL)
+                    / NULLIF(totals.career_ip_outs / 3.0, 0), 3
+                ) AS whip
+            FROM ({_career_pitching_union_sql(max_init)}) totals
+            JOIN players p ON p.player_id = totals.player_id
+            WHERE totals.player_id = ?
+            """,
+            (player_id,),
+        ).fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        data["ip"] = outs_to_ip_str(int(data["ip_outs"]))
+        init = self._conn.execute(
+            """
+            SELECT COALESCE(SUM(g),0) AS g, COALESCE(SUM(gs),0) AS gs,
+                   COALESCE(SUM(cg),0) AS cg, COALESCE(SUM(sho),0) AS sho
+            FROM career_pitching_init WHERE player_id = ?
+            """,
+            (player_id,),
+        ).fetchone()
+        log_games = self._conn.execute(
+            "SELECT COUNT(DISTINCT game_id) FROM pitching_logs WHERE player_id = ?",
+            (player_id,),
+        ).fetchone()[0]
+        log_cg = self._conn.execute(
+            "SELECT COALESCE(SUM(is_cg),0) FROM pitching_logs WHERE player_id = ?",
+            (player_id,),
+        ).fetchone()[0]
+        log_sho = self._conn.execute(
+            "SELECT COALESCE(SUM(is_sho),0) FROM pitching_logs WHERE player_id = ?",
+            (player_id,),
+        ).fetchone()[0]
+        data["g"] = int(init[0]) + int(log_games)
+        data["gs"] = int(init[1])
+        data["cg"] = int(init[2]) + int(log_cg)
+        data["sho"] = int(init[3]) + int(log_sho)
+        return data
 
     def get_players_in_game(self, game_id: int) -> list[dict[str, Any]]:
         rows = self._conn.execute(

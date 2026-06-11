@@ -22,6 +22,7 @@ class ImportFinishedPayload:
 
 class ImportWorker(QThread):
     finished = pyqtSignal(object)
+    progress = pyqtSignal(int, int, str)
     error = pyqtSignal(str)
 
     def __init__(
@@ -50,6 +51,9 @@ class ImportWorker(QThread):
                 self.boxscore_dir,
                 self.season,
                 since_mtime=self.since_mtime,
+                progress_callback=lambda cur, total, name: self.progress.emit(
+                    cur, total, name
+                ),
             )
             settings = self.settings_manager.load()
             updated = self.settings_manager.update_boxscore_import_timestamp(

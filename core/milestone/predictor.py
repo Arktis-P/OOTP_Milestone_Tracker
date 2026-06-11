@@ -1,4 +1,4 @@
-"""Milestone achievement prediction (pace-based)."""
+"""Milestone achievement prediction."""
 
 from __future__ import annotations
 
@@ -26,8 +26,22 @@ class MilestonePrediction:
     on_pace: bool
 
 
+@dataclass
+class CareerMilestonePrediction:
+    player_id: int
+    player_name: str
+    milestone: MilestoneDefinition
+    current_value: float
+    threshold: float
+    remaining: float
+    progress_pct: float
+    season_possible: bool | None
+    season_projected_add: float
+    season_note: str
+
+
 class MilestonePredictor:
-    """Estimate season-end milestone attainment based on current pace."""
+    """Estimate milestone attainment."""
 
     def __init__(self, checker: MilestoneChecker, season: int) -> None:
         self.checker = checker
@@ -67,6 +81,130 @@ class MilestonePredictor:
                     )
                 )
         return predictions
+
+    def predict_career_all(
+        self,
+        player_ids: list[int] | None = None,
+        *,
+        achieved_keys: set[tuple[int, str]] | None = None,
+    ) -> list[CareerMilestonePrediction]:
+        achieved = achieved_keys or set()
+        players = self.checker.aggregator.get_tracked_players()
+        if player_ids is not None:
+            id_set = set(player_ids)
+            players = [player for player in players if player["player_id"] in id_set]
+
+        predictions: list[CareerMilestonePrediction] = []
+        for milestone in self.checker.definitions.all_milestones:
+            if milestone.scope != "career":
+                continue
+            for player in players:
+                player_id = int(player["player_id"])
+                if (player_id, milestone.key) in achieved:
+                    continue
+                current = self._career_value(player_id, milestone)
+                if current is None:
+                    continue
+                if self.checker._is_achieved(current, milestone):
+                    continue
+                remaining = (
+                    milestone.threshold - current
+                    if milestone.direction == "higher"
+                    else current - milestone.threshold
+                )
+                progress = (
+                    (current / milestone.threshold * 100)
+                    if milestone.threshold and milestone.direction == "higher"
+                    else 0.0
+                )
+                season_info = self._estimate_this_season(player_id, milestone, remaining)
+                predictions.append(
+                    CareerMilestonePrediction(
+                        player_id=player_id,
+                        player_name=str(player.get("full_name") or player.get("short_name")),
+                        milestone=milestone,
+                        current_value=current,
+                        threshold=milestone.threshold,
+                        remaining=remaining,
+                        progress_pct=round(progress, 1),
+                        season_possible=season_info["possible"],
+                        season_projected_add=season_info["projected_add"],
+                        season_note=season_info["note"],
+                    )
+                )
+        predictions.sort(key=lambda item: item.progress_pct, reverse=True)
+        return predictions
+
+    def _estimate_this_season(
+        self, player_id: int, milestone: MilestoneDefinition, remaining: float
+    ) -> dict[str, Any]:
+        stat_key = milestone.stat
+        if milestone.category == "batting":
+            season_stats = self.checker.aggregator.get_batting_season(player_id, self.season)
+            col = CAREER_BATTING_STATS.get(stat_key, stat_key).replace("career_", "")
+            if col == "k":
+                col = "k"
+            elif col == "hr":
+                col = "hr"
+            elif col == "h":
+                col = "h"
+            elif col == "rbi":
+                col = "rbi"
+            elif col == "sb":
+                col = "sb"
+            elif col == "bb":
+                col = "bb"
+        else:
+            season_stats = self.checker.aggregator.get_pitching_season(player_id, self.season)
+            col_map = {
+                "career_wins": "wins",
+                "career_k_pit": "k",
+                "career_saves": "saves",
+            }
+            col = col_map.get(stat_key, stat_key)
+
+        if not season_stats:
+            return {
+                "possible": None,
+                "projected_add": 0.0,
+                "note": "데이터 없음",
+            }
+
+        games_played = int(
+            season_stats.get("games_played") or season_stats.get("games") or 0
+        )
+        current_val = float(season_stats.get(col, 0) or 0)
+        if games_played == 0:
+            return {
+                "possible": False,
+                "projected_add": 0.0,
+                "note": "데이터 없음",
+            }
+
+        per_game = current_val / games_played
+        games_remaining = max(self.season_games_total - games_played, 0)
+        projected_add = per_game * games_remaining
+        possible = projected_add >= remaining
+        if possible:
+            note = f"가능 (+{projected_add:.0f})"
+        else:
+            after = max(remaining - projected_add, 0)
+            note = f"불가 (+{projected_add:.0f}, 시즌 후 {after:.0f} 남음)"
+        return {
+            "possible": possible,
+            "projected_add": round(projected_add, 1),
+            "note": note,
+        }
+
+    def _career_value(self, player_id: int, milestone: MilestoneDefinition) -> float | None:
+        stat = milestone.stat
+        if stat in CAREER_BATTING_STATS:
+            key = CAREER_BATTING_STATS[stat]
+            return self.checker.aggregator.get_career_batting_stat(player_id, key)
+        if stat in CAREER_PITCHING_STATS:
+            key = CAREER_PITCHING_STATS[stat]
+            return self.checker.aggregator.get_career_pitching_stat(player_id, key)
+        return None
 
     def _rows_for_milestone(self, milestone: MilestoneDefinition) -> list[dict[str, Any]]:
         agg = self.checker.aggregator

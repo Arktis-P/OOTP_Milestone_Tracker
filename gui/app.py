@@ -20,7 +20,6 @@ from core.stats.aggregator import Aggregator
 from gui.views.initial_import_view import InitialImportView
 from gui.views.milestone_view import MilestoneView
 from gui.views.predict_view import PredictView
-from gui.views.roster_view import RosterView
 from gui.views.setup_view import SetupView
 from gui.views.stats_view import StatsView
 
@@ -65,28 +64,43 @@ class MainWindow(QMainWindow):
             self.settings_manager,
         )
         stats_view.import_finished.connect(self._on_boxscore_import_finished)
-        self._tabs.addTab(stats_view, "선수/팀 기록")
+        self._tabs.addTab(stats_view, "선수 기록")
         self._tabs.addTab(
             PredictView(self._aggregator, self._milestones, self.settings),
             "마일스톤 예측",
         )
-        self._tabs.addTab(RosterView(self.settings), "로스터 편집")
         self._tabs.addTab(
             InitialImportView(self._aggregator, self.settings, self.settings_manager),
             "초기값 설정",
         )
+        setup_tab = SetupView(self.settings_manager, self.settings)
+        setup_tab.setup_completed.connect(self._on_setup_tab_saved)
+        setup_tab.confirm_button.setText("설정 저장")
+        self._tabs.addTab(setup_tab, "설정")
 
-    def _on_boxscore_import_finished(self, message: str) -> None:
-        league = self.settings.active_save or "(리그 미선택)"
-        self._status.showMessage(
-            f"{message} · 활성 리그: {league} · 시즌 {self.settings.current_season}"
-        )
+    def _on_setup_tab_saved(self, settings: AppSettings) -> None:
+        self.settings = settings
+        self._update_status_message()
+        self._build_tabs()
+
+    def _on_boxscore_import_finished(self, _message: str) -> None:
+        self._update_status_message()
 
     def _update_status_message(self) -> None:
         league = self.settings.active_save or "(리그 미선택)"
+        summary = self._aggregator.get_db_summary()
+        last_import = self.settings.import_state.get("last_import_at", "")
+        last_label = last_import[:10] if last_import else "-"
+        teams = (
+            ", ".join(self.settings.tracked_teams)
+            if self.settings.tracked_teams
+            else "전체"
+        )
         self._status.showMessage(
-            f"활성 리그: {league} · OOTP {self.settings.ootp_version} · "
-            f"시즌 {self.settings.current_season}  (클릭하여 리그·시즌 설정)"
+            f"리그: {league} · 시즌 {self.settings.current_season} · "
+            f"추적팀: {teams} · 마지막 가져오기: {last_label} · "
+            f"DB: {summary['games']}경기 / 선수 {summary['players']}명 "
+            f"(클릭하여 설정)"
         )
 
     def _on_status_clicked(self, event) -> None:
@@ -96,7 +110,7 @@ class MainWindow(QMainWindow):
     def open_setup_dialog(self) -> None:
         dialog = QDialog(self)
         dialog.setWindowTitle("리그 설정")
-        dialog.resize(640, 420)
+        dialog.resize(640, 520)
 
         setup = SetupView(self.settings_manager, self.settings, dialog)
         setup.setup_completed.connect(
@@ -125,7 +139,7 @@ class _SetupWindow(QMainWindow):
         self._confirmed = False
 
         self.setWindowTitle("OOTP Milestone Tracker — 설정")
-        self.resize(640, 420)
+        self.resize(640, 520)
 
         setup = SetupView(settings_manager, parent=self)
         setup.setup_completed.connect(self._on_completed)

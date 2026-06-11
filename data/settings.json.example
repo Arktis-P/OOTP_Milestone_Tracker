@@ -17,6 +17,7 @@
     "last_import_at": ""
   },
   "initial_stats_dir": "",
+  "tracked_teams": [],
   "season_games_total": 162,
   "ratio_qualifiers": {
     "batting_ab_per_game": 3.1,

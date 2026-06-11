@@ -22,6 +22,7 @@ class AppSettings:
     milestones_path: str = "data/milestones.csv"
     import_state: dict[str, str] = field(default_factory=dict)
     initial_stats_dir: str = ""
+    tracked_teams: list[str] = field(default_factory=list)
     season_games_total: int = 162
     ratio_qualifiers: dict[str, float] = field(
         default_factory=lambda: {
@@ -123,6 +124,7 @@ class SettingsManager:
             "milestones_path": settings.milestones_path,
             "import_state": dict(settings.import_state),
             "initial_stats_dir": settings.initial_stats_dir,
+            "tracked_teams": list(settings.tracked_teams),
             "season_games_total": settings.season_games_total,
             "ratio_qualifiers": dict(settings.ratio_qualifiers),
         }
@@ -182,6 +184,11 @@ class SettingsManager:
             milestones_path=str(raw.get("milestones_path", "data/milestones.csv")),
             import_state=dict(raw.get("import_state", {})),
             initial_stats_dir=str(raw.get("initial_stats_dir", "")),
+            tracked_teams=[
+                str(team).strip()
+                for team in raw.get("tracked_teams", [])
+                if str(team).strip()
+            ],
             season_games_total=int(raw.get("season_games_total", 162)),
             ratio_qualifiers=dict(
                 raw.get(
