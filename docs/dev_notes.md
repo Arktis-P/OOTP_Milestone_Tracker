@@ -1,5 +1,45 @@
 # 개발 노트
 
+## 2025-06-11 — Phase 6: 팀 마일스톤 + 로스터 편집 + 예측 정리
+
+### 완료
+- `milestones.csv`: `season_ratio` 항목 제거, 팀 마일스톤 13개 추가 (`team_game` 6, `team_manual` 4, `team_season` 3)
+- `ACTIVE_SCOPES` / `PREDICTABLE_SCOPES` — `season_ratio`·팀 scope 예측 제외, career만 예측
+- `core/milestone/team_milestone.py` — 선발/출장 전원 안타·타점, 노히터·퍼펙트, 시즌 승수
+- `MilestoneChecker` — `tracked_teams` 대상 팀 마일스톤 자동 감지, `record_manual_team_milestone`
+- DB: `batting_logs.is_substitute`, `milestone_records.team` 마이그레이션
+- GUI: 마일스톤 기록 탭 개인/팀 필터, 팀 수동 입력 다이얼로그, 임포트 알림에 팀 건수
+- 로스터 편집 탭 — CSV 로드·필터·일괄 수정(set/+/-)·백업 후 저장
+- `tests/test_team_milestones.py`, `tests/test_roster_editor.py`
+
+### 미구현 (향후)
+- `season_ratio` (타율, ERA 등) — 커리어 종료 시점 감지 불가로 별도 Phase 예정
+
+## 2025-06-11 — Phase 5: GUI ↔ 로직 연결 + 포지션 필터
+
+### 완료
+- `MainWindow.data_refreshed` Signal — 박스스코어/초기값/마일스톤/설정 변경 시 탭 동기화
+- `batting_logs.position`, `players.primary_position` 스키마 + 마이그레이션
+- `update_primary_positions()` — 임포트 후 최빈 포지션 반영
+- 선수 기록 탭 포지션 그룹 필터 (`position_filter.py`)
+- `validate_no_overlap()` — init vs 박스스코어 시즌 겹침 경고 (`ErrorBanner`)
+- `scripts/e2e_verify.py` — reset → init → boxscore CLI 검증
+
+## 2025-06-11 — Phase 4: GUI 완성
+
+### 구현 완료
+- 선수 기록 탭: `tracked_teams` 선수 목록, 시즌/통산 전환, 경기별 드릴다운
+- 마일스톤 예측 탭: career scope 미달성, 달성률 정렬, 시즌 달성 가능 여부
+- Import 진행률: `ImportWorker.progress`, 인라인 `QProgressBar`
+- UX: 상태바, `ErrorBanner`, `grade_styles`, `TrackedTeamsWidget`
+
+### 해결된 이슈
+- WBC가 시즌 기록에 섞임 → `games.is_mlb` 필터
+- 팀 약칭 vs 풀네임 불일치 → `team_filter`, `player_roster`
+- SQLite 스레드 오류 → 워커별 독립 DB 연결
+- 선수 이름 약식 표시 → `player_display`, export 백필
+- 잘못된 MLB 팀 추가 팝업 → `league_abbr == MLB` + 구단명 매칭
+
 ## 2025-06-11 — Phase 3: 마일스톤 체커 & 초기값 임포트
 
 ### 완료

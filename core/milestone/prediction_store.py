@@ -57,10 +57,12 @@ class PredictionStore:
         self.season_games_total = season_games_total
         self.tracked_teams = tracked_teams or []
         self.custom_teams = custom_teams or {}
+        from core.milestone.definitions import PREDICTABLE_SCOPES
+
         self._career_milestones = [
             milestone
-            for milestone in milestones.all_milestones
-            if milestone.scope == "career"
+            for milestone in milestones.active_milestones
+            if milestone.scope in PREDICTABLE_SCOPES
         ]
 
     def is_seeded(self) -> bool:
@@ -264,15 +266,9 @@ class PredictionStore:
         season_batting: dict[str, Any] | None,
         season_pitching: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        remaining = (
-            milestone.threshold - current
-            if milestone.direction == "higher"
-            else current - milestone.threshold
-        )
+        remaining = milestone.threshold - current
         progress = (
-            (current / milestone.threshold * 100)
-            if milestone.threshold and milestone.direction == "higher"
-            else 0.0
+            (current / milestone.threshold * 100) if milestone.threshold else 0.0
         )
         season_note = self._season_note(
             milestone, remaining, season_batting, season_pitching
@@ -310,9 +306,7 @@ class PredictionStore:
     def _qualifies_for_watch(milestone: MilestoneDefinition, current: float) -> bool:
         if MilestoneChecker._is_achieved(current, milestone):
             return False
-        if milestone.direction == "higher":
-            return current >= milestone.effective_track_from()
-        return current <= milestone.effective_track_from()
+        return current >= milestone.effective_track_from()
 
     @staticmethod
     def _career_value_from_totals(

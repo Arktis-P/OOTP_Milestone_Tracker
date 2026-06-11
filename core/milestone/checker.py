@@ -6,8 +6,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from core.milestone.definitions import MilestoneDefinition, MilestoneDefinitions
+from core.milestone.definitions import (
+    ACTIVE_SCOPES,
+    MilestoneDefinition,
+    MilestoneDefinitions,
+)
+from core.milestone.team_milestone import get_team_wins, team_stat_value
 from core.stats.aggregator import Aggregator
+from core.stats.team_filter import expand_tracked_teams
 from core.stats.qualifiers import (
     RatioQualifiers,
     get_batting_qualifier,
@@ -68,6 +74,8 @@ class MilestoneAchievement:
     achieved_date: str | None = None
     game_id: int | None = None
     season: int | None = None
+    team: str | None = None
+    notes: str | None = None
 
 
 class MilestoneChecker:
@@ -80,11 +88,15 @@ class MilestoneChecker:
         *,
         season_games_total: int = 162,
         ratio_qualifiers: RatioQualifiers | None = None,
+        tracked_teams: list[str] | None = None,
+        custom_teams: dict[str, str] | None = None,
     ) -> None:
         self.aggregator = aggregator
         self.definitions = definitions
         self.season_games_total = season_games_total
         self.ratio_qualifiers = ratio_qualifiers or RatioQualifiers()
+        self.tracked_teams = tracked_teams or []
+        self.custom_teams = custom_teams or {}
         self._batting_season_cache: dict[tuple[int, int], dict[str, Any] | None] = {}
         self._pitching_season_cache: dict[tuple[int, int], dict[str, Any] | None] = {}
         self._career_batting_cache: dict[int, dict[str, Any] | None] = {}
@@ -105,6 +117,15 @@ class MilestoneChecker:
                 progress_callback(index, total, f"game {game_id}")
             achievements.extend(self._check_single_game(game_id, season))
         return [item for item in achievements if item.achieved]
+
+    def check_team_season_for_teams(
+        self, teams: list[str], season: int
+    ) -> list[MilestoneAchievement]:
+        """Check team_season milestones (e.g. win totals) for given teams."""
+        results: list[MilestoneAchievement] = []
+        for team in teams:
+            results.extend(self._check_team_season(team, season))
+        return [item for item in results if item.achieved]
 
     def _clear_stat_caches(self) -> None:
         self._batting_season_cache.clear()
@@ -185,8 +206,8 @@ class MilestoneChecker:
                 """
                 INSERT INTO milestone_records (
                     player_id, milestone_key, milestone_label, scope,
-                    season, game_id, achieved_date, achieved_value
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    season, game_id, achieved_date, achieved_value, team, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     item.player_id,
@@ -197,6 +218,8 @@ class MilestoneChecker:
                     item.game_id,
                     item.achieved_date or "",
                     item.current_value,
+                    item.team,
+                    item.notes,
                 ),
             )
             recorded += 1
@@ -210,10 +233,15 @@ class MilestoneChecker:
         scope: str | None = None,
         season: int | None = None,
         search: str = "",
+        subject: str = "all",
+        team: str | None = None,
     ) -> list[dict[str, Any]]:
         query = """
             SELECT mr.id,
-                   COALESCE(p.short_name, p.full_name) AS player_name,
+                   CASE
+                       WHEN mr.team IS NOT NULL AND mr.team != '' THEN mr.team
+                       ELSE COALESCE(p.short_name, p.full_name, '')
+                   END AS player_name,
                    mr.player_id,
                    mr.milestone_key,
                    mr.milestone_label,
@@ -222,9 +250,10 @@ class MilestoneChecker:
                    mr.achieved_date,
                    mr.achieved_value,
                    mr.season,
-                   mr.notes
+                   mr.notes,
+                   mr.team
             FROM milestone_records mr
-            JOIN players p ON p.player_id = mr.player_id
+            LEFT JOIN players p ON p.player_id = mr.player_id
             WHERE 1 = 1
         """
         params: list[Any] = []
@@ -234,12 +263,51 @@ class MilestoneChecker:
         if season is not None:
             query += " AND mr.season = ?"
             params.append(season)
+        if subject == "personal":
+            query += " AND (mr.team IS NULL OR mr.team = '')"
+        elif subject == "team":
+            query += " AND mr.team IS NOT NULL AND mr.team != ''"
+        if team:
+            query += " AND mr.team = ?"
+            params.append(team)
         if search:
-            query += " AND (player_name LIKE ? OR mr.milestone_label LIKE ?)"
-            params.extend([f"%{search}%", f"%{search}%"])
+            query += """
+                AND (
+                    player_name LIKE ? OR mr.milestone_label LIKE ?
+                    OR mr.team LIKE ?
+                )
+            """
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
         query += " ORDER BY mr.achieved_date DESC, player_name"
         rows = self.aggregator.conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
+
+    def record_manual_team_milestone(
+        self,
+        *,
+        team: str,
+        milestone_key: str,
+        season: int,
+        achieved_date: str,
+        notes: str = "",
+    ) -> bool:
+        milestone = self.definitions.get_by_key(milestone_key)
+        if not milestone or milestone.scope != "team_manual":
+            raise ValueError(f"Unknown team_manual milestone: {milestone_key}")
+        item = MilestoneAchievement(
+            player_id=0,
+            player_name=team,
+            milestone=milestone,
+            current_value=1.0,
+            achieved=True,
+            achieved_date=achieved_date,
+            season=season,
+            team=team,
+            notes=notes or None,
+        )
+        if self._achievement_exists(item):
+            return False
+        return self.record_achievements([item]) == 1
 
     def _check_single_game(self, game_id: int, season: int) -> list[MilestoneAchievement]:
         game = self.aggregator.conn.execute(
@@ -269,8 +337,10 @@ class MilestoneChecker:
             (game_id,),
         ).fetchall()
 
-        for milestone in self.definitions.all_milestones:
-            if milestone.scope == "season_ratio":
+        for milestone in self.definitions.active_milestones:
+            if milestone.scope not in ACTIVE_SCOPES:
+                continue
+            if milestone.scope.startswith("team_"):
                 continue
             if milestone.scope == "game":
                 if milestone.category == "batting":
@@ -320,6 +390,109 @@ class MilestoneChecker:
                     )
                     if result:
                         results.append(result)
+
+        for team in self._tracked_teams_in_game(game_id):
+            results.extend(self._check_team_game(game_id, team, season, achieved_date))
+            results.extend(
+                self._check_team_season(team, season, achieved_date, game_id=game_id)
+            )
+        return results
+
+    def _tracked_teams_in_game(self, game_id: int) -> list[str]:
+        if not self.tracked_teams:
+            return []
+        row = self.aggregator.conn.execute(
+            "SELECT away_team, home_team FROM games WHERE game_id = ?",
+            (game_id,),
+        ).fetchone()
+        if not row:
+            return []
+        names = set(
+            expand_tracked_teams(self.tracked_teams, self.custom_teams)
+        )
+        tokens = {token.strip().upper() for token in self.tracked_teams if token.strip()}
+        matched: list[str] = []
+        for team_name in (str(row["away_team"]), str(row["home_team"])):
+            if team_name in names or team_name.upper() in tokens:
+                matched.append(team_name)
+        return matched
+
+    def _check_team_game(
+        self, game_id: int, team: str, season: int, achieved_date: str
+    ) -> list[MilestoneAchievement]:
+        conn = self.aggregator.conn
+        results: list[MilestoneAchievement] = []
+        for milestone in self.definitions.active_milestones:
+            if milestone.scope != "team_game":
+                continue
+            current = team_stat_value(
+                conn,
+                scope=milestone.scope,
+                stat=milestone.stat,
+                team=team,
+                game_id=game_id,
+                season=season,
+            )
+            if current is None or not self._is_achieved(current, milestone):
+                continue
+            results.append(
+                MilestoneAchievement(
+                    player_id=0,
+                    player_name=team,
+                    milestone=milestone,
+                    current_value=current,
+                    achieved=True,
+                    achieved_date=achieved_date,
+                    game_id=game_id,
+                    season=season,
+                    team=team,
+                )
+            )
+        return results
+
+    def _check_team_season(
+        self,
+        team: str,
+        season: int,
+        achieved_date: str | None = None,
+        *,
+        game_id: int | None = None,
+    ) -> list[MilestoneAchievement]:
+        conn = self.aggregator.conn
+        wins = get_team_wins(conn, team, season)
+        prior_wins = wins
+        if game_id is not None:
+            game = conn.execute(
+                """
+                SELECT home_team, away_team, home_score, away_score
+                FROM games WHERE game_id = ?
+                """,
+                (game_id,),
+            ).fetchone()
+            if game and self._team_won_game(team, dict(game)):
+                prior_wins = max(0, wins - 1)
+        date = achieved_date or f"{season}-12-31"
+        results: list[MilestoneAchievement] = []
+        for milestone in self.definitions.active_milestones:
+            if milestone.scope != "team_season":
+                continue
+            prior = float(prior_wins)
+            current = float(wins)
+            if not self._crossed_threshold(prior, current, milestone):
+                continue
+            results.append(
+                MilestoneAchievement(
+                    player_id=0,
+                    player_name=team,
+                    milestone=milestone,
+                    current_value=current,
+                    achieved=True,
+                    achieved_date=date,
+                    game_id=None,
+                    season=season,
+                    team=team,
+                )
+            )
         return results
 
     def _check_game_batting_row(
@@ -526,7 +699,23 @@ class MilestoneChecker:
     def _achievement_exists(self, item: MilestoneAchievement) -> bool:
         conn = self.aggregator.conn
         scope = item.milestone.scope
-        if scope == "career":
+        if scope == "team_game":
+            row = conn.execute(
+                """
+                SELECT 1 FROM milestone_records
+                WHERE team = ? AND milestone_key = ? AND game_id = ?
+                """,
+                (item.team, item.milestone.key, item.game_id),
+            ).fetchone()
+        elif scope in {"team_season", "team_manual"}:
+            row = conn.execute(
+                """
+                SELECT 1 FROM milestone_records
+                WHERE team = ? AND milestone_key = ? AND season = ?
+                """,
+                (item.team, item.milestone.key, item.season),
+            ).fetchone()
+        elif scope == "career":
             row = conn.execute(
                 """
                 SELECT 1 FROM milestone_records
@@ -557,6 +746,14 @@ class MilestoneChecker:
         if milestone.direction == "lower":
             return current <= milestone.threshold
         return current >= milestone.threshold
+
+    @staticmethod
+    def _team_won_game(team: str, game: dict[str, Any]) -> bool:
+        if game.get("home_team") == team:
+            return int(game.get("home_score") or 0) > int(game.get("away_score") or 0)
+        if game.get("away_team") == team:
+            return int(game.get("away_score") or 0) > int(game.get("home_score") or 0)
+        return False
 
     def _crossed_threshold(
         self, prior: float, current: float, milestone: MilestoneDefinition

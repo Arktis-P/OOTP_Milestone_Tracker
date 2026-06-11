@@ -89,6 +89,11 @@ class PredictView(QWidget):
             self._initial_load_done = True
             self.refresh()
 
+    def on_data_refreshed(self, kind: str) -> None:
+        if kind in ("boxscore", "init", "milestone", "all"):
+            self._reload_player_filter()
+            self.refresh()
+
     def _prediction_store(self) -> PredictionStore:
         return PredictionStore(
             self.aggregator,

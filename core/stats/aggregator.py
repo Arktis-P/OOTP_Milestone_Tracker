@@ -137,6 +137,8 @@ class Aggregator:
                     home_pitch_events.get(pitcher.player_name),
                     data.home_pitching,
                 )
+            batter_ids = [b.player_id for b in data.away_batting + data.home_batting]
+            self.update_primary_positions(batter_ids)
             self._conn.commit()
             return ImportResult(game_id=game_id, skipped=False)
         except Exception as exc:
@@ -211,7 +213,47 @@ class Aggregator:
                 if progress_callback:
                     progress_callback(index, len(files), file_path.name)
 
+        if result.imported:
+            self.update_primary_positions()
+            self._conn.commit()
+
         return result
+
+    def update_primary_positions(self, player_ids: list[int] | None = None) -> int:
+        """Set players.primary_position from most frequent batting_logs.position."""
+        if player_ids:
+            placeholders = ",".join("?" * len(player_ids))
+            id_filter = f"AND bl.player_id IN ({placeholders})"
+            params: tuple[Any, ...] = tuple(player_ids)
+        else:
+            id_filter = ""
+            params = ()
+
+        rows = self._conn.execute(
+            f"""
+            SELECT bl.player_id, bl.position, COUNT(*) AS cnt
+            FROM batting_logs bl
+            JOIN games g ON g.game_id = bl.game_id AND g.is_mlb = 1
+            WHERE bl.position != '' {id_filter}
+            GROUP BY bl.player_id, bl.position
+            ORDER BY bl.player_id, cnt DESC
+            """,
+            params,
+        ).fetchall()
+        best: dict[int, str] = {}
+        for row in rows:
+            player_id = int(row["player_id"])
+            if player_id not in best:
+                best[player_id] = str(row["position"])
+
+        updated = 0
+        for player_id, position in best.items():
+            self._conn.execute(
+                "UPDATE players SET primary_position = ? WHERE player_id = ?",
+                (position, player_id),
+            )
+            updated += 1
+        return updated
 
     def _insert_game(
         self, data: BoxscoreData, season: int, *, is_mlb: bool = True
@@ -277,8 +319,9 @@ class Aggregator:
                 game_id, player_id, season, team, date,
                 ab, r, h, rbi, bb, k, lob,
                 season_avg, season_hr, season_rbi,
-                doubles, triples, home_runs, stolen_bases, hit_by_pitch, gidp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                doubles, triples, home_runs, stolen_bases, hit_by_pitch, gidp,
+                position, is_substitute
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data.meta.game_id,
@@ -302,6 +345,8 @@ class Aggregator:
                 event_counts.stolen_bases,
                 event_counts.hit_by_pitch,
                 event_counts.gidp,
+                batter.position or "",
+                1 if batter.is_substitute else 0,
             ),
         )
 
@@ -795,6 +840,7 @@ class Aggregator:
                     p.player_id,
                     p.full_name,
                     p.short_name,
+                    COALESCE(p.primary_position, '') AS primary_position,
                     EXISTS(
                         SELECT 1 FROM batting_logs b
                         JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
@@ -832,6 +878,7 @@ class Aggregator:
                     p.player_id,
                     p.full_name,
                     p.short_name,
+                    COALESCE(p.primary_position, '') AS primary_position,
                     EXISTS(
                         SELECT 1 FROM batting_logs b2
                         JOIN games g2 ON g2.game_id = b2.game_id AND g2.is_mlb = 1

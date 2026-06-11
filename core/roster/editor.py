@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import csv
+import shutil
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
+
+BulkEditMode = Literal["set", "add", "subtract"]
 
 
 @dataclass
@@ -26,6 +30,7 @@ class RosterEditor:
         self._rows: list[dict[str, str]] = []
         self._fieldnames: list[str] = []
         self._source_path: Path | None = None
+        self._backup_saved = False
 
     @property
     def row_count(self) -> int:
@@ -34,6 +39,14 @@ class RosterEditor:
     @property
     def fieldnames(self) -> list[str]:
         return list(self._fieldnames)
+
+    @property
+    def source_path(self) -> Path | None:
+        return self._source_path
+
+    @property
+    def backup_saved(self) -> bool:
+        return self._backup_saved
 
     def load(self, file_path: str | Path) -> None:
         path = Path(file_path)
@@ -44,9 +57,48 @@ class RosterEditor:
             self._fieldnames = list(reader.fieldnames)
             self._rows = [dict(row) for row in reader]
         self._source_path = path
+        self._backup_saved = False
 
     def filter_rows(self, roster_filter: RosterFilter) -> list[dict[str, str]]:
         return [row for row in self._rows if self._matches(row, roster_filter)]
+
+    def filter_players(
+        self,
+        *,
+        position: str | None = None,
+        age_min: int | None = None,
+        age_max: int | None = None,
+    ) -> list[dict[str, str]]:
+        return self.filter_rows(
+            RosterFilter(position=position, min_age=age_min, max_age=age_max)
+        )
+
+    def bulk_edit(
+        self,
+        rows: list[dict[str, str]],
+        field: str,
+        value: int | float,
+        mode: BulkEditMode = "set",
+    ) -> int:
+        """Modify a numeric field on matching rows."""
+        modified = 0
+        target_ids = {id(row) for row in rows}
+        for row in self._rows:
+            if id(row) not in target_ids:
+                continue
+            key = self._resolve_field_key(row, field)
+            if key not in row and not self._has_field_case_insensitive(row, field):
+                continue
+            current = self._parse_float(row.get(key, "")) or 0.0
+            if mode == "set":
+                new_value = float(value)
+            elif mode == "add":
+                new_value = current + float(value)
+            else:
+                new_value = current - float(value)
+            row[key] = str(int(new_value) if new_value == int(new_value) else new_value)
+            modified += 1
+        return modified
 
     def bulk_edit_rating(
         self,
@@ -55,17 +107,21 @@ class RosterEditor:
         new_value: str | float,
     ) -> int:
         """Set rating_field on matching rows. Returns count of modified rows."""
-        modified = 0
-        target_ids = {id(row) for row in rows}
-        for row in self._rows:
-            if id(row) not in target_ids:
-                continue
-            if rating_field not in row and not self._has_field_case_insensitive(row, rating_field):
-                continue
-            key = self._resolve_field_key(row, rating_field)
-            row[key] = str(new_value)
-            modified += 1
-        return modified
+        try:
+            numeric = float(new_value)
+        except (TypeError, ValueError):
+            return 0
+        return self.bulk_edit(rows, rating_field, numeric, mode="set")
+
+    def save_copy(self, file_path: str | Path | None = None) -> Path:
+        source = Path(file_path) if file_path else self._source_path
+        if source is None:
+            raise ValueError("No source path for backup")
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup = source.with_name(f"{source.stem}_backup_{stamp}{source.suffix}")
+        shutil.copy2(source, backup)
+        self._backup_saved = True
+        return backup
 
     def save(self, file_path: str | Path | None = None) -> Path:
         target = Path(file_path) if file_path else self._source_path
@@ -78,12 +134,17 @@ class RosterEditor:
             writer.writerows(self._rows)
         return target
 
+    def snapshot_rows(self) -> list[dict[str, str]]:
+        return deepcopy(self._rows)
+
     def _matches(self, row: dict[str, str], roster_filter: RosterFilter) -> bool:
         checks: list[Callable[[], bool]] = []
 
         if roster_filter.position:
             pos = self._get_field(row, "position", "Position", "Pos")
-            checks.append(lambda: pos.lower() == roster_filter.position.lower())
+            checks.append(
+                lambda: roster_filter.position.lower() in pos.lower()  # type: ignore[union-attr]
+            )
 
         if roster_filter.min_age is not None:
             age = self._parse_int(self._get_field(row, "age", "Age"))
@@ -98,9 +159,13 @@ class RosterEditor:
         ):
             rating = self._parse_float(self._get_field(row, roster_filter.rating_field))
             if roster_filter.min_rating is not None:
-                checks.append(lambda: rating is not None and rating >= roster_filter.min_rating)
+                checks.append(
+                    lambda: rating is not None and rating >= roster_filter.min_rating
+                )
             if roster_filter.max_rating is not None:
-                checks.append(lambda: rating is not None and rating <= roster_filter.max_rating)
+                checks.append(
+                    lambda: rating is not None and rating <= roster_filter.max_rating
+                )
 
         return all(check() for check in checks) if checks else True
 
@@ -140,6 +205,3 @@ class RosterEditor:
             if key.lower() == field.lower():
                 return key
         return field
-
-    def snapshot_rows(self) -> list[dict[str, str]]:
-        return deepcopy(self._rows)

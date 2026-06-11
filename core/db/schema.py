@@ -32,9 +32,10 @@ CREATE TABLE IF NOT EXISTS games (
 );
 
 CREATE TABLE IF NOT EXISTS players (
-    player_id       INTEGER PRIMARY KEY,
-    full_name       TEXT NOT NULL,
-    short_name      TEXT
+    player_id           INTEGER PRIMARY KEY,
+    full_name           TEXT NOT NULL,
+    short_name          TEXT,
+    primary_position    TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS batting_logs (
@@ -60,6 +61,8 @@ CREATE TABLE IF NOT EXISTS batting_logs (
     stolen_bases    INTEGER NOT NULL DEFAULT 0,
     hit_by_pitch    INTEGER NOT NULL DEFAULT 0,
     gidp            INTEGER NOT NULL DEFAULT 0,
+    position        TEXT NOT NULL DEFAULT '',
+    is_substitute   INTEGER NOT NULL DEFAULT 0,
     UNIQUE(game_id, player_id)
 );
 
@@ -157,6 +160,7 @@ CREATE TABLE IF NOT EXISTS milestone_records (
     achieved_date   TEXT NOT NULL,
     achieved_value  REAL NOT NULL,
     notes           TEXT,
+    team            TEXT,
     recorded_at     TEXT DEFAULT (datetime('now'))
 );
 """
@@ -206,6 +210,9 @@ def _migrate_post_schema(conn: sqlite3.Connection) -> None:
     _ensure_player_roster(conn)
     _ensure_milestone_predictions(conn)
     _ensure_games_is_mlb(conn)
+    _ensure_position_columns(conn)
+    _ensure_batting_substitute_column(conn)
+    _ensure_milestone_records_team(conn)
 
 
 def _ensure_db_meta(conn: sqlite3.Connection) -> None:
@@ -394,6 +401,33 @@ def _ensure_games_is_mlb(conn: sqlite3.Connection) -> None:
                 f"DELETE FROM games WHERE game_id IN ({placeholders})",
                 non_mlb_ids,
             )
+
+
+def _ensure_position_columns(conn: sqlite3.Connection) -> None:
+    player_cols = _table_columns(conn, "players")
+    if player_cols and "primary_position" not in player_cols:
+        conn.execute(
+            "ALTER TABLE players ADD COLUMN primary_position TEXT NOT NULL DEFAULT ''"
+        )
+    batting_cols = _table_columns(conn, "batting_logs")
+    if batting_cols and "position" not in batting_cols:
+        conn.execute(
+            "ALTER TABLE batting_logs ADD COLUMN position TEXT NOT NULL DEFAULT ''"
+        )
+
+
+def _ensure_batting_substitute_column(conn: sqlite3.Connection) -> None:
+    columns = _table_columns(conn, "batting_logs")
+    if columns and "is_substitute" not in columns:
+        conn.execute(
+            "ALTER TABLE batting_logs ADD COLUMN is_substitute INTEGER NOT NULL DEFAULT 0"
+        )
+
+
+def _ensure_milestone_records_team(conn: sqlite3.Connection) -> None:
+    columns = _table_columns(conn, "milestone_records")
+    if columns and "team" not in columns:
+        conn.execute("ALTER TABLE milestone_records ADD COLUMN team TEXT")
 
 
 def _ensure_milestone_predictions(conn: sqlite3.Connection) -> None:

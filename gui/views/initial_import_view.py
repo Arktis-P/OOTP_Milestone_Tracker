@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QFileDialog,
@@ -28,6 +29,8 @@ from gui.workers.initial_import_worker import InitialImportWorker
 
 
 class InitialImportView(QWidget):
+    import_finished = pyqtSignal()
+
     def __init__(
         self,
         aggregator: Aggregator,
@@ -248,6 +251,7 @@ class InitialImportView(QWidget):
         self.progress_label.setVisible(False)
         self._pending_import = None
         self._update_status()
+        self.import_finished.emit()
         QMessageBox.information(self, "완료", "임포트가 완료되었습니다.")
 
     def _on_import_error(self, message: str) -> None:

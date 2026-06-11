@@ -5,7 +5,7 @@ from __future__ import annotations
 import webbrowser
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -22,11 +22,15 @@ from core.config import AppSettings
 from core.milestone.checker import MilestoneChecker
 from core.milestone.definitions import MilestoneDefinitions
 from core.stats.aggregator import Aggregator
+from core.stats.team_filter import expand_tracked_teams
 from gui.widgets.grade_styles import apply_grade_style
 from gui.widgets.table_widgets import TablePanel
+from gui.widgets.team_milestone_dialog import TeamMilestoneDialog
 
 
 class MilestoneView(QWidget):
+    records_changed = pyqtSignal()
+
     def __init__(
         self,
         aggregator: Aggregator,
@@ -40,41 +44,57 @@ class MilestoneView(QWidget):
         self.settings = settings
         self._records: list[dict] = []
 
+        self.subject_combo = QComboBox()
+        self.subject_combo.addItem("전체", "all")
+        self.subject_combo.addItem("개인만", "personal")
+        self.subject_combo.addItem("팀만", "team")
+        self.subject_combo.currentIndexChanged.connect(self.refresh)
+
+        self.team_filter = QComboBox()
+        self.team_filter.addItem("팀 전체", "")
+        self._reload_team_filter()
+        self.team_filter.currentIndexChanged.connect(self.refresh)
+
         self.scope_combo = QComboBox()
         self.scope_combo.addItem("전체 scope", "")
         self.scope_combo.addItem("경기", "game")
         self.scope_combo.addItem("시즌", "season")
         self.scope_combo.addItem("통산", "career")
-        self.scope_combo.addItem("시즌 비율", "season_ratio")
+        self.scope_combo.addItem("팀 경기", "team_game")
+        self.scope_combo.addItem("팀 시즌", "team_season")
+        self.scope_combo.addItem("팀 수동", "team_manual")
         self.scope_combo.currentIndexChanged.connect(self.refresh)
 
         self.season_spin = QSpinBox()
         self.season_spin.setRange(1900, 2100)
-        self.season_spin.setValue(self.settings.current_season)
         self.season_spin.setSpecialValueText("전체")
         self.season_spin.setMinimum(0)
         self.season_spin.setValue(0)
         self.season_spin.valueChanged.connect(self.refresh)
 
         self.table_panel = TablePanel(
-            ["선수", "마일스톤", "등급", "scope", "달성일", "달성 수치", "시즌", "경기"],
-            placeholder="선수 또는 마일스톤 검색...",
+            ["선수/팀", "마일스톤", "등급", "scope", "달성일", "달성 수치", "시즌", "경기"],
+            placeholder="선수·팀 또는 마일스톤 검색...",
         )
         self.table_panel.filter_bar.search_input.textChanged.connect(self.refresh)
 
         self.refresh_button = QPushButton("새로고침")
-        self.season_end_button = QPushButton("시즌 종료 체크")
+        self.manual_button = QPushButton("팀 마일스톤 수동 입력")
         self.refresh_button.clicked.connect(self.refresh)
-        self.season_end_button.clicked.connect(self.run_season_end_check)
+        self.manual_button.clicked.connect(self._open_manual_dialog)
         self.table_panel.table.cellDoubleClicked.connect(self._open_game_log)
 
         button_row = QHBoxLayout()
+        button_row.addWidget(QLabel("대상:"))
+        button_row.addWidget(self.subject_combo)
+        button_row.addWidget(QLabel("팀:"))
+        button_row.addWidget(self.team_filter)
         button_row.addWidget(QLabel("scope:"))
         button_row.addWidget(self.scope_combo)
         button_row.addWidget(QLabel("시즌:"))
         button_row.addWidget(self.season_spin)
         button_row.addWidget(self.refresh_button)
-        button_row.addWidget(self.season_end_button)
+        button_row.addWidget(self.manual_button)
         button_row.addStretch()
         button_row.addWidget(QLabel("더블클릭: 게임 로그 열기"))
 
@@ -84,20 +104,48 @@ class MilestoneView(QWidget):
 
         self.refresh()
 
+    def _reload_team_filter(self) -> None:
+        current = self.team_filter.currentData()
+        self.team_filter.blockSignals(True)
+        self.team_filter.clear()
+        self.team_filter.addItem("팀 전체", "")
+        names = expand_tracked_teams(
+            self.settings.tracked_teams, self.settings.custom_mlb_teams
+        )
+        for name in sorted(set(names)):
+            self.team_filter.addItem(name, name)
+        if current:
+            index = self.team_filter.findData(current)
+            if index >= 0:
+                self.team_filter.setCurrentIndex(index)
+        self.team_filter.blockSignals(False)
+
+    def on_data_refreshed(self, kind: str) -> None:
+        if kind in ("boxscore", "milestone", "all"):
+            if kind == "all":
+                self._reload_team_filter()
+            self.refresh()
+
     def refresh(self) -> None:
         checker = MilestoneChecker(
             self.aggregator,
             self.milestones,
             season_games_total=self.settings.season_games_total,
             ratio_qualifiers=self.settings.get_ratio_qualifiers(),
+            tracked_teams=self.settings.tracked_teams,
+            custom_teams=self.settings.custom_mlb_teams,
         )
         scope = self.scope_combo.currentData()
         season = self.season_spin.value() or None
         search = self.table_panel.filter_bar.search_input.text().strip()
+        subject = self.subject_combo.currentData() or "all"
+        team = self.team_filter.currentData() or None
         self._records = checker.get_recorded_milestones(
             scope=scope or None,
             season=season,
             search=search,
+            subject=subject,
+            team=team or None,
         )
         self.table_panel.table.setSortingEnabled(False)
         self.table_panel.table.setRowCount(len(self._records))
@@ -105,8 +153,11 @@ class MilestoneView(QWidget):
             milestone = self.milestones.get_by_key(record["milestone_key"])
             label = milestone.label if milestone else record.get("milestone_label", record["milestone_key"])
             grade = milestone.grade if milestone else "common"
+            display_name = record["player_name"]
+            if record.get("team"):
+                display_name = str(record["team"])
             values = [
-                record["player_name"],
+                display_name,
                 label,
                 grade,
                 record.get("scope") or "",
@@ -123,31 +174,16 @@ class MilestoneView(QWidget):
                 self.table_panel.table.setItem(row_idx, col_idx, item)
         self.table_panel.table.setSortingEnabled(True)
 
-    def run_season_end_check(self) -> None:
-        season = self.settings.current_season
-        if self.season_spin.value():
-            season = self.season_spin.value()
-        checker = MilestoneChecker(
+    def _open_manual_dialog(self) -> None:
+        dialog = TeamMilestoneDialog(
             self.aggregator,
             self.milestones,
-            season_games_total=self.settings.season_games_total,
-            ratio_qualifiers=self.settings.get_ratio_qualifiers(),
+            self.settings,
+            parent=self,
         )
-        achievements = checker.check_season_ratios(season)
-        if not achievements:
-            QMessageBox.information(
-                self,
-                "시즌 종료 체크",
-                f"{season}시즌 비율 마일스톤 달성 없음 (또는 자격 미충족).",
-            )
-            return
-        recorded = checker.record_achievements(achievements)
-        QMessageBox.information(
-            self,
-            "시즌 종료 체크",
-            f"{recorded}건의 비율 마일스톤을 기록했습니다.",
-        )
-        self.refresh()
+        if dialog.exec():
+            self.refresh()
+            self.records_changed.emit()
 
     def _open_game_log(self, row: int, _column: int) -> None:
         if row < 0 or row >= len(self._records):

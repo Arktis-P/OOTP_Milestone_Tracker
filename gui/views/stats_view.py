@@ -30,6 +30,10 @@ from core.stats.player_display import (
     format_player_header,
     format_player_list_label,
 )
+from core.stats.position_filter import (
+    POSITION_FILTER_OPTIONS,
+    player_matches_position_group,
+)
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.widgets.player_game_log_dialog import PlayerGameLogDialog
@@ -86,6 +90,11 @@ class StatsView(QWidget):
         self.season_combo = QComboBox()
         self.season_combo.currentIndexChanged.connect(self._on_season_changed)
 
+        self.position_combo = QComboBox()
+        for label, value in POSITION_FILTER_OPTIONS:
+            self.position_combo.addItem(label, value)
+        self.position_combo.currentIndexChanged.connect(self._apply_player_filter)
+
         self.player_search = QLineEdit()
         self.player_search.setPlaceholderText("선수 검색...")
         self.player_search.setClearButtonEnabled(True)
@@ -127,6 +136,8 @@ class StatsView(QWidget):
         controls.addWidget(self.progress_bar, stretch=1)
         controls.addWidget(QLabel("시즌:"))
         controls.addWidget(self.season_combo)
+        controls.addWidget(QLabel("포지션:"))
+        controls.addWidget(self.position_combo)
         controls.addWidget(QLabel("검색:"))
         controls.addWidget(self.player_search, stretch=1)
 
@@ -186,6 +197,12 @@ class StatsView(QWidget):
         self.season_combo.addItem("통산", "career")
         self.season_combo.blockSignals(False)
 
+    def on_data_refreshed(self, kind: str) -> None:
+        if kind in ("boxscore", "init", "all"):
+            if kind in ("boxscore", "all"):
+                self._reload_seasons()
+            self.reload_players()
+
     def reload_players(self) -> None:
         """Load player list from DB once (after import or settings change)."""
         self._players = self.aggregator.get_tracked_players(
@@ -208,10 +225,13 @@ class StatsView(QWidget):
 
     def _apply_player_filter(self) -> None:
         needle = self.player_search.text().strip().lower()
+        position_group = str(self.position_combo.currentData() or "")
         previous_id = self._selected_player_id()
         self.player_list.blockSignals(True)
         self.player_list.clear()
         for player in self._players:
+            if not player_matches_position_group(player, position_group):
+                continue
             full = str(player.get("full_name") or "")
             short = str(player.get("short_name") or "")
             display = best_display_name(full, short)
@@ -458,7 +478,21 @@ class StatsView(QWidget):
         if result.skipped_non_mlb:
             parts.append(f"MLB 외 {result.skipped_non_mlb}건 스킵")
         if payload.milestones_recorded:
-            parts.append(f"마일스톤 {payload.milestones_recorded}건 달성")
+            team_count = sum(
+                1
+                for item in payload.milestones
+                if item.milestone.scope.startswith("team_")
+            )
+            personal_count = payload.milestones_recorded - team_count
+            milestone_parts = []
+            if personal_count:
+                milestone_parts.append(f"개인 {personal_count}")
+            if team_count:
+                milestone_parts.append(f"팀 {team_count}")
+            label = " · ".join(milestone_parts) if milestone_parts else str(
+                payload.milestones_recorded
+            )
+            parts.append(f"마일스톤 {label}건 달성")
         message = " · ".join(parts)
         self.import_finished.emit(message)
 

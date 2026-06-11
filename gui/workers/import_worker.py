@@ -66,6 +66,8 @@ class ImportWorker(QThread):
                     self.milestones,
                     season_games_total=self.settings.season_games_total,
                     ratio_qualifiers=self.settings.get_ratio_qualifiers(),
+                    tracked_teams=self.settings.tracked_teams,
+                    custom_teams=self.settings.custom_mlb_teams,
                 )
                 achievements: list[MilestoneAchievement] = []
                 if result.imported_game_ids:
