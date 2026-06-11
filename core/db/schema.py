@@ -93,24 +93,55 @@ CREATE TABLE IF NOT EXISTS pitching_logs (
     UNIQUE(game_id, player_id)
 );
 
+CREATE TABLE IF NOT EXISTS db_meta (
+    key     TEXT PRIMARY KEY,
+    value   TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS career_batting_init (
     player_id   INTEGER NOT NULL,
     season      INTEGER NOT NULL,
-    g INTEGER, pa INTEGER, ab INTEGER, h INTEGER,
-    doubles INTEGER, triples INTEGER, hr INTEGER, rbi INTEGER,
-    r INTEGER, sb INTEGER, cs INTEGER, bb INTEGER,
-    hbp INTEGER, k INTEGER, sh INTEGER, sf INTEGER, gdp INTEGER,
+    g           INTEGER NOT NULL DEFAULT 0,
+    pa          INTEGER NOT NULL DEFAULT 0,
+    ab          INTEGER NOT NULL DEFAULT 0,
+    h           INTEGER NOT NULL DEFAULT 0,
+    doubles     INTEGER NOT NULL DEFAULT 0,
+    triples     INTEGER NOT NULL DEFAULT 0,
+    hr          INTEGER NOT NULL DEFAULT 0,
+    rbi         INTEGER NOT NULL DEFAULT 0,
+    r           INTEGER NOT NULL DEFAULT 0,
+    sb          INTEGER NOT NULL DEFAULT 0,
+    cs          INTEGER NOT NULL DEFAULT 0,
+    bb          INTEGER NOT NULL DEFAULT 0,
+    hbp         INTEGER NOT NULL DEFAULT 0,
+    k           INTEGER NOT NULL DEFAULT 0,
+    sh          INTEGER NOT NULL DEFAULT 0,
+    sf          INTEGER NOT NULL DEFAULT 0,
+    gdp         INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (player_id, season)
 );
 
 CREATE TABLE IF NOT EXISTS career_pitching_init (
     player_id   INTEGER NOT NULL,
     season      INTEGER NOT NULL,
-    g INTEGER, gs INTEGER, w INTEGER, l INTEGER, s INTEGER,
-    ip_outs INTEGER,
-    ha INTEGER, r INTEGER, er INTEGER, bb INTEGER,
-    hbp INTEGER, k INTEGER, bf INTEGER, hr INTEGER,
-    cg INTEGER, sho INTEGER, wp INTEGER, bk INTEGER, holds INTEGER,
+    g           INTEGER NOT NULL DEFAULT 0,
+    gs          INTEGER NOT NULL DEFAULT 0,
+    w           INTEGER NOT NULL DEFAULT 0,
+    l           INTEGER NOT NULL DEFAULT 0,
+    s           INTEGER NOT NULL DEFAULT 0,
+    ip_outs     INTEGER NOT NULL DEFAULT 0,
+    ha          INTEGER NOT NULL DEFAULT 0,
+    r           INTEGER NOT NULL DEFAULT 0,
+    er          INTEGER NOT NULL DEFAULT 0,
+    bb          INTEGER NOT NULL DEFAULT 0,
+    hbp         INTEGER NOT NULL DEFAULT 0,
+    k           INTEGER NOT NULL DEFAULT 0,
+    hr          INTEGER NOT NULL DEFAULT 0,
+    cg          INTEGER NOT NULL DEFAULT 0,
+    sho         INTEGER NOT NULL DEFAULT 0,
+    wp          INTEGER NOT NULL DEFAULT 0,
+    bk          INTEGER NOT NULL DEFAULT 0,
+    holds       INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (player_id, season)
 );
 
@@ -152,15 +183,93 @@ def init_database(db_path: str | Path) -> None:
     conn = sqlite3.connect(path)
     try:
         conn.executescript(SCHEMA_SQL)
-        _migrate_schema(conn)
+        _migrate_pre_schema(conn)
+        conn.executescript(SCHEMA_SQL)
+        _migrate_post_schema(conn)
         conn.commit()
     finally:
         conn.close()
 
 
-def _migrate_schema(conn: sqlite3.Connection) -> None:
+def _migrate_pre_schema(conn: sqlite3.Connection) -> None:
+    _ensure_db_meta(conn)
+    _migrate_players_table(conn)
+    _migrate_legacy_log_tables(conn)
+
+
+def _migrate_post_schema(conn: sqlite3.Connection) -> None:
+    _ensure_db_meta(conn)
+    _migrate_init_schema_v2(conn)
     _ensure_pitching_special_columns(conn)
     _migrate_milestone_records(conn)
+
+
+def _ensure_db_meta(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS db_meta (
+            key     TEXT PRIMARY KEY,
+            value   TEXT NOT NULL
+        )
+        """
+    )
+    from core.db.meta import ensure_meta_defaults
+
+    ensure_meta_defaults(conn)
+
+
+def _migrate_players_table(conn: sqlite3.Connection) -> None:
+    columns = _table_columns(conn, "players")
+    if not columns or "player_id" in columns:
+        return
+    if "id" not in columns:
+        return
+    conn.executescript(
+        """
+        CREATE TABLE players_v2 (
+            player_id       INTEGER PRIMARY KEY,
+            full_name       TEXT NOT NULL,
+            short_name      TEXT
+        );
+        INSERT INTO players_v2 (player_id, full_name, short_name)
+        SELECT id, name, name FROM players;
+        DROP TABLE players;
+        ALTER TABLE players_v2 RENAME TO players;
+        """
+    )
+
+
+def _migrate_legacy_log_tables(conn: sqlite3.Connection) -> None:
+    """Replace pre-Phase-2 empty log tables that use an older column layout."""
+    games_cols = _table_columns(conn, "games")
+    if games_cols and "away_team" not in games_cols:
+        if conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 0:
+            conn.execute("DROP TABLE games")
+
+    batting_cols = _table_columns(conn, "batting_logs")
+    if batting_cols and "game_id" not in batting_cols:
+        if conn.execute("SELECT COUNT(*) FROM batting_logs").fetchone()[0] == 0:
+            conn.execute("DROP TABLE batting_logs")
+
+    pitching_cols = _table_columns(conn, "pitching_logs")
+    if pitching_cols and "ip_outs" not in pitching_cols:
+        if conn.execute("SELECT COUNT(*) FROM pitching_logs").fetchone()[0] == 0:
+            conn.execute("DROP TABLE pitching_logs")
+
+
+def _migrate_init_schema_v2(conn: sqlite3.Connection) -> None:
+    from core.db.meta import get_meta, set_meta
+
+    version = get_meta(conn, "init_schema_version", "1")
+    if version == "2":
+        return
+    conn.execute("DELETE FROM career_batting_init")
+    conn.execute("DELETE FROM career_pitching_init")
+    set_meta(conn, "init_season_coverage", "0")
+    set_meta(conn, "init_batting_imported_at", "")
+    set_meta(conn, "init_pitching_imported_at", "")
+    set_meta(conn, "init_last_refreshed_at", "")
+    set_meta(conn, "init_schema_version", "2")
 
 
 def _table_columns(conn: sqlite3.Connection, table: str) -> set[str]:

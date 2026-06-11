@@ -363,6 +363,7 @@ class Aggregator:
         return dict(row) if row else None
 
     def get_batting_career(self, player_id: int) -> dict[str, Any] | None:
+        max_init = self._get_max_init_season()
         row = self._conn.execute(
             f"""
             SELECT
@@ -380,7 +381,7 @@ class Aggregator:
                 totals.career_sb,
                 ROUND(CAST(totals.career_h AS REAL) / NULLIF(totals.career_ab, 0), 3) AS career_avg,
                 totals.career_games
-            FROM ({_career_batting_union_sql()}) totals
+            FROM ({_career_batting_union_sql(max_init)}) totals
             JOIN players p ON p.player_id = totals.player_id
             WHERE totals.player_id = ?
             """,
@@ -440,7 +441,7 @@ class Aggregator:
                     CAST(totals.career_bb + totals.career_ha AS REAL)
                     / NULLIF(totals.career_ip_outs / 3.0, 0), 3
                 ) AS career_whip
-            FROM ({_career_pitching_union_sql()}) totals
+            FROM ({_career_pitching_union_sql(self._get_max_init_season())}) totals
             JOIN players p ON p.player_id = totals.player_id
             WHERE totals.player_id = ?
             """,
@@ -527,7 +528,7 @@ class Aggregator:
                 totals.career_triples AS triples,
                 ROUND(CAST(totals.career_h AS REAL) / NULLIF(totals.career_ab, 0), 3) AS avg,
                 totals.career_games AS career_games
-            FROM ({_career_batting_union_sql()}) totals
+            FROM ({_career_batting_union_sql(self._get_max_init_season())}) totals
             JOIN players p ON p.player_id = totals.player_id
             ORDER BY p.short_name
             """,
@@ -588,7 +589,7 @@ class Aggregator:
                 ROUND(
                     CAST(totals.career_er * 27 AS REAL) / NULLIF(totals.career_ip_outs, 0), 2
                 ) AS era
-            FROM ({_career_pitching_union_sql()}) totals
+            FROM ({_career_pitching_union_sql(self._get_max_init_season())}) totals
             JOIN players p ON p.player_id = totals.player_id
             ORDER BY p.short_name
             """,
@@ -685,6 +686,11 @@ class Aggregator:
             return float(row["prior_value"]) if row else 0.0
         return 0.0
 
+    def _get_max_init_season(self) -> int:
+        from core.db.meta import get_init_season_coverage
+
+        return get_init_season_coverage(self._conn)
+
     def get_players_in_game(self, game_id: int) -> list[dict[str, Any]]:
         rows = self._conn.execute(
             """
@@ -773,8 +779,8 @@ def _pitching_ratio_sql() -> str:
     """
 
 
-def _career_batting_union_sql() -> str:
-    return """
+def _career_batting_union_sql(max_init_season: int) -> str:
+    return f"""
         SELECT
             player_id,
             SUM(g) AS career_games,
@@ -791,6 +797,7 @@ def _career_batting_union_sql() -> str:
         FROM (
             SELECT player_id, g, ab, h, doubles, triples, hr, rbi, r, sb, bb, k
             FROM career_batting_init
+            WHERE season <= {int(max_init_season)}
             UNION ALL
             SELECT
                 player_id,
@@ -804,8 +811,8 @@ def _career_batting_union_sql() -> str:
     """
 
 
-def _career_pitching_union_sql() -> str:
-    return """
+def _career_pitching_union_sql(max_init_season: int) -> str:
+    return f"""
         SELECT
             player_id,
             SUM(ip_outs) AS career_ip_outs,
@@ -818,8 +825,9 @@ def _career_pitching_union_sql() -> str:
             SUM(bb) AS career_bb,
             SUM(hr) AS career_hr
         FROM (
-            SELECT player_id, ip_outs, w, l, s, k, er, ha, bb, hr
+            SELECT player_id, ip_outs, w AS w, l AS l, s AS s, k, er, ha, bb, hr
             FROM career_pitching_init
+            WHERE season <= {int(max_init_season)}
             UNION ALL
             SELECT
                 player_id,

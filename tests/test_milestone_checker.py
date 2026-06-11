@@ -81,7 +81,11 @@ def test_game_scope_multi_hr_triggered(
 def test_career_scope_with_initial_stats(
     aggregator: Aggregator, checker: MilestoneChecker
 ) -> None:
-    InitialImporter(aggregator).import_batting(SAMPLES_STATS / "player_batting_stats.txt")
+    InitialImporter(aggregator).import_batting(
+        SAMPLES_STATS / "player_batting_stats.txt",
+        "first_time",
+        current_season=2026,
+    )
     game_ids = _import_games(aggregator, "game_box_13.html")
     achievements = checker.check_new_games(game_ids, season=2026)
     career500 = [item for item in achievements if item.milestone.key == "career_hr_500"]
@@ -92,7 +96,11 @@ def test_career_scope_with_initial_stats(
 def test_no_duplicate_career_record(
     aggregator: Aggregator, checker: MilestoneChecker
 ) -> None:
-    InitialImporter(aggregator).import_batting(SAMPLES_STATS / "player_batting_stats.txt")
+    InitialImporter(aggregator).import_batting(
+        SAMPLES_STATS / "player_batting_stats.txt",
+        "first_time",
+        current_season=2026,
+    )
     game_ids = _import_games(aggregator, "game_box_13.html", "game_box_14.html")
     first = checker.check_new_games([game_ids[0]], season=2026)
     checker.record_achievements(first)

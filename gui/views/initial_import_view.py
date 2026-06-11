@@ -5,19 +5,23 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt6.QtWidgets import (
+    QButtonGroup,
     QFileDialog,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QVBoxLayout,
     QWidget,
 )
 
 from core.config import AppSettings, SettingsManager
 from core.stats.aggregator import Aggregator
-from core.stats.initial_import import InitialImporter
+from core.stats.initial_import import ImportMode, InitialImporter, InitImportResult
+from gui.widgets.init_compare_dialog import InitCompareDialog
 
 
 class InitialImportView(QWidget):
@@ -34,105 +38,222 @@ class InitialImportView(QWidget):
         self.settings_manager = settings_manager
         self.importer = InitialImporter(aggregator)
 
-        self.dir_input = QLineEdit(self.settings.initial_stats_dir)
-        self.dir_input.setPlaceholderText("player_batting_stats.txt / player_pitching_stats.txt 폴더")
-        browse_button = QPushButton("찾아보기")
-        browse_button.clicked.connect(self._browse_dir)
-
         self.status_label = QLabel()
         self._update_status()
 
-        batting_button = QPushButton("타격 초기값 가져오기")
-        pitching_button = QPushButton("투구 초기값 가져오기")
-        both_button = QPushButton("폴더 내 전체 가져오기")
-        batting_button.clicked.connect(self._import_batting)
-        pitching_button.clicked.connect(self._import_pitching)
-        both_button.clicked.connect(self._import_both)
+        self.batting_path = QLineEdit()
+        self.pitching_path = QLineEdit()
 
-        dir_row = QHBoxLayout()
-        dir_row.addWidget(self.dir_input, stretch=1)
-        dir_row.addWidget(browse_button)
+        self.mode_first = QRadioButton("최초 설정 — 완료 시즌까지 전체 적재")
+        self.mode_refresh = QRadioButton("비시즌 갱신 — 직전 시즌 추가 + 비교")
+        self.mode_mid = QRadioButton("시즌 중 비교 — 저장 없이 차이만 확인")
+        self.mode_first.setChecked(True)
+        if self.importer.is_init_empty():
+            self.mode_first.setChecked(True)
+        else:
+            self.mode_refresh.setChecked(True)
+
+        mode_group = QButtonGroup(self)
+        for button in (self.mode_first, self.mode_refresh, self.mode_mid):
+            mode_group.addButton(button)
+
+        batting_button = QPushButton("타격")
+        pitching_button = QPushButton("투구")
+        all_button = QPushButton("전체 임포트")
+        batting_button.clicked.connect(lambda: self._run_import("batting"))
+        pitching_button.clicked.connect(lambda: self._run_import("pitching"))
+        all_button.clicked.connect(lambda: self._run_import("all"))
 
         button_row = QHBoxLayout()
         button_row.addWidget(batting_button)
         button_row.addWidget(pitching_button)
-        button_row.addWidget(both_button)
+        button_row.addWidget(all_button)
         button_row.addStretch()
 
+        files_group = QGroupBox("파일 선택")
+        files_layout = QVBoxLayout(files_group)
+        files_layout.addLayout(
+            self._path_row("타격", self.batting_path, "player_batting_stats.txt")
+        )
+        files_layout.addLayout(
+            self._path_row("투구", self.pitching_path, "player_pitching_stats.txt")
+        )
+
+        mode_group_box = QGroupBox("임포트 모드")
+        mode_layout = QVBoxLayout(mode_group_box)
+        mode_layout.addWidget(self.mode_first)
+        mode_layout.addWidget(self.mode_refresh)
+        mode_layout.addWidget(self.mode_mid)
+
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("프로그램 도입 이전 통산 기록 (OOTP player_*_stats.txt)"))
-        layout.addLayout(dir_row)
-        layout.addLayout(button_row)
+        layout.addWidget(QLabel("프로그램 도입 이전 통산 기록 (OOTP MLB export)"))
         layout.addWidget(self.status_label)
+        layout.addWidget(files_group)
+        layout.addWidget(mode_group_box)
+        layout.addLayout(button_row)
         layout.addStretch()
 
-    def _browse_dir(self) -> None:
-        selected = QFileDialog.getExistingDirectory(
-            self,
-            "초기값 통계 폴더 선택",
-            self.dir_input.text() or str(Path.home()),
-        )
-        if selected:
-            self.dir_input.setText(selected)
-            self._save_dir(selected)
+        self._prefill_paths()
 
-    def _save_dir(self, directory: str) -> None:
-        self.settings.initial_stats_dir = directory
-        self.settings_manager.save(self.settings)
-
-    def _import_batting(self) -> None:
-        path = self._pick_file("player_batting_stats.txt")
-        if not path:
-            return
-        result = self.importer.import_batting(path)
-        self._show_result("타격 초기값", result.imported, result.errors)
-
-    def _import_pitching(self) -> None:
-        path = self._pick_file("player_pitching_stats.txt")
-        if not path:
-            return
-        result = self.importer.import_pitching(path)
-        self._show_result("투구 초기값", result.imported, result.errors)
-
-    def _import_both(self) -> None:
-        directory = self.dir_input.text().strip()
+    def _prefill_paths(self) -> None:
+        directory = self.settings.initial_stats_dir
         if not directory:
-            QMessageBox.warning(self, "경로 필요", "초기값 폴더를 지정하세요.")
             return
-        self._save_dir(directory)
-        result = self.importer.import_from_settings_dir(directory)
-        self._show_result("초기값", result.imported, result.errors)
+        base = Path(directory)
+        batting = base / "player_batting_stats.txt"
+        pitching = base / "player_pitching_stats.txt"
+        if batting.is_file():
+            self.batting_path.setText(str(batting))
+        if pitching.is_file():
+            self.pitching_path.setText(str(pitching))
 
-    def _pick_file(self, default_name: str) -> Path | None:
-        directory = self.dir_input.text().strip()
-        start = str(Path(directory) / default_name) if directory else default_name
-        selected, _ = QFileDialog.getOpenFileName(
-            self,
-            f"{default_name} 선택",
-            start,
-            "Text files (*.txt);;All files (*)",
-        )
-        if not selected:
-            return None
-        path = Path(selected)
-        self.dir_input.setText(str(path.parent))
-        self._save_dir(str(path.parent))
-        return path
+    def _path_row(self, label: str, field: QLineEdit, default_name: str) -> QHBoxLayout:
+        row = QHBoxLayout()
+        browse = QPushButton("찾아보기")
 
-    def _show_result(self, label: str, imported: int, errors: list[str]) -> None:
-        self._update_status()
-        if errors:
-            QMessageBox.warning(
+        def pick() -> None:
+            start = field.text() or self.settings.initial_stats_dir or str(Path.home())
+            selected, _ = QFileDialog.getOpenFileName(
                 self,
-                label,
-                f"{imported}건 저장됨\n\n오류:\n" + "\n".join(errors[:8]),
+                f"{default_name} 선택",
+                start,
+                "Text files (*.txt);;All files (*)",
             )
+            if selected:
+                field.setText(selected)
+                self.settings.initial_stats_dir = str(Path(selected).parent)
+                self.settings_manager.save(self.settings)
+
+        browse.clicked.connect(pick)
+        row.addWidget(QLabel(label))
+        row.addWidget(field, stretch=1)
+        row.addWidget(browse)
+        return row
+
+    def _selected_mode(self) -> ImportMode:
+        if self.mode_refresh.isChecked():
+            return "refresh"
+        if self.mode_mid.isChecked():
+            return "mid_season"
+        return "first_time"
+
+    def _run_import(self, kind: str) -> None:
+        mode = self._selected_mode()
+        season = self.settings.current_season
+
+        if mode == "mid_season":
+            reply = QMessageBox.warning(
+                self,
+                "시즌 중 임포트",
+                f"현재 시즌({season}) 데이터는 DB에 저장되지 않습니다.\n"
+                "박스스코어 집계값과 비교만 실행합니다.\n\n계속하시겠습니까?",
+                QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Ok,
+            )
+            if reply != QMessageBox.StandardButton.Ok:
+                return
+
+        batting_path = self.batting_path.text().strip() or None
+        pitching_path = self.pitching_path.text().strip() or None
+        if kind == "batting" and not batting_path:
+            QMessageBox.warning(self, "파일 필요", "타격 파일을 선택하세요.")
+            return
+        if kind == "pitching" and not pitching_path:
+            QMessageBox.warning(self, "파일 필요", "투구 파일을 선택하세요.")
+            return
+        if kind == "all" and not batting_path and not pitching_path:
+            QMessageBox.warning(self, "파일 필요", "타격 또는 투구 파일을 선택하세요.")
+            return
+
+        preview = kind == "all"
+        if preview:
+            batting_result, pitching_result = self.importer.import_all(
+                batting_path,
+                pitching_path,
+                mode,
+                season,
+                persist=False,
+            )
+            results = [r for r in (batting_result, pitching_result) if r]
         else:
-            QMessageBox.information(self, label, f"{imported}건 저장되었습니다.")
+            path = batting_path if kind == "batting" else pitching_path
+            fn = self.importer.import_batting if kind == "batting" else self.importer.import_pitching
+            results = [fn(path, mode, season, persist=False)]
+
+        if not self._should_persist_after_preview(results, mode, season):
+            self._update_status()
+            return
+
+        if preview:
+            self.importer.import_all(batting_path, pitching_path, mode, season, persist=True)
+        else:
+            path = batting_path if kind == "batting" else pitching_path
+            fn = self.importer.import_batting if kind == "batting" else self.importer.import_pitching
+            fn(path, mode, season, persist=True)
+
+        self._update_status()
+        QMessageBox.information(self, "완료", "임포트가 완료되었습니다.")
+
+    def _should_persist_after_preview(
+        self, results: list[InitImportResult], mode: ImportMode, season: int
+    ) -> bool:
+        all_diffs: list = []
+        for result in results:
+            if result.errors:
+                QMessageBox.warning(
+                    self,
+                    "오류",
+                    "\n".join(result.errors[:8]),
+                )
+                return False
+            all_diffs.extend(result.diffs)
+
+        if mode == "refresh" and all_diffs:
+            dialog = InitCompareDialog(
+                f"비시즌 갱신 — {season - 1}시즌 비교 결과",
+                all_diffs,
+                allow_save=True,
+                parent=self,
+            )
+            dialog.exec()
+            return dialog.save_confirmed
+
+        if mode == "mid_season":
+            dialog = InitCompareDialog(
+                f"시즌 중 비교 — {season}시즌 (저장되지 않음)",
+                [d for d in all_diffs if d.season == season],
+                allow_save=False,
+                parent=self,
+            )
+            dialog.exec()
+            gap_diffs = [d for d in all_diffs if d.season < season]
+            if gap_diffs:
+                gap_dialog = InitCompareDialog(
+                    "이전 시즌 갱신 비교",
+                    gap_diffs,
+                    allow_save=True,
+                    save_label="파일 기준으로 추가",
+                    parent=self,
+                )
+                gap_dialog.exec()
+                return gap_dialog.save_confirmed
+            return False
+
+        if mode == "refresh" and not all_diffs:
+            reply = QMessageBox.question(
+                self,
+                "비교 결과",
+                f"{season - 1}시즌: 박스스코어와 파일값 차이가 없습니다.\n파일 기준으로 갱신할까요?",
+            )
+            return reply == QMessageBox.StandardButton.Yes
+
+        return True
 
     def _update_status(self) -> None:
         summary = self.importer.get_init_summary()
+        batting_at = summary["batting_imported_at"][:10] if summary["batting_imported_at"] else "-"
+        pitching_at = summary["pitching_imported_at"][:10] if summary["pitching_imported_at"] else "-"
+        coverage = summary["season_coverage"]
         self.status_label.setText(
-            f"타격 초기값: {summary['batting_players']:,}명 · "
-            f"투구 초기값: {summary['pitching_players']:,}명"
+            f"타격: {summary['batting_players']:,}명 · {coverage}시즌까지 (갱신 {batting_at})\n"
+            f"투구: {summary['pitching_players']:,}명 · {coverage}시즌까지 (갱신 {pitching_at})"
         )
