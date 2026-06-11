@@ -95,24 +95,30 @@ class InitialImportView(QWidget):
 
         self._prefill_paths()
 
-    def _prefill_paths(self) -> None:
-        directory = self.settings.initial_stats_dir
+    def _stats_directory(self) -> Path | None:
+        directory = self.settings.import_export_dir or self.settings.initial_stats_dir
         if not directory:
+            return None
+        return Path(directory)
+
+    def _prefill_paths(self) -> None:
+        base = self._stats_directory()
+        if base is None:
             return
-        base = Path(directory)
-        batting = base / "player_batting_stats.txt"
-        pitching = base / "player_pitching_stats.txt"
-        if batting.is_file():
-            self.batting_path.setText(str(batting))
-        if pitching.is_file():
-            self.pitching_path.setText(str(pitching))
+        self.batting_path.setText(str(base / "player_batting_stats.txt"))
+        self.pitching_path.setText(str(base / "player_pitching_stats.txt"))
 
     def _path_row(self, label: str, field: QLineEdit, default_name: str) -> QHBoxLayout:
         row = QHBoxLayout()
         browse = QPushButton("찾아보기")
 
         def pick() -> None:
-            start = field.text() or self.settings.initial_stats_dir or str(Path.home())
+            start = (
+                field.text()
+                or self.settings.import_export_dir
+                or self.settings.initial_stats_dir
+                or str(Path.home())
+            )
             selected, _ = QFileDialog.getOpenFileName(
                 self,
                 f"{default_name} 선택",

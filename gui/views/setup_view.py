@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -94,6 +95,22 @@ class SetupView(QWidget):
         league_layout = QVBoxLayout(league_group)
         league_layout.addLayout(league_row)
 
+        self.season_spin = QSpinBox()
+        self.season_spin.setRange(1900, 2100)
+        self.season_spin.setValue(self.settings.current_season)
+        self.season_spin.setToolTip(
+            "OOTP에서 진행 중인 시즌 연도입니다.\n"
+            "박스스코어 임포트·초기값 임포트 필터·마일스톤 판정에 사용됩니다."
+        )
+
+        season_group = QGroupBox("현재 시즌")
+        season_layout = QFormLayout(season_group)
+        season_layout.addRow("시즌 연도:", self.season_spin)
+        season_layout.addRow(
+            "",
+            QLabel("진행 중인 OOTP 시즌과 일치시키세요. (예: 2026 시즌 진행 중 → 2026)"),
+        )
+
         self.selected_path_label = QLabel("")
         self.selected_path_label.setWordWrap(True)
         self.selected_path_label.setStyleSheet("color: #555;")
@@ -107,6 +124,7 @@ class SetupView(QWidget):
         layout.addSpacing(12)
         layout.addWidget(save_root_group)
         layout.addWidget(league_group)
+        layout.addWidget(season_group)
         layout.addWidget(QLabel("선택된 경로:"))
         layout.addWidget(self.selected_path_label)
         layout.addStretch()
@@ -166,6 +184,8 @@ class SetupView(QWidget):
             index = self.league_combo.findText(self.settings.active_save)
             if index >= 0:
                 self.league_combo.setCurrentIndex(index)
+
+        self.season_spin.setValue(self.settings.current_season)
 
     def _browse_save_root(self) -> None:
         start_dir = self.save_root_input.text().strip() or str(Path.home() / "Documents")
@@ -311,5 +331,6 @@ class SetupView(QWidget):
             save_path=save_path,
             ootp_version=ootp_version,
         )
+        updated.current_season = self.season_spin.value()
         self.settings_manager.save(updated)
         self.setup_completed.emit(updated)

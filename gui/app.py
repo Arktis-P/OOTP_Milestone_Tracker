@@ -86,7 +86,7 @@ class MainWindow(QMainWindow):
         league = self.settings.active_save or "(리그 미선택)"
         self._status.showMessage(
             f"활성 리그: {league} · OOTP {self.settings.ootp_version} · "
-            f"시즌 {self.settings.current_season}  (클릭하여 변경)"
+            f"시즌 {self.settings.current_season}  (클릭하여 리그·시즌 설정)"
         )
 
     def _on_status_clicked(self, event) -> None:

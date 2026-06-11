@@ -47,6 +47,14 @@ class AppSettings:
         return ""
 
     @property
+    def import_export_dir(self) -> str:
+        if self.paths.get("import_export_dir"):
+            return self.paths["import_export_dir"]
+        if self.active_save_path:
+            return str(Path(self.active_save_path) / "import_export")
+        return ""
+
+    @property
     def roster_file(self) -> str:
         if self.paths.get("roster_file"):
             return self.paths["roster_file"]
@@ -82,12 +90,27 @@ class SettingsManager:
         if not self.path.exists():
             example = self.path.with_suffix(".json.example")
             if example.exists():
-                return self._parse_json(example.read_text(encoding="utf-8"))
-            return AppSettings()
+                settings = self._parse_json(example.read_text(encoding="utf-8"))
+            else:
+                settings = AppSettings()
+        else:
+            settings = self._parse_json(self.path.read_text(encoding="utf-8"))
 
-        return self._parse_json(self.path.read_text(encoding="utf-8"))
+        return self.ensure_derived_paths(settings)
+
+    def ensure_derived_paths(self, settings: AppSettings) -> AppSettings:
+        """Fill paths from active_save_path when missing (persist on next save)."""
+        if not settings.active_save_path:
+            return settings
+        settings.paths = self._derive_paths(settings.active_save_path, settings.paths)
+        if not settings.initial_stats_dir:
+            settings.initial_stats_dir = str(
+                Path(settings.active_save_path) / "import_export"
+            )
+        return settings
 
     def save(self, settings: AppSettings) -> None:
+        settings = self.ensure_derived_paths(settings)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "ootp_version": settings.ootp_version,
@@ -132,6 +155,7 @@ class SettingsManager:
         if ootp_version is not None:
             settings.ootp_version = ootp_version
         settings.paths = self._derive_paths(save_path, settings.paths)
+        settings.initial_stats_dir = str(Path(save_path) / "import_export")
         return settings
 
     @staticmethod
@@ -140,6 +164,7 @@ class SettingsManager:
         derived = dict(existing)
         derived["boxscore_dir"] = str(league / "news" / "html" / "box_scores")
         derived["game_logs_dir"] = str(league / "news" / "html" / "game_logs")
+        derived["import_export_dir"] = str(league / "import_export")
         derived.setdefault("roster_file", "")
         return derived
 
