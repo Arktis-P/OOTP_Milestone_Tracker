@@ -3,35 +3,31 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QMessageBox,
     QProgressBar,
-    QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
+    QTableView,
     QVBoxLayout,
     QWidget,
 )
 
 from core.roster.age import age_from_row, get_reference_date
 from core.roster.bulk_rating import (
-    FameLevel,
     PlayerBulkSettings,
     apply_bulk_rules_to_row,
     should_modify_player,
 )
 from core.roster.combined import (
-    CombinedRoster,
     load_combined_roster,
     resolve_combined_paths,
     save_modified_rosters,
@@ -41,20 +37,13 @@ from core.roster.ootp_format import player_display_name
 from core.roster.position_filter import POSITION_GROUP_OPTIONS, matches_position_group
 from core.roster.row_access import row_get
 from core.stats.aggregator import Aggregator
-
-_FAME_OPTIONS: list[tuple[str, FameLevel]] = [
-    ("미선택", FameLevel.NONE),
-    ("지역구", FameLevel.REGIONAL),
-    ("전국구", FameLevel.NATIONAL),
-    ("슈퍼스타", FameLevel.SUPERSTAR),
-]
-
-_COL_EN = 0
-_COL_KO = 1
-_COL_AGE = 2
-_COL_PROSPECT = 3
-_COL_BASE = 4
-_COL_PROSPECT_FAME = 5
+from gui.widgets.bulk_rating_table import (
+    COL_BASE,
+    COL_PROSPECT_FAME,
+    BulkPlayerIndex,
+    BulkRatingTableModel,
+    FameComboDelegate,
+)
 
 
 class BulkRatingDialog(QDialog):
@@ -80,21 +69,31 @@ class BulkRatingDialog(QDialog):
             raise ValueError("로스터에 선수 데이터가 없습니다.")
 
         self.reference_date = get_reference_date(aggregator, settings)
-        self._original_rows = {
-            player.player_id: deepcopy(player.row) for player in self.combined.players
-        }
+        self._original_rows: dict[int, list[str]] = {}
         self._settings: dict[int, PlayerBulkSettings] = {}
-        self._prospect_manual: set[int] = set()
-        self._visible_ids: list[int] = []
+        self._player_indices: list[BulkPlayerIndex] = []
+        self._players_by_id = {p.player_id: p for p in self.combined.players}
+        fieldnames = self.combined.fieldnames
 
         for player in self.combined.players:
-            age = age_from_row(player.row, self.combined.fieldnames, self.reference_date)
+            age = age_from_row(player.row, fieldnames, self.reference_date)
             if age is None:
                 age = 0
             self._settings[player.player_id] = PlayerBulkSettings(
                 player_id=player.player_id,
                 age=age,
                 is_prospect=age <= 25,
+            )
+            name = player_display_name(player.row, fieldnames)
+            self._player_indices.append(
+                BulkPlayerIndex(
+                    player_id=player.player_id,
+                    display_name=name,
+                    name_lower=name.lower(),
+                    nation=row_get(player.row, fieldnames, "Nation").strip(),
+                    position=row_get(player.row, fieldnames, "Position"),
+                    source=player.source,
+                )
             )
 
         self.prospect_boost = QCheckBox("유망주 레이팅 증가 적용")
@@ -104,16 +103,27 @@ class BulkRatingDialog(QDialog):
             f"기준일: {self.reference_date.isoformat()} "
             f"(마지막 가져오기 날짜 우선)"
         )
+        self.count_label = QLabel()
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("이름 검색...")
-        self.search_input.textChanged.connect(self._apply_filters)
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(250)
+        self._search_timer.timeout.connect(self._apply_filters)
+        self.search_input.textChanged.connect(lambda: self._search_timer.start())
 
         self.league_filter = QComboBox()
         self.league_filter.addItem("전체", "")
         self.league_filter.addItem("MLB", "mlb")
         self.league_filter.addItem("KBO", "kbo")
         self.league_filter.currentIndexChanged.connect(self._apply_filters)
+
+        self.nation_filter = QComboBox()
+        self.nation_filter.addItem("전체", "")
+        for nation in self._collect_nations():
+            self.nation_filter.addItem(nation, nation)
+        self.nation_filter.currentIndexChanged.connect(self._apply_filters)
 
         self.position_filter = QComboBox()
         for label, key in POSITION_GROUP_OPTIONS:
@@ -128,15 +138,26 @@ class BulkRatingDialog(QDialog):
         filter_row.addWidget(self.search_input, stretch=1)
         filter_row.addWidget(QLabel("리그:"))
         filter_row.addWidget(self.league_filter)
+        filter_row.addWidget(QLabel("국가:"))
+        filter_row.addWidget(self.nation_filter)
         filter_row.addWidget(QLabel("포지션:"))
         filter_row.addWidget(self.position_filter)
         filter_row.addWidget(self.prospect_only)
 
-        self.table = QTableWidget(0, 6)
-        self.table.setHorizontalHeaderLabels(
-            ["영문명", "한글명", "나이", "유망주", "기본 인지도", "유망주 인지도"]
+        self.model = BulkRatingTableModel(self._player_indices, self._settings, self)
+        self.table = QTableView()
+        self.table.setModel(self.model)
+        self.table.setAlternatingRowColors(True)
+        self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        self.table.setSortingEnabled(False)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
         )
-        self.table.cellChanged.connect(self._on_cell_changed)
+        self.table.setItemDelegateForColumn(COL_BASE, FameComboDelegate(self.table))
+        self.table.setItemDelegateForColumn(
+            COL_PROSPECT_FAME, FameComboDelegate(self.table)
+        )
 
         self.progress = QProgressBar()
         self.progress.setVisible(False)
@@ -154,6 +175,7 @@ class BulkRatingDialog(QDialog):
         layout.addWidget(self.prospect_boost)
         layout.addWidget(self.ref_label)
         layout.addLayout(filter_row)
+        layout.addWidget(self.count_label)
         layout.addWidget(self.table, stretch=1)
         layout.addWidget(self.progress_label)
         layout.addWidget(self.progress)
@@ -161,155 +183,49 @@ class BulkRatingDialog(QDialog):
 
         self._apply_filters()
 
-    def _player_by_id(self) -> dict[int, object]:
-        return {p.player_id: p for p in self.combined.players}
+    def _collect_nations(self) -> list[str]:
+        nations = {meta.nation for meta in self._player_indices if meta.nation}
+        return sorted(nations, key=str.casefold)
 
     def _apply_filters(self) -> None:
         needle = self.search_input.text().strip().lower()
         league = self.league_filter.currentData() or ""
+        nation = self.nation_filter.currentData() or ""
         pos_group = self.position_filter.currentData()
         prospect_only = self.prospect_only.isChecked()
-        fieldnames = self.combined.fieldnames
 
-        visible: list[int] = []
-        for player in self.combined.players:
-            cfg = self._settings[player.player_id]
-            if league and player.source != league:
+        visible_positions: list[int] = []
+        for pos, meta in enumerate(self._player_indices):
+            cfg = self._settings[meta.player_id]
+            if league and meta.source != league:
+                continue
+            if nation and meta.nation != nation:
                 continue
             if prospect_only and not cfg.is_prospect:
                 continue
-            pos = row_get(player.row, fieldnames, "Position")
-            if not matches_position_group(pos, pos_group):
+            if not matches_position_group(meta.position, pos_group):
                 continue
-            name = player_display_name(player.row, fieldnames).lower()
-            if needle and needle not in name:
+            if needle and needle not in meta.name_lower:
                 continue
-            visible.append(player.player_id)
+            visible_positions.append(pos)
 
-        self._visible_ids = visible
-        self._reload_table()
+        self.model.set_visible_rows(visible_positions)
+        total = len(self._player_indices)
+        shown = len(visible_positions)
+        self.count_label.setText(f"표시 {shown:,}명 / 전체 {total:,}명")
 
-    def _reload_table(self) -> None:
-        self.table.blockSignals(True)
-        self.table.setRowCount(len(self._visible_ids))
-        fieldnames = self.combined.fieldnames
-        players = self._player_by_id()
-
-        for row_idx, player_id in enumerate(self._visible_ids):
-            player = players[player_id]
-            cfg = self._settings[player_id]
-            name = player_display_name(player.row, fieldnames)
-
-            self.table.setItem(row_idx, _COL_EN, self._read_only_item(name, player_id))
-            self.table.setItem(row_idx, _COL_KO, self._read_only_item("", player_id))
-
-            age_item = QTableWidgetItem(str(cfg.age))
-            age_item.setData(Qt.ItemDataRole.UserRole, player_id)
-            age_item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
-            self.table.setItem(row_idx, _COL_AGE, age_item)
-
-            prospect_item = QTableWidgetItem()
-            prospect_item.setFlags(
-                Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled
-            )
-            prospect_item.setData(Qt.ItemDataRole.UserRole, player_id)
-            prospect_item.setCheckState(
-                Qt.CheckState.Checked if cfg.is_prospect else Qt.CheckState.Unchecked
-            )
-            prospect_item.setTextAlignment(int(Qt.AlignmentFlag.AlignCenter))
-            self.table.setItem(row_idx, _COL_PROSPECT, prospect_item)
-
-            self.table.setCellWidget(
-                row_idx, _COL_BASE, self._fame_combo(cfg.base_fame, player_id, "base")
-            )
-            self.table.setCellWidget(
-                row_idx,
-                _COL_PROSPECT_FAME,
-                self._fame_combo(cfg.prospect_fame, player_id, "prospect"),
-            )
-
-        self.table.resizeColumnsToContents()
-        self.table.blockSignals(False)
-
-    @staticmethod
-    def _read_only_item(text: str, player_id: int) -> QTableWidgetItem:
-        item = QTableWidgetItem(text)
-        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-        item.setData(Qt.ItemDataRole.UserRole, player_id)
-        return item
-
-    def _fame_combo(
-        self, level: FameLevel, player_id: int, kind: str
-    ) -> QComboBox:
-        combo = QComboBox()
-        for label, value in _FAME_OPTIONS:
-            combo.addItem(label, value)
-        index = combo.findData(level)
-        if index >= 0:
-            combo.setCurrentIndex(index)
-        combo.setProperty("player_id", player_id)
-        combo.setProperty("fame_kind", kind)
-        combo.currentIndexChanged.connect(self._on_fame_changed)
-        return combo
-
-    def _on_fame_changed(self) -> None:
-        combo = self.sender()
-        if not isinstance(combo, QComboBox):
-            return
-        player_id = combo.property("player_id")
-        kind = combo.property("fame_kind")
-        if player_id is None:
-            return
-        cfg = self._settings[int(player_id)]
-        level = combo.currentData()
-        if kind == "base":
-            cfg.base_fame = level
-        else:
-            cfg.prospect_fame = level
-
-    def _on_cell_changed(self, row: int, column: int) -> None:
-        if column == _COL_AGE:
-            item = self.table.item(row, column)
-            if item is None:
-                return
-            player_id = item.data(Qt.ItemDataRole.UserRole)
-            if player_id is None:
-                return
-            player_id = int(player_id)
-            try:
-                age = int(item.text().strip())
-            except ValueError:
-                return
-            cfg = self._settings[player_id]
-            cfg.age = max(0, age)
-            if player_id not in self._prospect_manual:
-                cfg.is_prospect = cfg.age <= 25
-                prospect_item = self.table.item(row, _COL_PROSPECT)
-                if prospect_item:
-                    self.table.blockSignals(True)
-                    prospect_item.setCheckState(
-                        Qt.CheckState.Checked
-                        if cfg.is_prospect
-                        else Qt.CheckState.Unchecked
-                    )
-                    self.table.blockSignals(False)
-        elif column == _COL_PROSPECT:
-            item = self.table.item(row, column)
-            if item is None:
-                return
-            player_id = item.data(Qt.ItemDataRole.UserRole)
-            if player_id is None:
-                return
-            player_id = int(player_id)
-            self._prospect_manual.add(player_id)
-            cfg = self._settings[player_id]
-            cfg.is_prospect = item.checkState() == Qt.CheckState.Checked
-            cfg.prospect_manual = True
+    def _snapshot_original(self, player_id: int) -> list[str]:
+        cached = self._original_rows.get(player_id)
+        if cached is not None:
+            return cached
+        player = self._players_by_id[player_id]
+        cached = deepcopy(player.row)
+        self._original_rows[player_id] = cached
+        return cached
 
     def _save(self) -> None:
         prospect_boost = self.prospect_boost.isChecked()
         fieldnames = self.combined.fieldnames
-        players = self._player_by_id()
         to_modify = [
             pid
             for pid, cfg in self._settings.items()
@@ -325,8 +241,8 @@ class BulkRatingDialog(QDialog):
 
         for index, player_id in enumerate(to_modify, start=1):
             cfg = self._settings[player_id]
-            original = self._original_rows[player_id]
-            players[player_id].row = apply_bulk_rules_to_row(
+            original = self._snapshot_original(player_id)
+            self._players_by_id[player_id].row = apply_bulk_rules_to_row(
                 original,
                 fieldnames,
                 cfg,

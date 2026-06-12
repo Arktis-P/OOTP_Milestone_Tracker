@@ -13,7 +13,7 @@ from core.roster.bulk_rating import (
     PlayerBulkSettings,
     apply_bulk_rules_to_row,
 )
-from core.roster.combined import load_combined_roster, save_modified_rosters
+from core.roster.combined import CombinedPlayer, load_combined_roster, save_modified_rosters
 from core.roster.columns import validate_fieldnames
 from core.roster.ootp_format import load_ootp_roster
 from core.roster.row_access import row_get, row_set
@@ -103,6 +103,25 @@ def test_fielder_defense_prospect_boost(sample_header) -> None:
     )
     assert row_get(updated, sample_header, "Infield Range") == "110"
     assert row_get(updated, sample_header, "OF Range") == "50"
+
+
+def test_collect_nations_from_roster(sample_header) -> None:
+    row_kr = ["0"] * len(sample_header)
+    row_us = ["0"] * len(sample_header)
+    row_set(row_kr, sample_header, "Nation", "South Korea")
+    row_set(row_us, sample_header, "Nation", "USA")
+    row_set(row_kr, sample_header, "id", "1")
+    row_set(row_us, sample_header, "id", "2")
+    players = [
+        CombinedPlayer(1, row_kr, "kbo", 0, sample_header),
+        CombinedPlayer(2, row_us, "mlb", 1, sample_header),
+    ]
+    nations: set[str] = set()
+    for player in players:
+        nation = row_get(player.row, sample_header, "Nation").strip()
+        if nation:
+            nations.add(nation)
+    assert nations == {"South Korea", "USA"}
 
 
 def test_combined_dedup(tmp_path: Path, sample_header) -> None:

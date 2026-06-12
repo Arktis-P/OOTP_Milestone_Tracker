@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Literal
 
 from core.roster.columns import FREE_AGENT_TEAM_NAMES
-from core.roster.ootp_format import OotpRosterFile, PlayerRow, load_ootp_roster, save_ootp_roster
+from core.roster.ootp_format import OotpRosterFile, PlayerRow, save_ootp_roster
+from core.roster.roster_cache import load_ootp_roster_cached
 from core.roster.paths import find_roster_file
 from core.roster.row_access import row_get
 
@@ -80,7 +81,7 @@ def load_combined_roster(
         file_path = Path(path)
         if not file_path.is_file():
             continue
-        roster = load_ootp_roster(file_path)
+        roster = load_ootp_roster_cached(file_path)
         crlf = _file_uses_crlf(file_path)
         if source == "mlb":
             result.mlb = roster
