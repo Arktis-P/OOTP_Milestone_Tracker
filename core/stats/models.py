@@ -139,6 +139,8 @@ class PitcherLine:
     bf: int
     pi: int
     era: float
+    hold_earned: bool = False
+    season_holds: int = 0
 
 
 @dataclass

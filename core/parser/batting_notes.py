@@ -74,6 +74,44 @@ def get_player_event_counts(
     return all_counts.get(player_name, BattingEventCounts())
 
 
+GRAND_SLAM_ON_RE = re.compile(r"\b3\s+on\b", re.I)
+HOME_RUNS_SECTION_RE = re.compile(r"Home Runs\s*:", re.I)
+
+
+def parse_grand_slam_players(note_text: str) -> set[str]:
+    """Players with a grand slam per BATTING notes (``3 on`` in HR detail)."""
+    if not note_text:
+        return set()
+    batting_idx = note_text.find("BATTING")
+    text = note_text[batting_idx:] if batting_idx >= 0 else note_text
+    match = HOME_RUNS_SECTION_RE.search(text)
+    if not match:
+        return set()
+    section_body = text[match.end() :]
+    end_match = NEXT_SECTION_RE.search(section_body)
+    if end_match:
+        section_body = section_body[: end_match.start()]
+
+    players: set[str] = set()
+    lines = [line.strip().rstrip(",") for line in section_body.splitlines()]
+    lines = [line for line in lines if line]
+    idx = 0
+    while idx < len(lines):
+        line = lines[idx]
+        if not line or line.startswith("(") or NEXT_SECTION_RE.match(line):
+            idx += 1
+            continue
+        name_line, detail_line, consumed = _split_entry_line(line, lines, idx)
+        if detail_line and GRAND_SLAM_ON_RE.search(detail_line):
+            players.add(_extract_player_name(name_line))
+        idx += consumed
+    return players
+
+
+def player_has_grand_slam(note_text: str, player_name: str) -> bool:
+    return player_name in parse_grand_slam_players(note_text)
+
+
 def _parse_section_entries(section_text: str, field_name: str) -> dict[str, int]:
     counts: dict[str, int] = {}
     lines = [line.strip().rstrip(",") for line in section_text.splitlines()]

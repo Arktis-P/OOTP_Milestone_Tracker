@@ -90,6 +90,20 @@ def milestones_for_target(
     return [m for m in milestones if m.category != "team" and m.active]
 
 
+def milestones_for_manual_entry(
+    milestones: list[MilestoneDefinition],
+    target: TargetKind,
+    *,
+    manual_only: bool,
+) -> list[MilestoneDefinition]:
+    from core.milestone.implementation import requires_external_data
+
+    pool = milestones_for_target(milestones, target)
+    if manual_only:
+        return [m for m in pool if requires_external_data(m)]
+    return [m for m in pool if not requires_external_data(m)]
+
+
 def validate_manual_entry(
     form: ManualMilestoneFormData,
     milestone: MilestoneDefinition | None,

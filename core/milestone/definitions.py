@@ -17,7 +17,7 @@ Scope = Literal[
     "team_season",
     "team_manual",
 ]
-Direction = Literal["higher", "lower"]
+Direction = Literal["higher", "lower", "boolean"]
 Grade = Literal["common", "uncommon", "rare", "epic", "legendary"]
 Category = Literal["batting", "pitching", "team"]
 
@@ -41,15 +41,30 @@ VALID_SCOPES: frozenset[str] = frozenset(
         "team_manual",
     }
 )
-VALID_DIRECTIONS: frozenset[str] = frozenset({"higher", "lower"})
+VALID_DIRECTIONS: frozenset[str] = frozenset({"higher", "lower", "boolean"})
 DESCRIPTION_TEMPLATES: tuple[str, ...] = (
     "",
     "situational",
     "batting_cumulative",
+    "batting_event",
     "pitching_full",
     "pitching_k_only",
+    "season_batting_stat",
+    "season_batting_rate",
+    "season_batting_composite",
+    "season_batting_title",
+    "season_batting_award",
+    "career_batting_stat",
+    "career_batting_honor",
+    "season_pitching_stat",
+    "season_pitching_rate",
+    "season_pitching_title",
+    "season_pitching_award",
+    "career_pitching_stat",
+    "career_pitching_honor",
     "team_game",
     "team_season",
+    "team_season_event",
 )
 CSV_FIELDNAMES: tuple[str, ...] = (
     "category",
@@ -79,6 +94,7 @@ class MilestoneDefinition:
     track_from: float | None = None
     near_n: float | None = None
     description_template: str = ""
+    threshold_spec: str = ""
     active: bool = True
 
     def effective_near_n(self) -> float:
@@ -170,7 +186,12 @@ def validate_milestone_definition(
     if item.scope != "team_manual" and not item.stat.strip():
         errors.append("stat을 입력하세요.")
 
-    if item.threshold <= 0 and item.scope not in {"team_manual"}:
+    if item.threshold_spec:
+        pass
+    elif item.direction == "boolean":
+        if item.threshold != 1:
+            errors.append("boolean 기준의 threshold는 1이어야 합니다.")
+    elif item.threshold <= 0 and item.scope not in {"team_manual"}:
         errors.append("threshold는 0보다 커야 합니다.")
 
     template = (item.description_template or "").strip()
@@ -200,13 +221,14 @@ def save_milestones_csv(path: str | Path, definitions: MilestoneDefinitions) -> 
 
 
 def _definition_to_row(item: MilestoneDefinition) -> dict[str, str]:
+    threshold_text = item.threshold_spec or _format_number(item.threshold)
     return {
         "category": item.category,
         "key": item.key,
         "label": item.label,
         "scope": item.scope,
         "stat": item.stat,
-        "threshold": _format_number(item.threshold),
+        "threshold": threshold_text,
         "direction": item.direction,
         "grade": item.grade,
         "track_from": _format_optional_number(item.track_from),
@@ -225,6 +247,16 @@ def _format_optional_number(value: float | None) -> str:
     if value is None:
         return ""
     return _format_number(value)
+
+
+def _parse_threshold(raw: str) -> tuple[float, str]:
+    text = raw.strip()
+    if not text:
+        return 0.0, ""
+    try:
+        return float(text), ""
+    except ValueError:
+        return 1.0, text
 
 
 def load_milestones(path: str | Path) -> MilestoneDefinitions:
@@ -274,7 +306,7 @@ def _load_csv(file_path: Path) -> MilestoneDefinitions:
                 raise ValueError(f"invalid grade '{grade}' at line {line_no}")
 
             direction = (row.get("direction") or "higher").strip().lower()
-            if direction not in {"higher", "lower"}:
+            if direction not in VALID_DIRECTIONS:
                 raise ValueError(f"invalid direction '{direction}' at line {line_no}")
 
             track_raw = (row.get("track_from") or "").strip()
@@ -284,12 +316,13 @@ def _load_csv(file_path: Path) -> MilestoneDefinitions:
             near_n = float(near_raw) if near_raw else None
 
             description_template = (row.get("description_template") or "").strip()
+            threshold, threshold_spec = _parse_threshold(row.get("threshold") or "")
 
             item = MilestoneDefinition(
                 key=key,
                 label=(row.get("label") or "").strip(),
                 stat=(row.get("stat") or "").strip(),
-                threshold=float(row["threshold"]),
+                threshold=threshold,
                 scope=scope,  # type: ignore[arg-type]
                 category=category,
                 direction=direction,  # type: ignore[arg-type]
@@ -297,6 +330,7 @@ def _load_csv(file_path: Path) -> MilestoneDefinitions:
                 track_from=track_from,
                 near_n=near_n,
                 description_template=description_template,
+                threshold_spec=threshold_spec,
                 active=active,
             )
             if category == "batting":
@@ -327,11 +361,12 @@ def _parse_definition(item: dict, category: str) -> MilestoneDefinition:
     near_n = item.get("near_n")
     scope = item.get("scope", "career")
     active = scope != "season_ratio" and bool(item.get("active", True))
+    threshold, threshold_spec = _parse_threshold(str(item.get("threshold", "")))
     return MilestoneDefinition(
         key=item["key"],
         label=item["label"],
         stat=item.get("stat", ""),
-        threshold=float(item["threshold"]),
+        threshold=threshold,
         scope=scope,
         category=category,
         direction=item.get("direction", "higher"),
@@ -339,5 +374,6 @@ def _parse_definition(item: dict, category: str) -> MilestoneDefinition:
         track_from=float(track_from) if track_from is not None else None,
         near_n=float(near_n) if near_n is not None else None,
         description_template=str(item.get("description_template", "") or ""),
+        threshold_spec=threshold_spec,
         active=active,
     )

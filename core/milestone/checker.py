@@ -6,12 +6,29 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from core.milestone.composite_stats import composite_crossed
 from core.milestone.definitions import (
     ACTIVE_SCOPES,
     MilestoneDefinition,
     MilestoneDefinitions,
 )
+from core.milestone.game_events import game_event_value
+from core.milestone.implementation import is_automatically_checkable
+from core.milestone.stat_maps import (
+    CAREER_BATTING_STATS,
+    CAREER_GAME_CONTRIBUTION,
+    CAREER_PITCHING_STATS,
+    GAME_BATTING_COLUMNS,
+    GAME_PITCHING_COLUMNS,
+    RATIO_BATTING_STATS,
+    RATIO_PITCHING_STATS,
+    SEASON_BATTING_RATIO_STATS,
+    SEASON_BATTING_STATS,
+    SEASON_PITCHING_RATIO_STATS,
+    SEASON_PITCHING_STATS,
+)
 from core.milestone.team_milestone import get_team_wins, team_stat_value
+from core.milestone.tier_filter import filter_tiered_game_achievements
 from core.stats.aggregator import Aggregator
 from core.stats.team_filter import expand_tracked_teams
 from core.stats.qualifiers import (
@@ -22,46 +39,19 @@ from core.stats.qualifiers import (
 
 Direction = Literal["higher", "lower"]
 
-CAREER_BATTING_STATS = {
-    "career_h": "career_h",
-    "career_hr": "career_hr",
-    "career_rbi": "career_rbi",
-    "career_sb": "career_sb",
-    "career_bb": "career_bb",
-    "career_k_bat": "career_k",
-}
-
-CAREER_PITCHING_STATS = {
-    "career_wins": "career_wins",
-    "career_k_pit": "career_k",
-    "career_saves": "career_saves",
-    "career_era": "career_era",
-}
-
-CAREER_GAME_CONTRIBUTION = {
-    "career_h": "h",
-    "career_hr": "hr",
-    "career_rbi": "rbi",
-    "career_sb": "sb",
-    "career_bb": "bb",
-    "career_k_bat": "k_bat",
-    "career_wins": "wins",
-    "career_k_pit": "k_pit",
-    "career_saves": "saves",
-}
-
 SEASON_COUNT_STATS = {
     "season_hr": ("batting", "season_hr", "home_runs"),
     "season_h": ("batting", "sum_h", "h"),
     "season_rbi": ("batting", "season_rbi", "rbi"),
-    "season_sb": ("batting", "sum_sb", "sb"),
+    "season_sb": ("batting", "sum_sb", "stolen_bases"),
+    "season_r": ("batting", "sum_r", "r"),
+    "season_bb": ("batting", "sum_bb", "bb"),
     "season_k_pit": ("pitching", "sum_k", "k_pit"),
     "season_wins": ("pitching", "sum_w", "season_wins"),
     "season_saves": ("pitching", "sum_sv", "season_saves"),
+    "season_ip": ("pitching", "sum_ip", "ip_outs"),
+    "season_holds": ("pitching", "season_holds", "hold"),
 }
-
-RATIO_BATTING_STATS = {"season_avg", "season_obp", "season_slg", "season_ops"}
-RATIO_PITCHING_STATS = {"season_era", "season_whip"}
 
 
 @dataclass
@@ -121,7 +111,8 @@ class MilestoneChecker:
             if progress_callback:
                 progress_callback(index, total, f"game {game_id}")
             achievements.extend(self._check_single_game(game_id, season))
-        return [item for item in achievements if item.achieved]
+        achieved = [item for item in achievements if item.achieved]
+        return filter_tiered_game_achievements(achieved)
 
     def check_team_season_for_teams(
         self, teams: list[str], season: int
@@ -170,9 +161,12 @@ class MilestoneChecker:
         return self._career_pitching_cache[player_id]
 
     def check_season_ratios(self, season: int) -> list[MilestoneAchievement]:
+        """Record season ratio milestones (타율·ERA 등) at season close."""
         achievements: list[MilestoneAchievement] = []
         for milestone in self.definitions.all_milestones:
-            if milestone.scope != "season_ratio":
+            if milestone.scope not in ("season_ratio", "season"):
+                continue
+            if milestone.stat not in RATIO_BATTING_STATS | RATIO_PITCHING_STATS:
                 continue
             if milestone.stat in RATIO_BATTING_STATS:
                 rows = self.aggregator.get_season_batting_totals(season)
@@ -372,8 +366,8 @@ class MilestoneChecker:
         notes: str = "",
     ) -> bool:
         milestone = self.definitions.get_by_key(milestone_key)
-        if not milestone or milestone.scope != "team_manual":
-            raise ValueError(f"Unknown team_manual milestone: {milestone_key}")
+        if not milestone or milestone.scope not in ("team_manual", "team_season"):
+            raise ValueError(f"Unknown team milestone: {milestone_key}")
         item = MilestoneAchievement(
             player_id=0,
             player_name=team,
@@ -424,6 +418,8 @@ class MilestoneChecker:
 
         for milestone in self.definitions.active_milestones:
             if milestone.scope not in ACTIVE_SCOPES:
+                continue
+            if not is_automatically_checkable(milestone):
                 continue
             if milestone.scope.startswith("team_"):
                 continue
@@ -544,6 +540,8 @@ class MilestoneChecker:
         for milestone in self.definitions.active_milestones:
             if milestone.scope != "team_game":
                 continue
+            if not is_automatically_checkable(milestone):
+                continue
             current = team_stat_value(
                 conn,
                 scope=milestone.scope,
@@ -595,6 +593,10 @@ class MilestoneChecker:
         for milestone in self.definitions.active_milestones:
             if milestone.scope != "team_season":
                 continue
+            if not is_automatically_checkable(milestone):
+                continue
+            if milestone.stat != "team_wins":
+                continue
             prior = float(prior_wins)
             current = float(wins)
             if not self._crossed_threshold(prior, current, milestone):
@@ -622,10 +624,14 @@ class MilestoneChecker:
         achieved_date: str,
         season: int,
     ) -> MilestoneAchievement | None:
-        column = _game_batting_column(milestone.stat)
-        if not column:
-            return None
-        current = float(row.get(column, 0) or 0)
+        event_value = game_event_value(milestone.stat, row)
+        if event_value is not None:
+            current = event_value
+        else:
+            column = GAME_BATTING_COLUMNS.get(milestone.stat)
+            if not column:
+                return None
+            current = float(row.get(column, 0) or 0)
         if not self._is_achieved(current, milestone):
             return None
         return MilestoneAchievement(
@@ -647,7 +653,7 @@ class MilestoneChecker:
         achieved_date: str,
         season: int,
     ) -> MilestoneAchievement | None:
-        column = _game_pitching_column(milestone.stat)
+        column = GAME_PITCHING_COLUMNS.get(milestone.stat)
         if not column:
             return None
         current = float(row.get(column, 0) or 0)
@@ -672,11 +678,35 @@ class MilestoneChecker:
         achieved_date: str,
         season: int,
     ) -> MilestoneAchievement | None:
+        player_id = int(row["player_id"])
+        if milestone.stat == "season_hr_sb":
+            current_hr = float(row.get("season_hr") or 0)
+            prior_hr = self.aggregator.get_max_prior_season_stat(
+                player_id, season, game_id, "season_hr"
+            ) or 0.0
+            current_sb = self._season_batting_total(player_id, season, "season_sb")
+            prior_sb = current_sb - float(row.get("stolen_bases", 0) or 0)
+            if not composite_crossed(
+                milestone,
+                {"hr": prior_hr, "sb": prior_sb},
+                {"hr": current_hr, "sb": current_sb},
+            ):
+                return None
+            return MilestoneAchievement(
+                player_id=player_id,
+                player_name=str(row["player_name"]),
+                milestone=milestone,
+                current_value=current_hr,
+                achieved=True,
+                achieved_date=achieved_date,
+                game_id=game_id,
+                season=season,
+            )
+
         mapping = SEASON_COUNT_STATS.get(milestone.stat)
         if not mapping:
             return None
         _, mode, game_col = mapping
-        player_id = int(row["player_id"])
         if mode == "season_hr":
             current = float(row.get("season_hr") or 0)
             prior = self.aggregator.get_max_prior_season_stat(
@@ -711,14 +741,21 @@ class MilestoneChecker:
         achieved_date: str,
         season: int,
     ) -> MilestoneAchievement | None:
+        player_id = int(row["player_id"])
         mapping = SEASON_COUNT_STATS.get(milestone.stat)
         if not mapping:
             return None
-        player_id = int(row["player_id"])
-        current = self._season_pitching_total(player_id, season, milestone.stat)
-        prior = self.aggregator.get_max_prior_season_pitching_stat(
-            player_id, season, game_id, milestone.stat
-        )
+        _, mode, game_col = mapping
+        if mode == "season_holds":
+            current = float(row.get("season_holds") or 0)
+            prior = self.aggregator.get_max_prior_season_pitching_stat(
+                player_id, season, game_id, "season_holds"
+            )
+        else:
+            current = self._season_pitching_total(player_id, season, milestone.stat)
+            prior = self.aggregator.get_max_prior_season_pitching_stat(
+                player_id, season, game_id, milestone.stat
+            )
         if not self._crossed_threshold(prior, current, milestone):
             return None
         return MilestoneAchievement(
@@ -755,7 +792,9 @@ class MilestoneChecker:
             current = float(row.get(column, 0) or 0) if row else 0.0
             if milestone.stat == "career_era":
                 return None
-            game_col = CAREER_GAME_CONTRIBUTION[milestone.stat]
+            game_col = CAREER_GAME_CONTRIBUTION.get(milestone.stat)
+            if not game_col:
+                return None
             prior = current - self.aggregator.get_game_contribution_pitching(
                 player_id, game_id, game_col
             )
@@ -783,6 +822,10 @@ class MilestoneChecker:
             return float(row.get("h") or 0)
         if stat == "season_sb":
             return float(row.get("sb") or 0)
+        if stat == "season_r":
+            return float(row.get("r") or 0)
+        if stat == "season_bb":
+            return float(row.get("bb") or 0)
         return float(row.get(stat.replace("season_", ""), 0) or 0)
 
     def _season_pitching_total(self, player_id: int, season: int, stat: str) -> float:
@@ -795,6 +838,19 @@ class MilestoneChecker:
             return float(row.get("wins") or 0)
         if stat == "season_saves":
             return float(row.get("saves") or 0)
+        if stat == "season_ip":
+            return float(row.get("ip") or 0)
+        if stat == "season_holds":
+            row = self.aggregator.conn.execute(
+                """
+                SELECT MAX(season_holds) AS holds
+                FROM pitching_logs pl
+                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                WHERE pl.player_id = ? AND pl.season = ?
+                """,
+                (player_id, season),
+            ).fetchone()
+            return float(row["holds"]) if row and row["holds"] is not None else 0.0
         return 0.0
 
     def _build_ratio_achievement(
@@ -862,6 +918,8 @@ class MilestoneChecker:
 
     @staticmethod
     def _is_achieved(current: float, milestone: MilestoneDefinition) -> bool:
+        if milestone.direction == "boolean":
+            return current >= 1
         if milestone.direction == "lower":
             return current <= milestone.threshold
         return current >= milestone.threshold
@@ -877,32 +935,11 @@ class MilestoneChecker:
     def _crossed_threshold(
         self, prior: float, current: float, milestone: MilestoneDefinition
     ) -> bool:
+        if milestone.direction == "boolean":
+            return prior < 1 <= current
         if milestone.direction == "lower":
             return prior > milestone.threshold >= current
         return prior < milestone.threshold <= current
-
-
-def _game_batting_column(stat: str) -> str | None:
-    return {
-        "h": "h",
-        "hr": "home_runs",
-        "rbi": "rbi",
-        "bb": "bb",
-        "sb": "stolen_bases",
-        "doubles": "doubles",
-        "k_bat": "k",
-    }.get(stat)
-
-
-def _game_pitching_column(stat: str) -> str | None:
-    return {
-        "k_pit": "k",
-        "ip_outs": "ip_outs",
-        "cg": "is_cg",
-        "sho": "is_sho",
-        "no_hitter": "is_no_hitter",
-        "perfect_game": "is_perfect_game",
-    }.get(stat)
 
 
 def _ratio_column(stat: str) -> str:

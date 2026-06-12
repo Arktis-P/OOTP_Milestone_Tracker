@@ -57,11 +57,11 @@ def test_update_and_delete_milestone_record(aggregator: Aggregator) -> None:
     aggregator.import_boxscore(data, season=2026)
     checker = MilestoneChecker(aggregator, load_milestones(MILESTONES_PATH))
     achievements = checker.check_new_games([data.meta.game_id], season=2026)
-    career = [a for a in achievements if a.milestone.key == "career_hr_500"]
+    career = [a for a in achievements if a.milestone.key == "bat_career_hr_500"]
     assert career
     checker.record_achievements(career)
     row = aggregator.conn.execute(
-        "SELECT id FROM milestone_records WHERE milestone_key = 'career_hr_500'"
+        "SELECT id FROM milestone_records WHERE milestone_key = 'bat_career_hr_500'"
     ).fetchone()
     record_id = int(row["id"])
 

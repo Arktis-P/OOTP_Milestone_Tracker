@@ -54,7 +54,7 @@ def test_enrich_career_sets_games_opponent_team_and_player(
     )
     game_id = _import_game(aggregator, "game_box_13.html")
     achievements = checker.check_new_games([game_id], season=2026)
-    career = [a for a in achievements if a.milestone.key == "career_hr_500"]
+    career = [a for a in achievements if a.milestone.key == "bat_career_hr_500"]
     assert len(career) == 1
     item = career[0]
 
@@ -77,12 +77,12 @@ def test_record_achievements_persists_description_for_game_scope(
     data = BoxscoreHTMLParser(SAMPLES_BOX / "game_box_20.html").parse()
     aggregator.import_boxscore(data, season=2026)
     achievements = checker.check_new_games([data.meta.game_id], season=2026)
-    game_hr = [a for a in achievements if a.milestone.key == "game_hr_2"]
+    game_hr = [a for a in achievements if a.milestone.key == "bat_game_hr_2"]
     if not game_hr:
-        pytest.skip("no game_hr_2 in sample")
+        pytest.skip("no bat_game_hr_2 in sample")
     checker.record_achievements(game_hr)
     row = aggregator.conn.execute(
-        "SELECT description FROM milestone_records WHERE milestone_key = 'game_hr_2'"
+        "SELECT description FROM milestone_records WHERE milestone_key = 'bat_game_hr_2'"
     ).fetchone()
     assert row["description"]
     assert "타수" in row["description"]
@@ -98,13 +98,13 @@ def test_record_achievements_persists_context_fields(
     )
     game_id = _import_game(aggregator, "game_box_13.html")
     achievements = checker.check_new_games([game_id], season=2026)
-    career = [a for a in achievements if a.milestone.key == "career_hr_500"]
+    career = [a for a in achievements if a.milestone.key == "bat_career_hr_500"]
     checker.record_achievements(career, game_logs_dir=SAMPLES_LOG)
     row = aggregator.conn.execute(
         """
         SELECT opponent_team, games_at_achievement, opponent_player
         FROM milestone_records
-        WHERE milestone_key = 'career_hr_500'
+        WHERE milestone_key = 'bat_career_hr_500'
         """
     ).fetchone()
     assert row["opponent_team"]
@@ -119,9 +119,9 @@ def test_game_scope_has_opponent_team_no_games(
         pytest.skip("game_box_20 sample missing")
     game_id = _import_game(aggregator, "game_box_20.html")
     achievements = checker.check_new_games([game_id], season=2026)
-    game_hr = [a for a in achievements if a.milestone.key == "game_hr_2"]
+    game_hr = [a for a in achievements if a.milestone.key == "bat_game_hr_2"]
     if not game_hr:
-        pytest.skip("no game_hr_2 in sample")
+        pytest.skip("no bat_game_hr_2 in sample")
     item = game_hr[0]
     enrich_achievement_for_record(aggregator, item)
     assert item.opponent_team
@@ -139,7 +139,7 @@ def test_opponent_player_from_game_log_hr(
     )
     game_id = _import_game(aggregator, "game_box_13.html")
     achievements = checker.check_new_games([game_id], season=2026)
-    career = [a for a in achievements if a.milestone.key == "career_hr_500"]
+    career = [a for a in achievements if a.milestone.key == "bat_career_hr_500"]
     assert career
     item = career[0]
     enrich_achievement_for_record(

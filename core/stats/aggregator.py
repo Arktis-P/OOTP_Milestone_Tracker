@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from core.db.schema import init_database
-from core.parser.batting_notes import get_player_event_counts
+from core.parser.batting_notes import get_player_event_counts, player_has_grand_slam
 from core.parser.boxscore_html import BoxscoreHTMLParser, peek_is_mlb_boxscore
 from core.parser.common import ParserError
 from core.parser.pitching_notes import get_player_pitching_counts
@@ -313,6 +313,12 @@ class Aggregator:
             event_counts = get_player_event_counts(note_text, batter.player_name)
         else:
             event_counts = events
+        note_text = (
+            data.away_batting_notes
+            if batter.team == data.meta.away_team
+            else data.home_batting_notes
+        )
+        is_grand_slam = 1 if player_has_grand_slam(note_text, batter.player_name) else 0
         self._conn.execute(
             """
             INSERT INTO batting_logs (
@@ -320,8 +326,8 @@ class Aggregator:
                 ab, r, h, rbi, bb, k, lob,
                 season_avg, season_hr, season_rbi,
                 doubles, triples, home_runs, stolen_bases, hit_by_pitch, gidp,
-                position, is_substitute
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                position, is_substitute, is_grand_slam
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data.meta.game_id,
@@ -347,6 +353,7 @@ class Aggregator:
                 event_counts.gidp,
                 batter.position or "",
                 1 if batter.is_substitute else 0,
+                is_grand_slam,
             ),
         )
 
@@ -381,8 +388,9 @@ class Aggregator:
                 ip_outs, h, r, er, bb, k, hr, bf, pi,
                 decision, win, loss, save, season_era,
                 game_score, wild_pitch, hit_batsmen,
-                is_cg, is_sho, is_no_hitter, is_perfect_game
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                is_cg, is_sho, is_no_hitter, is_perfect_game,
+                hold, season_holds
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data.meta.game_id,
@@ -411,6 +419,8 @@ class Aggregator:
                 special["is_sho"],
                 special["is_no_hitter"],
                 special["is_perfect_game"],
+                1 if pitcher.hold_earned else 0,
+                pitcher.season_holds if pitcher.hold_earned else None,
             ),
         )
 
@@ -473,6 +483,7 @@ class Aggregator:
                 totals.career_doubles,
                 totals.career_triples,
                 totals.career_sb,
+                totals.career_r,
                 ROUND(CAST(totals.career_h AS REAL) / NULLIF(totals.career_ab, 0), 3) AS career_avg,
                 totals.career_games
             FROM ({_career_batting_union_sql(max_init)}) totals
@@ -549,7 +560,84 @@ class Aggregator:
         data = dict(row)
         data["career_ip"] = outs_to_ip_float(int(data["career_ip_outs"]))
         data["career_ip_display"] = outs_to_ip_str(int(data["career_ip_outs"]))
+        extras = self._pitching_career_extras(player_id)
+        data["career_g_pit"] = extras["career_g_pit"]
+        data["career_gs"] = extras["career_gs"]
+        data["career_holds"] = extras["career_holds"]
         return data
+
+    def _pitching_career_extras(self, player_id: int) -> dict[str, float]:
+        max_init = self._get_max_init_season()
+        init = self._conn.execute(
+            """
+            SELECT
+                COALESCE(SUM(g), 0) AS g,
+                COALESCE(SUM(gs), 0) AS gs,
+                COALESCE(SUM(holds), 0) AS holds
+            FROM career_pitching_init
+            WHERE player_id = ? AND season <= ?
+            """,
+            (player_id, max_init),
+        ).fetchone()
+        logs = self._conn.execute(
+            """
+            SELECT
+                COUNT(DISTINCT pl.game_id) AS games,
+                (
+                    SELECT COUNT(*)
+                    FROM pitching_logs pl2
+                    JOIN (
+                        SELECT game_id, team, MIN(id) AS first_id
+                        FROM pitching_logs
+                        GROUP BY game_id, team
+                    ) first_pitcher
+                        ON first_pitcher.first_id = pl2.id
+                    JOIN games g2 ON g2.game_id = pl2.game_id AND g2.is_mlb = 1
+                    WHERE pl2.player_id = ?
+                ) AS starts
+            FROM pitching_logs pl
+            JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+            WHERE pl.player_id = ?
+            """,
+            (player_id, player_id),
+        ).fetchone()
+        init_g = float(init["g"]) if init else 0.0
+        init_gs = float(init["gs"]) if init else 0.0
+        init_holds = float(init["holds"]) if init else 0.0
+        log_g = float(logs["games"]) if logs else 0.0
+        log_gs = float(logs["starts"]) if logs else 0.0
+        holds_row = self._conn.execute(
+            """
+            SELECT COALESCE(SUM(pl.hold), 0) AS holds
+            FROM pitching_logs pl
+            JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+            WHERE pl.player_id = ?
+            """,
+            (player_id,),
+        ).fetchone()
+        log_holds = float(holds_row["holds"]) if holds_row else 0.0
+        return {
+            "career_g_pit": init_g + log_g,
+            "career_gs": init_gs + log_gs,
+            "career_holds": init_holds + log_holds,
+        }
+
+    def was_pitching_starter(self, player_id: int, game_id: int) -> bool:
+        row = self._conn.execute(
+            """
+            SELECT 1
+            FROM pitching_logs pl
+            JOIN (
+                SELECT game_id, team, MIN(id) AS first_id
+                FROM pitching_logs
+                WHERE game_id = ?
+                GROUP BY game_id, team
+            ) first_pitcher ON first_pitcher.first_id = pl.id
+            WHERE pl.player_id = ?
+            """,
+            (game_id, player_id),
+        ).fetchone()
+        return row is not None
 
     def get_career_stats(self, player_id: int) -> dict[str, Any]:
         return {
@@ -715,6 +803,16 @@ class Aggregator:
     def get_game_contribution_batting(
         self, player_id: int, game_id: int, stat: str
     ) -> float:
+        if stat == "g":
+            row = self._conn.execute(
+                """
+                SELECT 1 FROM batting_logs bl
+                JOIN games g ON g.game_id = bl.game_id AND g.is_mlb = 1
+                WHERE bl.player_id = ? AND bl.game_id = ?
+                """,
+                (player_id, game_id),
+            ).fetchone()
+            return 1.0 if row else 0.0
         column = _BATTING_GAME_STAT_COLUMNS.get(stat, stat)
         row = self._conn.execute(
             f"SELECT {column} AS value FROM batting_logs WHERE player_id = ? AND game_id = ?",
@@ -725,12 +823,47 @@ class Aggregator:
     def get_game_contribution_pitching(
         self, player_id: int, game_id: int, stat: str
     ) -> float:
+        if stat == "g_pit":
+            row = self._conn.execute(
+                """
+                SELECT 1 FROM pitching_logs pl
+                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                WHERE pl.player_id = ? AND pl.game_id = ?
+                """,
+                (player_id, game_id),
+            ).fetchone()
+            return 1.0 if row else 0.0
+        if stat == "gs":
+            return 1.0 if self.was_pitching_starter(player_id, game_id) else 0.0
+        if stat == "ip_outs":
+            row = self._conn.execute(
+                "SELECT ip_outs AS value FROM pitching_logs WHERE player_id = ? AND game_id = ?",
+                (player_id, game_id),
+            ).fetchone()
+            return float(row["value"]) if row else 0.0
         column = _PITCHING_GAME_STAT_COLUMNS.get(stat, stat)
         row = self._conn.execute(
             f"SELECT {column} AS value FROM pitching_logs WHERE player_id = ? AND game_id = ?",
             (player_id, game_id),
         ).fetchone()
         return float(row["value"]) if row else 0.0
+
+    def get_batting_season_excluding_game(
+        self, player_id: int, season: int, game_id: int
+    ) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            f"""
+            SELECT
+                SUM(b.ab) AS ab,
+                {_batting_ratio_sql()}
+            FROM batting_logs b
+            {_MLB_GAME_JOIN_B}
+            WHERE b.player_id = ? AND b.season = ? AND b.game_id <> ?
+            GROUP BY b.player_id
+            """,
+            (player_id, season, game_id),
+        ).fetchone()
+        return dict(row) if row else None
 
     def get_max_prior_season_stat(
         self, player_id: int, season: int, game_id: int, stat: str
@@ -787,6 +920,32 @@ class Aggregator:
                 (player_id, season, game_id),
             ).fetchone()
             return float(row["prior_value"]) if row else 0.0
+        if stat == "season_ip":
+            row = self._conn.execute(
+                """
+                SELECT COALESCE(SUM(pl.ip_outs), 0) AS prior_outs
+                FROM pitching_logs pl
+                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id <> ?
+                """,
+                (player_id, season, game_id),
+            ).fetchone()
+            if not row:
+                return 0.0
+            from core.stats.ip_utils import outs_to_ip_float
+
+            return outs_to_ip_float(int(row["prior_outs"]))
+        if stat == "season_holds":
+            row = self._conn.execute(
+                """
+                SELECT MAX(pl.season_holds) AS prior_value
+                FROM pitching_logs pl
+                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id <> ?
+                """,
+                (player_id, season, game_id),
+            ).fetchone()
+            return float(row["prior_value"]) if row and row["prior_value"] is not None else 0.0
         return 0.0
 
     def _get_max_init_season(self) -> int:
@@ -1405,6 +1564,7 @@ _BATTING_GAME_STAT_COLUMNS = {
     "h": "h",
     "hr": "home_runs",
     "rbi": "rbi",
+    "r": "r",
     "bb": "bb",
     "sb": "stolen_bases",
     "doubles": "doubles",
@@ -1420,6 +1580,7 @@ _PITCHING_GAME_STAT_COLUMNS = {
     "perfect_game": "is_perfect_game",
     "wins": "win",
     "saves": "save",
+    "hold": "hold",
 }
 
 _SEASON_TRACKING_COLUMNS = {

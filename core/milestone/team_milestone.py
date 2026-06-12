@@ -11,7 +11,7 @@ def check_team_game_batting(
 ) -> dict[str, bool]:
     starters = conn.execute(
         """
-        SELECT h, rbi
+        SELECT h, r, rbi
         FROM batting_logs bl
         JOIN games g ON g.game_id = bl.game_id AND g.is_mlb = 1
         WHERE bl.game_id = ? AND bl.team = ? AND bl.is_substitute = 0
@@ -32,6 +32,8 @@ def check_team_game_batting(
         and all(int(row["h"]) > 0 for row in starters),
         "starter_all_rbi": bool(starters)
         and all(int(row["rbi"]) > 0 for row in starters),
+        "starter_all_run": bool(starters)
+        and all(int(row["r"]) > 0 for row in starters),
         "all_hit": bool(all_players)
         and all(int(row["h"]) > 0 for row in all_players),
         "all_rbi": bool(all_players)
@@ -86,7 +88,13 @@ def team_stat_value(
     season: int | None,
 ) -> float | None:
     if scope == "team_game" and game_id is not None:
-        if stat in {"starter_all_hit", "starter_all_rbi", "all_hit", "all_rbi"}:
+        if stat in {
+            "starter_all_hit",
+            "starter_all_rbi",
+            "starter_all_run",
+            "all_hit",
+            "all_rbi",
+        }:
             batting = check_team_game_batting(conn, game_id, team)
             return 1.0 if batting.get(stat) else 0.0
         if stat in {"team_no_hitter", "team_perfect_game"}:

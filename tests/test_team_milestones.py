@@ -146,14 +146,14 @@ def test_manual_team_milestone_duplicate(
 ) -> None:
     assert tracked_checker.record_manual_team_milestone(
         team=GIANTS,
-        milestone_key="team_manual_worldseries",
+        milestone_key="team_season_world_series_win",
         season=2026,
         achieved_date="2026-10-30",
         notes="테스트",
     )
     assert not tracked_checker.record_manual_team_milestone(
         team=GIANTS,
-        milestone_key="team_manual_worldseries",
+        milestone_key="team_season_world_series_win",
         season=2026,
         achieved_date="2026-10-31",
     )

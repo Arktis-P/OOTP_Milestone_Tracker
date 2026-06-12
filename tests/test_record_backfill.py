@@ -30,7 +30,7 @@ def test_backfill_sets_games_from_linked_game(tmp_path: Path) -> None:
         agg.import_boxscore(data, season=2026)
         checker = MilestoneChecker(agg, load_milestones(MILESTONES_PATH))
         achievements = checker.check_new_games([data.meta.game_id], season=2026)
-        career = [a for a in achievements if a.milestone.key == "career_hr_500"]
+        career = [a for a in achievements if a.milestone.key == "bat_career_hr_500"]
         assert career
         checker.record_achievements(career)
 

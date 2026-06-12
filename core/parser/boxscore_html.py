@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup, Tag
 from core.parser.common import (
     DATE_MDY_RE,
     DECISION_RE,
+    HOLD_RE,
     GAME_BOX_ID_RE,
     GAME_ID_RE,
     ParserError,
@@ -306,6 +307,13 @@ class BoxscoreHTMLParser:
             decision = decision_match.group(1)
             decision_record = f"({decision_match.group(2)})"
 
+        hold_earned = False
+        season_holds = 0
+        hold_match = HOLD_RE.search(remainder)
+        if hold_match:
+            hold_earned = True
+            season_holds = int(hold_match.group(1))
+
         values = [cell.get_text(strip=True) for cell in stat_cells]
         return PitcherLine(
             player_name=player_name,
@@ -313,6 +321,8 @@ class BoxscoreHTMLParser:
             team=team,
             decision=decision,
             decision_record=decision_record,
+            hold_earned=hold_earned,
+            season_holds=season_holds,
             ip=parse_ip(values[0]),
             h=parse_int(values[1]),
             r=parse_int(values[2]),

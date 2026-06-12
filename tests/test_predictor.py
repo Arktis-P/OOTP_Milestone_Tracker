@@ -42,7 +42,7 @@ def test_track_from_filters_low_career_totals(
     )
     store.reseed()
     keys = {row.milestone_key for row in store.list_cached()}
-    assert "career_hr_500" not in keys
+    assert "bat_career_hr_500" not in keys
 
 
 def test_reseed_completes_quickly(aggregator: Aggregator, milestones) -> None:

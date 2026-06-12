@@ -20,7 +20,7 @@ MILESTONES_PATH = ROOT / "data" / "milestones.csv"
 
 def test_validate_rejects_duplicate_key() -> None:
     item = MilestoneDefinition(
-        key="career_hr_500",
+        key="bat_career_hr_500",
         label="dup",
         stat="career_hr",
         threshold=500,
@@ -29,7 +29,7 @@ def test_validate_rejects_duplicate_key() -> None:
     )
     errors = validate_milestone_definition(
         item,
-        existing_keys={"career_hr_500"},
+        existing_keys={"bat_career_hr_500"},
     )
     assert errors
 
@@ -40,7 +40,7 @@ def test_save_and_reload_roundtrip(tmp_path: Path) -> None:
     save_milestones_csv(target, source)
     reloaded = load_milestones(target)
     assert len(reloaded.all_milestones) == len(source.all_milestones)
-    assert reloaded.get_by_key("career_hr_500") is not None
+    assert reloaded.get_by_key("bat_career_hr_500") is not None
 
 
 def test_save_new_item(tmp_path: Path) -> None:

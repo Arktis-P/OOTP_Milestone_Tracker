@@ -18,6 +18,7 @@ GAME_ID_RE = re.compile(r"GAME ID:\s*(\d+)", re.I)
 TEAM_RECORD_RE = re.compile(r"^(.+?)\s*\((\d+-\d+)\)\s*$")
 SUB_LABEL_RE = re.compile(r"^([a-z])-", re.I)
 DECISION_RE = re.compile(r"\b([WLS])\s*\(([^)]+)\)")
+HOLD_RE = re.compile(r"\bH\s*\((\d+)\)")
 INNING_HEADER_RE = re.compile(r"(TOP|BOTTOM)\s+OF\s+THE\s+(\d+)(?:ST|ND|RD|TH)?", re.I)
 INNING_SUMMARY_RE = re.compile(
     r"(\d+)\s+run[s]?,\s*(\d+)\s+hit[s]?,\s*(\d+)\s+error[s]?,\s*(\d+)\s+left on base;\s*"

@@ -124,11 +124,15 @@ class MilestoneView(QWidget):
         self.refresh_button = QPushButton("새로고침")
         self.export_button = QPushButton("CSV로 보내기")
         self.manual_button = QPushButton("수동 입력")
+        self.manual_only_button = QPushButton("수동 전용 입력")
+        self.season_ratio_button = QPushButton("시즌 비율 마일스톤 기록")
         self.edit_button = QPushButton("수정")
         self.delete_button = QPushButton("삭제")
         self.refresh_button.clicked.connect(self.refresh)
         self.export_button.clicked.connect(self.export_history_csv)
         self.manual_button.clicked.connect(self._open_manual_dialog)
+        self.manual_only_button.clicked.connect(self._open_manual_only_dialog)
+        self.season_ratio_button.clicked.connect(self._record_season_ratio_milestones)
         self.edit_button.clicked.connect(self._edit_selected_record)
         self.delete_button.clicked.connect(self._delete_selected_record)
         self.table_panel.table.cellDoubleClicked.connect(self._open_game_log)
@@ -148,6 +152,8 @@ class MilestoneView(QWidget):
         button_row.addWidget(self.refresh_button)
         button_row.addWidget(self.export_button)
         button_row.addWidget(self.manual_button)
+        button_row.addWidget(self.manual_only_button)
+        button_row.addWidget(self.season_ratio_button)
         button_row.addWidget(self.edit_button)
         button_row.addWidget(self.delete_button)
         button_row.addStretch()
@@ -347,6 +353,54 @@ class MilestoneView(QWidget):
         if dialog.exec():
             self.refresh()
             self.records_changed.emit()
+
+    def _open_manual_only_dialog(self) -> None:
+        dialog = ManualMilestoneDialog(
+            self.aggregator,
+            self.milestones,
+            self.settings,
+            parent=self,
+            manual_only=True,
+        )
+        if dialog.exec():
+            self.refresh()
+            self.records_changed.emit()
+
+    def _record_season_ratio_milestones(self) -> None:
+        season = self.season_spin.value() or self.settings.current_season
+        if season <= 0:
+            QMessageBox.information(
+                self,
+                "시즌 선택",
+                "시즌 필터에서 연도를 선택한 뒤 다시 시도하세요.",
+            )
+            return
+        confirm = QMessageBox.question(
+            self,
+            "시즌 비율 마일스톤 기록",
+            f"{season}시즌 타율·출루율·장타율·OPS·ERA 마일스톤을 "
+            "현재 DB 기준으로 기록합니다.\n\n"
+            "시즌이 끝난 뒤 한 번 실행하는 것을 권장합니다. 계속하시겠습니까?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        checker = MilestoneChecker(
+            self.aggregator,
+            self.milestones,
+            season_games_total=self.settings.season_games_total,
+            ratio_qualifiers=self.settings.get_ratio_qualifiers(),
+            tracked_teams=self.settings.tracked_teams,
+            custom_teams=self.settings.custom_mlb_teams,
+        )
+        achievements = checker.check_season_ratios(season)
+        recorded = checker.record_achievements(achievements)
+        self.banner.show_info(
+            f"{season}시즌 비율 마일스톤 {recorded}건 기록"
+            + (f" (달성 후보 {len(achievements)}건)" if achievements else "")
+        )
+        self.refresh()
+        self.records_changed.emit()
 
     def _selected_record_id_from_table(self) -> int | None:
         rows = self.table_panel.table.selectionModel().selectedRows()

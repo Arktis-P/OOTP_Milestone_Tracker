@@ -21,11 +21,12 @@ from PyQt6.QtWidgets import (
 from core.config import AppSettings
 from core.milestone.checker import MilestoneChecker
 from core.milestone.definitions import MilestoneDefinition, MilestoneDefinitions
+from core.milestone.implementation import manual_entry_hint
 from core.milestone.manual_entry import (
     ManualMilestoneFormData,
     check_duplicate,
     get_achieved_value_candidates,
-    milestones_for_target,
+    milestones_for_manual_entry,
     parse_flexible_date,
     scope_needs_games_at_achievement,
     scope_needs_season,
@@ -44,13 +45,18 @@ class ManualMilestoneDialog(QDialog):
         milestones: MilestoneDefinitions,
         settings: AppSettings,
         parent: QWidget | None = None,
+        *,
+        manual_only: bool = False,
     ) -> None:
         super().__init__(parent)
         self.aggregator = aggregator
         self.milestones = milestones
         self.settings = settings
-        self.setWindowTitle("마일스톤 수동 입력")
-        self.resize(520, 480)
+        self.manual_only = manual_only
+        self.setWindowTitle(
+            "수동 전용 마일스톤 입력" if manual_only else "마일스톤 수동 입력"
+        )
+        self.resize(520, 520)
 
         self.player_radio = QRadioButton("개인")
         self.team_radio = QRadioButton("팀")
@@ -94,6 +100,15 @@ class ManualMilestoneDialog(QDialog):
         self.milestone_combo.setEditable(True)
         self.milestone_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.milestone_combo.currentIndexChanged.connect(self._on_milestone_changed)
+
+        self.manual_hint = QLabel("")
+        self.manual_hint.setWordWrap(True)
+        self.manual_hint.setStyleSheet("color: #64748b; font-size: 12px;")
+        if manual_only:
+            self.manual_hint.setText(
+                "박스스코어에서 자동 판정되지 않는 마일스톤입니다. "
+                "수상·리그 1위·플레이오프·명예의 전당 등은 여기서 입력하세요."
+            )
 
         self.season_edit = QLineEdit(str(settings.current_season))
         self.season_label = QLabel("시즌:")
@@ -143,6 +158,8 @@ class ManualMilestoneDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addLayout(target_row)
+        if self.manual_only:
+            layout.addWidget(self.manual_hint)
         layout.addLayout(self.form)
         layout.addWidget(buttons)
 
@@ -172,7 +189,11 @@ class ManualMilestoneDialog(QDialog):
 
     def _reload_milestones(self) -> None:
         target = "player" if self.player_radio.isChecked() else "team"
-        pool = milestones_for_target(self.milestones.all_milestones, target)
+        pool = milestones_for_manual_entry(
+            self.milestones.all_milestones,
+            target,
+            manual_only=self.manual_only,
+        )
         current_key = self.milestone_combo.currentData()
         self.milestone_combo.blockSignals(True)
         self.milestone_combo.clear()
@@ -201,6 +222,8 @@ class ManualMilestoneDialog(QDialog):
         milestone = self._selected_milestone()
         if milestone is None:
             return
+        if self.manual_only:
+            self.manual_hint.setText(manual_entry_hint(milestone))
         scope = milestone.scope
         self.season_row_widget.setVisible(scope_needs_season(scope))
         self.season_label.setVisible(scope_needs_season(scope))

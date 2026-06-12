@@ -61,7 +61,7 @@ def test_parse_flexible_date_invalid() -> None:
 
 
 def test_achieved_value_candidates_higher(milestones) -> None:
-    milestone = milestones.get_by_key("career_hr_500")
+    milestone = milestones.get_by_key("bat_career_hr_500")
     assert milestone is not None
     assert get_achieved_value_candidates(milestone) == ["500", "501", "502", "503"]
 
@@ -92,14 +92,14 @@ def _seed_player(aggregator: Aggregator, player_id: int = 42) -> None:
 
 def test_record_manual_player_milestone(checker: MilestoneChecker, aggregator) -> None:
     _seed_player(aggregator)
-    milestone = checker.definitions.get_by_key("career_hr_500")
+    milestone = checker.definitions.get_by_key("bat_career_hr_500")
     assert milestone is not None
     form = ManualMilestoneFormData(
         target="player",
         achieved_date=date(2026, 3, 1),
         player_id=42,
         team=None,
-        milestone_key="career_hr_500",
+        milestone_key="bat_career_hr_500",
         season=None,
         achieved_value=500.0,
         games_at_achievement=1800,
@@ -124,17 +124,17 @@ def test_record_manual_player_milestone(checker: MilestoneChecker, aggregator) -
 
 
 def test_record_manual_team_milestone(checker: MilestoneChecker, aggregator) -> None:
-    milestone = checker.definitions.get_by_key("team_manual_worldseries")
+    milestone = checker.definitions.get_by_key("team_season_world_series_win")
     assert milestone is not None
     form = ManualMilestoneFormData(
         target="team",
         achieved_date=date(2026, 10, 30),
         player_id=None,
         team=GIANTS,
-        milestone_key="team_manual_worldseries",
+        milestone_key="team_season_world_series_win",
         season=2026,
         achieved_value=1.0,
-        games_at_achievement=None,
+        games_at_achievement=162,
         opponent_team="",
         opponent_player="",
         description="",
@@ -154,14 +154,14 @@ def test_record_manual_team_milestone(checker: MilestoneChecker, aggregator) -> 
 
 def test_check_duplicate_career_warns(checker: MilestoneChecker, aggregator) -> None:
     _seed_player(aggregator)
-    milestone = checker.definitions.get_by_key("career_hr_500")
+    milestone = checker.definitions.get_by_key("bat_career_hr_500")
     assert milestone is not None
     form = ManualMilestoneFormData(
         target="player",
         achieved_date=date(2026, 3, 1),
         player_id=42,
         team=None,
-        milestone_key="career_hr_500",
+        milestone_key="bat_career_hr_500",
         season=None,
         achieved_value=500.0,
         games_at_achievement=100,
@@ -180,14 +180,14 @@ def test_check_duplicate_same_date_game_scope_warns(
     checker: MilestoneChecker, aggregator
 ) -> None:
     _seed_player(aggregator)
-    milestone = checker.definitions.get_by_key("game_hr_2")
+    milestone = checker.definitions.get_by_key("bat_game_hr_2")
     assert milestone is not None
     form = ManualMilestoneFormData(
         target="player",
         achieved_date=date(2026, 4, 5),
         player_id=42,
         team=None,
-        milestone_key="game_hr_2",
+        milestone_key="bat_game_hr_2",
         season=None,
         achieved_value=2.0,
         games_at_achievement=None,

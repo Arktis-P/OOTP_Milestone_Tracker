@@ -48,10 +48,11 @@ def test_near_n_explicit() -> None:
     assert is_near(21, milestone) is False
 
 
-def test_career_csv_has_near_n(milestones) -> None:
-    hr500 = milestones.get_by_key("career_hr_500")
+def test_career_csv_effective_near_n_default(milestones) -> None:
+    hr500 = milestones.get_by_key("bat_career_hr_500")
     assert hr500 is not None
-    assert hr500.near_n == 20
+    assert hr500.near_n is None
+    assert hr500.effective_near_n() == 25.0
 
 
 def test_list_cached_sets_is_near(tmp_path: Path, milestones) -> None:

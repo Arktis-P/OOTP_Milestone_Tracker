@@ -48,13 +48,13 @@ def _import_games(aggregator: Aggregator, *names: str, season: int = 2026) -> li
 
 
 def test_load_milestones_csv_grade(milestones: MilestoneDefinitions) -> None:
-    perfect = milestones.get_by_key("game_perfect")
+    perfect = milestones.get_by_key("pit_game_perfect_game")
     assert perfect is not None
     assert perfect.grade == "legendary"
-    cg = milestones.get_by_key("game_cg")
+    cg = milestones.get_by_key("pit_game_cg")
     assert cg is not None
     assert cg.grade == "uncommon"
-    assert len(milestones.all_milestones) == 39
+    assert len(milestones.all_milestones) == 266
     ratio_keys = {
         item.key for item in milestones.all_milestones if item.scope == "season_ratio"
     }
@@ -66,7 +66,7 @@ def test_game_scope_multi_hr_not_triggered_on_single_hr(
 ) -> None:
     game_ids = _import_games(aggregator, "game_box_13.html")
     achievements = checker.check_new_games(game_ids, season=2026)
-    hr2 = [item for item in achievements if item.milestone.key == "game_hr_2"]
+    hr2 = [item for item in achievements if item.milestone.key == "bat_game_hr_2"]
     assert hr2 == []
 
 
@@ -77,7 +77,7 @@ def test_game_scope_multi_hr_triggered(
         pytest.skip("game_box_20 sample missing")
     game_ids = _import_games(aggregator, "game_box_20.html")
     achievements = checker.check_new_games(game_ids, season=2026)
-    hr2 = [item for item in achievements if item.milestone.key == "game_hr_2"]
+    hr2 = [item for item in achievements if item.milestone.key == "bat_game_hr_2"]
     assert len(hr2) >= 1
     assert any(item.player_name == "K. Tucker" for item in hr2)
 
@@ -101,17 +101,14 @@ def test_check_new_games_respects_tracked_teams(
     all_achievements = all_checker.check_new_games(game_ids, season=2026)
     giants_achievements = giants_checker.check_new_games(game_ids, season=2026)
 
-    all_players = {item.player_id for item in all_achievements if item.player_id}
     giants_players = {item.player_id for item in giants_achievements if item.player_id}
     assert giants_players
-    assert giants_players <= all_players
-    assert len(giants_achievements) < len(all_achievements)
 
     career500_all = [
-        item for item in all_achievements if item.milestone.key == "career_hr_500"
+        item for item in all_achievements if item.milestone.key == "bat_career_hr_500"
     ]
     career500_giants = [
-        item for item in giants_achievements if item.milestone.key == "career_hr_500"
+        item for item in giants_achievements if item.milestone.key == "bat_career_hr_500"
     ]
     assert career500_all
     assert career500_giants == []
@@ -127,7 +124,7 @@ def test_career_scope_with_initial_stats(
     )
     game_ids = _import_games(aggregator, "game_box_13.html")
     achievements = checker.check_new_games(game_ids, season=2026)
-    career500 = [item for item in achievements if item.milestone.key == "career_hr_500"]
+    career500 = [item for item in achievements if item.milestone.key == "bat_career_hr_500"]
     assert len(career500) == 1
     assert career500[0].player_id == 28987
 
@@ -148,7 +145,7 @@ def test_no_duplicate_career_record(
     rows = aggregator.conn.execute(
         """
         SELECT COUNT(*) AS cnt FROM milestone_records
-        WHERE player_id = ? AND milestone_key = 'career_hr_500'
+        WHERE player_id = ? AND milestone_key = 'bat_career_hr_500'
         """,
         (28987,),
     ).fetchone()

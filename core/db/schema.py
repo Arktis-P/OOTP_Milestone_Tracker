@@ -214,6 +214,8 @@ def _migrate_post_schema(conn: sqlite3.Connection) -> None:
     _ensure_batting_substitute_column(conn)
     _ensure_milestone_records_team(conn)
     _ensure_milestone_records_manual_columns(conn)
+    _ensure_pitching_holds_columns(conn)
+    _ensure_batting_grand_slam_column(conn)
     _backfill_milestone_games_at_achievement(conn)
 
 
@@ -300,6 +302,24 @@ def _ensure_pitching_special_columns(conn: sqlite3.Connection) -> None:
     ):
         if name not in columns:
             conn.execute(f"ALTER TABLE pitching_logs ADD COLUMN {name} {ddl}")
+
+
+def _ensure_pitching_holds_columns(conn: sqlite3.Connection) -> None:
+    columns = _table_columns(conn, "pitching_logs")
+    for name, ddl in (
+        ("hold", "INTEGER NOT NULL DEFAULT 0"),
+        ("season_holds", "INTEGER"),
+    ):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE pitching_logs ADD COLUMN {name} {ddl}")
+
+
+def _ensure_batting_grand_slam_column(conn: sqlite3.Connection) -> None:
+    columns = _table_columns(conn, "batting_logs")
+    if "is_grand_slam" not in columns:
+        conn.execute(
+            "ALTER TABLE batting_logs ADD COLUMN is_grand_slam INTEGER NOT NULL DEFAULT 0"
+        )
 
 
 def _migrate_milestone_records(conn: sqlite3.Connection) -> None:

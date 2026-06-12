@@ -114,9 +114,9 @@ def test_template_c_and_d(aggregator: Aggregator) -> None:
     assert score == "3-1 승리"
 
 
-def test_fill_description_situational_returns_none() -> None:
+def test_fill_description_unhandled_template_returns_none() -> None:
     milestones = load_milestones(MILESTONES_PATH)
-    m = milestones.get_by_key("career_hr_500")
+    m = milestones.get_by_key("bat_career_hr_500")
     assert m is not None
     assert fill_description(m, {}) is None
 
