@@ -82,6 +82,41 @@ def test_game_scope_multi_hr_triggered(
     assert any(item.player_name == "K. Tucker" for item in hr2)
 
 
+def test_check_new_games_respects_tracked_teams(
+    aggregator: Aggregator, milestones: MilestoneDefinitions
+) -> None:
+    InitialImporter(aggregator).import_batting(
+        SAMPLES_STATS / "player_batting_stats.txt",
+        "first_time",
+        current_season=2026,
+    )
+    game_ids = _import_games(aggregator, "game_box_13.html")
+    all_checker = MilestoneChecker(aggregator, milestones, season_games_total=162)
+    giants_checker = MilestoneChecker(
+        aggregator,
+        milestones,
+        season_games_total=162,
+        tracked_teams=["SF"],
+    )
+    all_achievements = all_checker.check_new_games(game_ids, season=2026)
+    giants_achievements = giants_checker.check_new_games(game_ids, season=2026)
+
+    all_players = {item.player_id for item in all_achievements if item.player_id}
+    giants_players = {item.player_id for item in giants_achievements if item.player_id}
+    assert giants_players
+    assert giants_players <= all_players
+    assert len(giants_achievements) < len(all_achievements)
+
+    career500_all = [
+        item for item in all_achievements if item.milestone.key == "career_hr_500"
+    ]
+    career500_giants = [
+        item for item in giants_achievements if item.milestone.key == "career_hr_500"
+    ]
+    assert career500_all
+    assert career500_giants == []
+
+
 def test_career_scope_with_initial_stats(
     aggregator: Aggregator, checker: MilestoneChecker
 ) -> None:

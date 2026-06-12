@@ -105,6 +105,7 @@ class MilestoneChecker:
         self._pitching_season_cache: dict[tuple[int, int], dict[str, Any] | None] = {}
         self._career_batting_cache: dict[int, dict[str, Any] | None] = {}
         self._career_pitching_cache: dict[int, dict[str, Any] | None] = {}
+        self._tracked_player_ids_cache: set[int] | None = None
 
     def check_new_games(
         self,
@@ -136,6 +137,7 @@ class MilestoneChecker:
         self._pitching_season_cache.clear()
         self._career_batting_cache.clear()
         self._career_pitching_cache.clear()
+        self._tracked_player_ids_cache = None
 
     def _batting_season_cached(self, player_id: int, season: int) -> dict[str, Any] | None:
         key = (player_id, season)
@@ -176,6 +178,8 @@ class MilestoneChecker:
                 rows = self.aggregator.get_season_batting_totals(season)
                 min_ab = get_batting_qualifier(self.season_games_total, self.ratio_qualifiers)
                 for row in rows:
+                    if not self._row_player_is_tracked(row):
+                        continue
                     if int(row.get("ab") or 0) < min_ab:
                         continue
                     current = float(row.get(_ratio_column(milestone.stat), 0) or 0)
@@ -189,6 +193,8 @@ class MilestoneChecker:
                     self.season_games_total, self.ratio_qualifiers
                 )
                 for row in rows:
+                    if not self._row_player_is_tracked(row):
+                        continue
                     if int(row.get("ip_outs") or 0) < min_outs:
                         continue
                     current = float(row.get(_ratio_column(milestone.stat), 0) or 0)
@@ -392,6 +398,9 @@ class MilestoneChecker:
         achieved_date = str(game["date"])
         results: list[MilestoneAchievement] = []
 
+        if self.tracked_teams and not self._tracked_teams_in_game(game_id):
+            return results
+
         batting_rows = self.aggregator.conn.execute(
             """
             SELECT bl.*, COALESCE(p.short_name, p.full_name) AS player_name
@@ -410,6 +419,8 @@ class MilestoneChecker:
             """,
             (game_id,),
         ).fetchall()
+        batting_rows = self._filter_game_log_rows(batting_rows)
+        pitching_rows = self._filter_game_log_rows(pitching_rows)
 
         for milestone in self.definitions.active_milestones:
             if milestone.scope not in ACTIVE_SCOPES:
@@ -472,6 +483,42 @@ class MilestoneChecker:
             )
         return results
 
+    def _tracked_team_names(self) -> set[str]:
+        return set(expand_tracked_teams(self.tracked_teams, self.custom_teams))
+
+    def _tracked_player_ids(self) -> set[int] | None:
+        if not self.tracked_teams:
+            return None
+        if self._tracked_player_ids_cache is None:
+            players = self.aggregator.get_tracked_players(
+                self.tracked_teams,
+                custom_teams=self.custom_teams,
+            )
+            self._tracked_player_ids_cache = {
+                int(player["player_id"]) for player in players
+            }
+        return self._tracked_player_ids_cache
+
+    def _filter_game_log_rows(self, rows: list[Any]) -> list[Any]:
+        if not self.tracked_teams:
+            return rows
+        tracked_names = self._tracked_team_names()
+        filtered: list[Any] = []
+        for row in rows:
+            data = dict(row)
+            if str(data.get("team") or "") in tracked_names:
+                filtered.append(row)
+        return filtered
+
+    def _row_player_is_tracked(self, row: dict[str, Any]) -> bool:
+        tracked_ids = self._tracked_player_ids()
+        if tracked_ids is None:
+            return True
+        player_id = row.get("id") or row.get("player_id")
+        if player_id is None:
+            return False
+        return int(player_id) in tracked_ids
+
     def _tracked_teams_in_game(self, game_id: int) -> list[str]:
         if not self.tracked_teams:
             return []
@@ -481,9 +528,7 @@ class MilestoneChecker:
         ).fetchone()
         if not row:
             return []
-        names = set(
-            expand_tracked_teams(self.tracked_teams, self.custom_teams)
-        )
+        names = self._tracked_team_names()
         tokens = {token.strip().upper() for token in self.tracked_teams if token.strip()}
         matched: list[str] = []
         for team_name in (str(row["away_team"]), str(row["home_team"])):

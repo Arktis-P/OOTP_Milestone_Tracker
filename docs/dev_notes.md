@@ -54,7 +54,7 @@
 - `milestones.csv`: `season_ratio` 항목 제거, 팀 마일스톤 13개 추가 (`team_game` 6, `team_manual` 4, `team_season` 3)
 - `ACTIVE_SCOPES` / `PREDICTABLE_SCOPES` — `season_ratio`·팀 scope 예측 제외, career만 예측
 - `core/milestone/team_milestone.py` — 선발/출장 전원 안타·타점, 노히터·퍼펙트, 시즌 승수
-- `MilestoneChecker` — `tracked_teams` 대상 팀 마일스톤 자동 감지, `record_manual_team_milestone`
+- `MilestoneChecker` — `tracked_teams` 대상 팀·개인 마일스톤 자동 감지(비추적 팀 경기/선수 제외), `record_manual_team_milestone`
 - DB: `batting_logs.is_substitute`, `milestone_records.team` 마이그레이션
 - GUI: 마일스톤 기록 탭 개인/팀 필터, 팀 수동 입력 다이얼로그, 임포트 알림에 팀 건수
 - 레이팅 편집 탭 — OOTP 로스터 자동 로드(MLB/KBO)·필터·개별 선수 팝업 편집·백업 후 저장

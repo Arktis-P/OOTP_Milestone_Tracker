@@ -1,4 +1,5 @@
 category,key,label,scope,stat,threshold,direction,grade,track_from,near_n
+batting,game_hits_2,한 경기 2안타(테스트),game,h,2,higher,uncommon,,
 batting,game_hits_4,한 경기 4안타,game,h,4,higher,uncommon,,
 batting,game_hr_2,한 경기 멀티 홈런,game,hr,2,higher,rare,,
 batting,game_rbi_5,한 경기 5타점,game,rbi,5,higher,uncommon,,
