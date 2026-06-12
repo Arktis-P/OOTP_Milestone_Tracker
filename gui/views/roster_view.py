@@ -18,7 +18,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.config import AppSettings
+from core.config import AppSettings, resolve_data_path
+from core.stats.aggregator import Aggregator
 from core.roster.editor import RosterEditor, RosterFilter
 from core.roster.ootp_format import player_age, player_display_name
 from core.roster.paths import (
@@ -29,6 +30,7 @@ from core.roster.paths import (
 )
 from core.roster.position_filter import POSITION_GROUP_OPTIONS, position_label
 from core.roster.row_access import row_get
+from gui.widgets.bulk_rating_dialog import BulkRatingDialog
 from gui.widgets.player_rating_dialog import PlayerRatingDialog
 from gui.widgets.table_widgets import TablePanel
 
@@ -70,6 +72,9 @@ class RosterView(QWidget):
             spin.setSpecialValueText("전체")
             spin.setValue(0)
 
+        self.bulk_button = QPushButton("일괄 편집...")
+        self.bulk_button.clicked.connect(self._open_bulk_dialog)
+
         self.backup_button = QPushButton("원본 복사본 저장")
         self.save_button = QPushButton("저장")
         self.save_button.setEnabled(False)
@@ -92,6 +97,7 @@ class RosterView(QWidget):
 
         action_row = QHBoxLayout()
         action_row.addWidget(filter_button)
+        action_row.addWidget(self.bulk_button)
         action_row.addStretch()
         action_row.addWidget(self.backup_button)
         action_row.addWidget(self.save_button)
@@ -201,6 +207,31 @@ class RosterView(QWidget):
         self._filtered_rows = self.editor.filter_rows(self._build_filter())
         self.info_label.setText(f"필터 결과: {len(self._filtered_rows):,}명")
         self._show_rows(self._filtered_rows)
+
+    def _open_bulk_dialog(self) -> None:
+        export_dir = self._import_export_dir()
+        if export_dir is None:
+            QMessageBox.warning(
+                self,
+                "세이브 미설정",
+                "활성 세이브가 설정되지 않았습니다.",
+            )
+            return
+        try:
+            with Aggregator(resolve_data_path(self.settings.db_path)) as agg:
+                dialog = BulkRatingDialog(
+                    agg,
+                    str(export_dir),
+                    self.settings,
+                    parent=self,
+                )
+        except FileNotFoundError as exc:
+            QMessageBox.warning(self, "파일 없음", str(exc))
+            return
+        except ValueError as exc:
+            QMessageBox.warning(self, "로스터 오류", str(exc))
+            return
+        dialog.exec()
 
     def _on_row_double_clicked(self, row_index: int, _column: int) -> None:
         item = self.table_panel.table.item(row_index, 0)
