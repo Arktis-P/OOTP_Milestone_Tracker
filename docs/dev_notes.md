@@ -22,6 +22,7 @@
 - `tests/test_manual_milestone.py`
 - 자동 기록 시 `record_context.py` — scope별 경기수·상대팀·상대선수(시즌/통산, 게임 로그 우선)
 - 마일스톤 기록 탭 표 컬럼: 날짜·선수·한글명·마일스톤·경기수·상대팀·상대선수·설명·비고
+- `record_backfill.py` — 기존 기록 `games_at_achievement` 백필 (구 UI 「경기」= game_id 기준, 달성 시점 경기수 산출)
 
 ## 2026-06-12 — Phase 8: 레이팅 일괄 편집
 

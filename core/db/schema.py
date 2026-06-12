@@ -214,6 +214,7 @@ def _migrate_post_schema(conn: sqlite3.Connection) -> None:
     _ensure_batting_substitute_column(conn)
     _ensure_milestone_records_team(conn)
     _ensure_milestone_records_manual_columns(conn)
+    _backfill_milestone_games_at_achievement(conn)
 
 
 def _ensure_db_meta(conn: sqlite3.Connection) -> None:
@@ -429,6 +430,16 @@ def _ensure_milestone_records_team(conn: sqlite3.Connection) -> None:
     columns = _table_columns(conn, "milestone_records")
     if columns and "team" not in columns:
         conn.execute("ALTER TABLE milestone_records ADD COLUMN team TEXT")
+
+
+def _backfill_milestone_games_at_achievement(conn: sqlite3.Connection) -> None:
+    from core.db.meta import get_meta, set_meta
+    from core.milestone.record_backfill import backfill_games_at_achievement
+
+    if get_meta(conn, "milestone_games_backfill_v1") == "1":
+        return
+    backfill_games_at_achievement(conn)
+    set_meta(conn, "milestone_games_backfill_v1", "1")
 
 
 def _ensure_milestone_records_manual_columns(conn: sqlite3.Connection) -> None:
