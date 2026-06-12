@@ -14,12 +14,14 @@
 | `scope` | string | `game` / `season` / `career` / `team_game` / `team_season` / `team_manual` (`season_ratio` 비활성) |
 | `direction` | string | `higher`(기본) 또는 `lower` (ERA, WHIP 등) |
 | `grade` | string | `common` / `uncommon` / `rare` / `epic` / `legendary` (GUI 표시 서식용) |
+| `track_from` | number | (선택) 예측 감시 목록 진입 최소 통계값. 미지정 시 career `threshold * 0.8` |
+| `near_n` | number | (선택) 임박 표시 기준 — 남은 수치가 이 값 이하면 "🔥 임박". 미지정 시 `threshold * 0.05` (정수 내림) |
 
 ## CSV 형식
 
 ```csv
-category,key,label,scope,stat,threshold,direction,grade
-batting,career_hr_500,통산 500홈런,career,career_hr,500,higher,legendary
+category,key,label,scope,stat,threshold,direction,grade,track_from,near_n
+batting,career_hr_500,통산 500홈런,career,career_hr,500,higher,legendary,400,20
 pitching,season_era_200,시즌 2점대 ERA,season_ratio,season_era,2.99,lower,legendary
 ```
 
@@ -82,6 +84,11 @@ pitching,season_era_200,시즌 2점대 ERA,season_ratio,season_era,2.99,lower,le
 
 - `higher` (기본): `current >= threshold`
 - `lower`: `current <= threshold` (예: ERA 2.99 이하)
+
+## 임박 예측 (`near_n`)
+
+통산(career) scope 예측 탭·대시보드에서 `remaining <= near_n`이면 **임박**으로 표시합니다.
+페이스 계산이나 시즌 경기수 추정은 사용하지 않으며, 절대 수치 비교만 합니다.
 
 ## 사용자 정의 마일스톤 추가
 

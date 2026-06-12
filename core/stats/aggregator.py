@@ -1282,6 +1282,59 @@ class Aggregator:
         rows = self._conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
+    def get_recent_milestone_records(self, limit: int = 10) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT mr.id,
+                   CASE
+                       WHEN mr.team IS NOT NULL AND mr.team != '' THEN mr.team
+                       ELSE COALESCE(p.full_name, p.short_name, '')
+                   END AS display_name,
+                   mr.player_id,
+                   mr.milestone_key,
+                   mr.milestone_label,
+                   mr.scope,
+                   mr.game_id,
+                   mr.achieved_date,
+                   mr.achieved_value,
+                   mr.season,
+                   mr.notes,
+                   mr.team,
+                   mr.recorded_at
+            FROM milestone_records mr
+            LEFT JOIN players p ON p.player_id = mr.player_id
+            ORDER BY mr.recorded_at DESC, mr.id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_all_milestone_records_export(self) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT mr.*,
+                   COALESCE(p.full_name, p.short_name, '') AS player_name
+            FROM milestone_records mr
+            LEFT JOIN players p ON p.player_id = mr.player_id
+            ORDER BY mr.recorded_at, mr.id
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_player_milestone_records(self, player_id: int) -> list[dict[str, Any]]:
+        rows = self._conn.execute(
+            """
+            SELECT mr.*
+            FROM milestone_records mr
+            WHERE mr.player_id = ?
+              AND (mr.team IS NULL OR mr.team = '')
+            ORDER BY mr.achieved_date DESC, mr.id DESC
+            """,
+            (player_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
 
 _BATTING_GAME_STAT_COLUMNS = {
     "h": "h",

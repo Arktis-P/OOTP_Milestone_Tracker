@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QShowEvent
+from PyQt6.QtGui import QColor, QShowEvent
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLabel,
@@ -54,6 +55,9 @@ class PredictView(QWidget):
         self.player_filter.currentIndexChanged.connect(self.refresh)
         self.grade_filter.currentIndexChanged.connect(self.refresh)
 
+        self.near_only_checkbox = QCheckBox("임박만 보기")
+        self.near_only_checkbox.toggled.connect(self.refresh)
+
         controls = QHBoxLayout()
         controls.addWidget(QLabel("마일스톤 예측 (통산)"))
         controls.addStretch()
@@ -61,6 +65,7 @@ class PredictView(QWidget):
         controls.addWidget(self.player_filter)
         controls.addWidget(QLabel("등급:"))
         controls.addWidget(self.grade_filter)
+        controls.addWidget(self.near_only_checkbox)
         controls.addWidget(self.refresh_button)
 
         self.table = SortableTable(
@@ -72,6 +77,7 @@ class PredictView(QWidget):
                 "목표값",
                 "남은 수치",
                 "달성률",
+                "상태",
                 "이번 시즌",
             ]
         )
@@ -134,6 +140,8 @@ class PredictView(QWidget):
             player_id=int(player_id) if player_id is not None else None,
             grade=grade_filter,
         )
+        if self.near_only_checkbox.isChecked():
+            predictions = [item for item in predictions if item.is_near]
 
         if not predictions:
             self.banner.show_info(
@@ -147,6 +155,7 @@ class PredictView(QWidget):
         self.table.setRowCount(len(predictions))
         for row_idx, item in enumerate(predictions):
             grade = item.milestone.grade if item.milestone else item.grade
+            status = "🔥 임박" if item.is_near else ""
             values = [
                 item.player_name,
                 item.milestone_label,
@@ -155,6 +164,7 @@ class PredictView(QWidget):
                 f"{item.threshold:,.0f}",
                 f"{item.remaining:,.0f}",
                 f"{item.progress_pct:.1f}%",
+                status,
                 item.season_note,
             ]
             for col_idx, value in enumerate(values):
@@ -162,5 +172,18 @@ class PredictView(QWidget):
                 cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 if col_idx == 2:
                     apply_grade_style(cell, grade)
+                if col_idx == 7 and item.is_near:
+                    cell.setForeground(QColor("#EF4444"))
                 self.table.setItem(row_idx, col_idx, cell)
         self.table.setSortingEnabled(True)
+
+    def focus_player(
+        self, player_id: int | None = None, *, near_only: bool = False
+    ) -> None:
+        if near_only:
+            self.near_only_checkbox.setChecked(True)
+        if player_id is not None and player_id > 0:
+            index = self.player_filter.findData(player_id)
+            if index >= 0:
+                self.player_filter.setCurrentIndex(index)
+        self.refresh()

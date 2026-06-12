@@ -42,7 +42,14 @@ class MilestoneDefinition:
     direction: Direction = "higher"
     grade: Grade = "common"
     track_from: float | None = None
+    near_n: float | None = None
     active: bool = True
+
+    def effective_near_n(self) -> float:
+        """Absolute remaining stat count at or below which a milestone is 'near'."""
+        if self.near_n is not None:
+            return self.near_n
+        return float(int(self.threshold * 0.05))
 
     def effective_track_from(self) -> float:
         """Minimum stat value before this milestone enters the prediction watch list."""
@@ -138,6 +145,9 @@ def _load_csv(file_path: Path) -> MilestoneDefinitions:
             track_raw = (row.get("track_from") or "").strip()
             track_from = float(track_raw) if track_raw else None
 
+            near_raw = (row.get("near_n") or "").strip()
+            near_n = float(near_raw) if near_raw else None
+
             item = MilestoneDefinition(
                 key=key,
                 label=(row.get("label") or "").strip(),
@@ -148,6 +158,7 @@ def _load_csv(file_path: Path) -> MilestoneDefinitions:
                 direction=direction,  # type: ignore[arg-type]
                 grade=grade,  # type: ignore[arg-type]
                 track_from=track_from,
+                near_n=near_n,
                 active=active,
             )
             if category == "batting":
@@ -175,6 +186,7 @@ def _parse_definition(item: dict, category: str) -> MilestoneDefinition:
     if grade not in VALID_GRADES:
         grade = "common"
     track_from = item.get("track_from")
+    near_n = item.get("near_n")
     scope = item.get("scope", "career")
     active = scope != "season_ratio" and bool(item.get("active", True))
     return MilestoneDefinition(
@@ -187,5 +199,6 @@ def _parse_definition(item: dict, category: str) -> MilestoneDefinition:
         direction=item.get("direction", "higher"),
         grade=grade,  # type: ignore[arg-type]
         track_from=float(track_from) if track_from is not None else None,
+        near_n=float(near_n) if near_n is not None else None,
         active=active,
     )

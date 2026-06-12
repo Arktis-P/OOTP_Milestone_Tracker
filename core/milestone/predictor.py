@@ -51,6 +51,12 @@ class CareerMilestonePrediction:
     season_possible: bool | None
     season_projected_add: float
     season_note: str
+    is_near: bool = False
+
+
+def is_near(remaining: float, milestone: MilestoneDefinition) -> bool:
+    """True when remaining stat count is within the milestone's near threshold."""
+    return remaining <= milestone.effective_near_n()
 
 
 class MilestonePredictor:
@@ -164,9 +170,12 @@ class MilestonePredictor:
                         season_possible=season_info["possible"],
                         season_projected_add=season_info["projected_add"],
                         season_note=season_info["note"],
+                        is_near=is_near(remaining, milestone),
                     )
                 )
-        predictions.sort(key=lambda item: item.progress_pct, reverse=True)
+        predictions.sort(
+            key=lambda item: (not item.is_near, -item.progress_pct),
+        )
         return predictions
 
     def _career_value_from_totals(

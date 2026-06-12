@@ -37,6 +37,7 @@ from core.stats.position_filter import (
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.widgets.player_game_log_dialog import PlayerGameLogDialog
+from gui.widgets.player_milestone_timeline import PlayerMilestoneTimeline
 from gui.widgets.table_widgets import SortableTable
 from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
 
@@ -148,6 +149,10 @@ class StatsView(QWidget):
         right_panel.addWidget(self.batting_table)
         right_panel.addWidget(QLabel("투구"))
         right_panel.addWidget(self.pitching_table)
+        self.milestone_timeline = PlayerMilestoneTimeline(
+            self.aggregator, self.milestones, self.settings
+        )
+        right_panel.addWidget(self.milestone_timeline)
 
         right_widget = QWidget()
         right_widget.setLayout(right_panel)
@@ -258,6 +263,7 @@ class StatsView(QWidget):
             self.info_label.setText("")
             self.batting_table.setRowCount(0)
             self.pitching_table.setRowCount(0)
+            self.milestone_timeline.load_player(None)
 
     def _on_list_selection(self, row: int) -> None:
         if row >= 0:
@@ -283,9 +289,11 @@ class StatsView(QWidget):
             self.info_label.setText("")
             self.batting_table.setRowCount(0)
             self.pitching_table.setRowCount(0)
+            self.milestone_timeline.load_player(None)
             return
 
         self.player_header.setText(format_player_header(player))
+        self.milestone_timeline.load_player(player_id)
 
         career_mode = self._career_mode or self.season_combo.currentData() == "career"
         if career_mode:

@@ -1,5 +1,28 @@
 # 개발 노트
 
+## 백로그 (TODO)
+
+- [ ] **레이팅 일괄 편집** — 별도 팝업에서 필터된 선수 대상 일괄 수정 (지정값 / +/-)
+- [ ] **마일스톤 기준 재정의** — `milestones.csv` 항목·threshold·scope 전반 검토·정리
+- [ ] **앱 내 마일스톤 기준 편집** — 프로그램에서 기준 확인·수정 UI (기본은 외부 CSV 편집)
+- [ ] **수동 마일스톤 입력** — 별도 팝업으로 개인/팀 수동 달성 기록 (현재 팀 수동만 부분 구현)
+- [ ] **선수 이름 한글 매핑** — 표시용 한글 이름 리스트·매핑 테이블
+- [ ] **season_ratio** — 타율·ERA 등 (커리어 종료 시점 감지 후 별도 Phase)
+- [ ] **연속 기록(streak) 마일스톤** — 별도 Phase에서 설계·검증 예정 (`ACTIVE_SCOPES`에 `streak` 미포함)
+
+## 2026-06-12 — Phase 7: 예측 확장 + 대시보드 + 이력보내기 + 타임라인
+
+### 완료
+- `milestones.csv` — `near_n` 컬럼 추가, career 항목별 임박 기준 설정
+- `predictor.is_near()` / `MilestoneDefinition.effective_near_n()` — `remaining <= near_n` 판정
+- 예측 탭 — "상태" 컬럼(🔥 임박), "임박만 보기" 필터, 임박 우선 정렬
+- `gui/views/dashboard_view.py` — 최근 달성 10건, 임박 예측 10건, 박스스코어 가져오기, 기본 탭
+- 마일스톤 기록 탭 — 전체 이력 CSV export (`utf-8-sig`)
+- 선수 기록 탭 — `PlayerMilestoneTimeline` 커리어 마일스톤 패널
+- `prediction_store` — `watched_keys` 버그 수정, `list_near_cached()`
+- `docs/decisions/D-024-near-n-threshold.md` ADR
+- `tests/test_near_prediction.py`
+
 ## 2025-06-11 — Phase 6: 팀 마일스톤 + 로스터 편집 + 예측 정리
 
 ### 완료
@@ -9,11 +32,8 @@
 - `MilestoneChecker` — `tracked_teams` 대상 팀 마일스톤 자동 감지, `record_manual_team_milestone`
 - DB: `batting_logs.is_substitute`, `milestone_records.team` 마이그레이션
 - GUI: 마일스톤 기록 탭 개인/팀 필터, 팀 수동 입력 다이얼로그, 임포트 알림에 팀 건수
-- 로스터 편집 탭 — CSV 로드·필터·일괄 수정(set/+/-)·백업 후 저장
+- 레이팅 편집 탭 — OOTP 로스터 자동 로드(MLB/KBO)·필터·개별 선수 팝업 편집·백업 후 저장
 - `tests/test_team_milestones.py`, `tests/test_roster_editor.py`
-
-### 미구현 (향후)
-- `season_ratio` (타율, ERA 등) — 커리어 종료 시점 감지 불가로 별도 Phase 예정
 
 ## 2025-06-11 — Phase 5: GUI ↔ 로직 연결 + 포지션 필터
 

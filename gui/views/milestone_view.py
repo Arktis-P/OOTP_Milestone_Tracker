@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import csv
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -23,6 +27,7 @@ from core.milestone.checker import MilestoneChecker
 from core.milestone.definitions import MilestoneDefinitions
 from core.stats.aggregator import Aggregator
 from core.stats.team_filter import expand_tracked_teams
+from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.grade_styles import apply_grade_style
 from gui.widgets.table_widgets import TablePanel
 from gui.widgets.team_milestone_dialog import TeamMilestoneDialog
@@ -43,6 +48,9 @@ class MilestoneView(QWidget):
         self.milestones = milestones
         self.settings = settings
         self._records: list[dict] = []
+        self._highlight_id: int | None = None
+
+        self.banner = ErrorBanner(self)
 
         self.subject_combo = QComboBox()
         self.subject_combo.addItem("전체", "all")
@@ -79,8 +87,10 @@ class MilestoneView(QWidget):
         self.table_panel.filter_bar.search_input.textChanged.connect(self.refresh)
 
         self.refresh_button = QPushButton("새로고침")
+        self.export_button = QPushButton("CSV로 보내기")
         self.manual_button = QPushButton("팀 마일스톤 수동 입력")
         self.refresh_button.clicked.connect(self.refresh)
+        self.export_button.clicked.connect(self.export_history_csv)
         self.manual_button.clicked.connect(self._open_manual_dialog)
         self.table_panel.table.cellDoubleClicked.connect(self._open_game_log)
 
@@ -94,11 +104,13 @@ class MilestoneView(QWidget):
         button_row.addWidget(QLabel("시즌:"))
         button_row.addWidget(self.season_spin)
         button_row.addWidget(self.refresh_button)
+        button_row.addWidget(self.export_button)
         button_row.addWidget(self.manual_button)
         button_row.addStretch()
         button_row.addWidget(QLabel("더블클릭: 게임 로그 열기"))
 
         layout = QVBoxLayout(self)
+        layout.addWidget(self.banner)
         layout.addLayout(button_row)
         layout.addWidget(self.table_panel)
 
@@ -171,8 +183,83 @@ class MilestoneView(QWidget):
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 if col_idx == 2:
                     apply_grade_style(item, grade)
+                if self._highlight_id is not None and record.get("id") == self._highlight_id:
+                    item.setBackground(QColor("#FDE68A"))
                 self.table_panel.table.setItem(row_idx, col_idx, item)
         self.table_panel.table.setSortingEnabled(True)
+        if self._highlight_id is not None:
+            for row_idx, record in enumerate(self._records):
+                if record.get("id") == self._highlight_id:
+                    self.table_panel.table.selectRow(row_idx)
+                    break
+            self._highlight_id = None
+
+    def highlight_record(self, record_id: int | None) -> None:
+        self._highlight_id = record_id
+        self.refresh()
+
+    def export_history_csv(self) -> None:
+        confirm = QMessageBox.question(
+            self,
+            "마일스톤 이력보내기",
+            "전체 마일스톤 이력을보냅니다 (현재 필터와 무관).\n계속하시겠습니까?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+
+        filepath, _ = QFileDialog.getSaveFileName(
+            self,
+            "마일스톤 이력보내기",
+            f"milestone_history_{datetime.now():%Y%m%d}.csv",
+            "CSV Files (*.csv)",
+        )
+        if not filepath:
+            return
+
+        records = self.aggregator.get_all_milestone_records_export()
+        with open(filepath, "w", newline="", encoding="utf-8-sig") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(
+                [
+                    "type",
+                    "target",
+                    "milestone_label",
+                    "grade",
+                    "scope",
+                    "season",
+                    "game_id",
+                    "achieved_date",
+                    "achieved_value",
+                    "notes",
+                ]
+            )
+            for record in records:
+                is_team = bool(record.get("team"))
+                type_ = "team" if is_team else "individual"
+                target = record["team"] if is_team else record.get("player_name", "")
+                milestone = self.milestones.get_by_key(record["milestone_key"])
+                grade = milestone.grade if milestone else "common"
+                label = (
+                    milestone.label
+                    if milestone
+                    else record.get("milestone_label", record["milestone_key"])
+                )
+                writer.writerow(
+                    [
+                        type_,
+                        target,
+                        label,
+                        grade,
+                        record.get("scope") or "",
+                        record.get("season") or "",
+                        record.get("game_id") or "",
+                        record.get("achieved_date") or "",
+                        record.get("achieved_value") or "",
+                        record.get("notes") or "",
+                    ]
+                )
+        self.banner.show_info(f"보내기 완료: {filepath}")
 
     def _open_manual_dialog(self) -> None:
         dialog = TeamMilestoneDialog(

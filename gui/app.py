@@ -18,6 +18,7 @@ from core.config import AppSettings, SettingsManager, resolve_data_path
 from core.db.validation import format_overlap_warning, validate_no_overlap
 from core.milestone.definitions import load_milestones
 from core.stats.aggregator import Aggregator
+from gui.views.dashboard_view import DashboardView
 from gui.views.initial_import_view import InitialImportView
 from gui.views.milestone_view import MilestoneView
 from gui.views.predict_view import PredictView
@@ -46,6 +47,7 @@ class MainWindow(QMainWindow):
             resolve_data_path(self.settings.milestones_path)
         )
 
+        self._dashboard_view: DashboardView | None = None
         self._milestone_view: MilestoneView | None = None
         self._stats_view: StatsView | None = None
         self._predict_view: PredictView | None = None
@@ -65,6 +67,20 @@ class MainWindow(QMainWindow):
 
     def _build_tabs(self) -> None:
         self._tabs.clear()
+        self._dashboard_view = DashboardView(
+            self._aggregator,
+            self._milestones,
+            self.settings,
+            self.settings_manager,
+        )
+        self._dashboard_view.import_finished.connect(self._on_boxscore_import_finished)
+        self._dashboard_view.navigate_to_milestone.connect(self._navigate_to_milestone)
+        self._dashboard_view.navigate_to_predict.connect(self._navigate_to_predict)
+        self._dashboard_view.navigate_to_initial_import.connect(
+            self._navigate_to_initial_import
+        )
+        self._tabs.addTab(self._dashboard_view, "대시보드")
+
         self._milestone_view = MilestoneView(
             self._aggregator, self._milestones, self.settings
         )
@@ -110,6 +126,14 @@ class MainWindow(QMainWindow):
             )
 
     def _route_data_refreshed(self, kind: str) -> None:
+        if self._dashboard_view and kind in (
+            "boxscore",
+            "init",
+            "milestone",
+            "all",
+            "settings",
+        ):
+            self._dashboard_view.on_data_refreshed(kind)
         if self._milestone_view and kind in ("boxscore", "milestone", "all"):
             self._milestone_view.on_data_refreshed(kind)
         if self._stats_view and kind in ("boxscore", "init", "all"):
@@ -118,6 +142,23 @@ class MainWindow(QMainWindow):
             self._predict_view.on_data_refreshed(kind)
         if kind in ("boxscore", "init", "all"):
             self._check_overlap_warning()
+
+    def _navigate_to_milestone(self, record: dict) -> None:
+        if self._milestone_view:
+            record_id = record.get("id") if record else None
+            if record_id:
+                self._milestone_view.highlight_record(int(record_id))
+            self._tabs.setCurrentWidget(self._milestone_view)
+
+    def _navigate_to_predict(self, player_id: int, _milestone_key: str) -> None:
+        if self._predict_view:
+            self._tabs.setCurrentWidget(self._predict_view)
+            pid = player_id if player_id >= 0 else None
+            self._predict_view.focus_player(pid, near_only=True)
+
+    def _navigate_to_initial_import(self) -> None:
+        if self._initial_import_view:
+            self._tabs.setCurrentWidget(self._initial_import_view)
 
     def _on_setup_tab_saved(self, settings: AppSettings) -> None:
         self.settings = settings

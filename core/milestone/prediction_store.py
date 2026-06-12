@@ -7,6 +7,7 @@ from typing import Any
 
 from core.milestone.checker import CAREER_BATTING_STATS, CAREER_PITCHING_STATS, MilestoneChecker
 from core.milestone.definitions import MilestoneDefinition, MilestoneDefinitions
+from core.milestone.predictor import is_near
 from core.stats.aggregator import Aggregator
 
 _PITCHING_TOTALS_COL = {
@@ -35,6 +36,7 @@ class CachedPrediction:
     remaining: float
     progress_pct: float
     season_note: str
+    is_near: bool = False
     milestone: MilestoneDefinition | None = None
 
 
@@ -157,7 +159,6 @@ class PredictionStore:
                     season_pitching.get(player_id),
                 )
                 upserts.append(row)
-                watched_keys.discard(milestone.key)
 
         if deletes:
             self.aggregator.delete_milestone_predictions(self.season, deletes)
@@ -182,6 +183,8 @@ class PredictionStore:
             if grade and row["grade"] != grade:
                 continue
             milestone = self.milestones.get_by_key(row["milestone_key"])
+            remaining = float(row["remaining"])
+            near = bool(milestone and is_near(remaining, milestone))
             results.append(
                 CachedPrediction(
                     player_id=int(row["player_id"]),
@@ -191,14 +194,19 @@ class PredictionStore:
                     grade=str(row["grade"]),
                     current_value=float(row["current_value"]),
                     threshold=float(row["threshold"]),
-                    remaining=float(row["remaining"]),
+                    remaining=remaining,
                     progress_pct=float(row["progress_pct"]),
                     season_note=str(row["season_note"]),
+                    is_near=near,
                     milestone=milestone,
                 )
             )
-        results.sort(key=lambda item: item.progress_pct, reverse=True)
+        results.sort(key=lambda item: (not item.is_near, -item.progress_pct))
         return results
+
+    def list_near_cached(self, *, limit: int = 10) -> list[CachedPrediction]:
+        near = [item for item in self.list_cached() if item.is_near]
+        return near[:limit]
 
     def _build_watch_rows(self) -> list[dict[str, Any]]:
         achieved = self._achieved_career_keys()
