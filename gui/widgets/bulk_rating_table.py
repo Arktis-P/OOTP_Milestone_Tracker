@@ -23,12 +23,13 @@ _FAME_LABEL_BY_LEVEL = {level: label for label, level in _FAME_OPTIONS}
 
 COL_EN = 0
 COL_KO = 1
-COL_AGE = 2
-COL_PROSPECT = 3
-COL_BASE = 4
-COL_PROSPECT_FAME = 5
+COL_TEAM = 2
+COL_AGE = 3
+COL_PROSPECT = 4
+COL_BASE = 5
+COL_PROSPECT_FAME = 6
 
-HEADERS = ["영문명", "한글명", "나이", "유망주", "기본 인지도", "유망주 인지도"]
+HEADERS = ["영문명", "한글명", "소속팀", "나이", "유망주", "기본 인지도", "유망주 인지도"]
 FAME_COLUMNS = (COL_BASE, COL_PROSPECT_FAME)
 
 
@@ -37,6 +38,9 @@ class BulkPlayerIndex:
     player_id: int
     display_name: str
     name_lower: str
+    korean_name: str
+    korean_name_lower: str
+    team: str
     nation: str
     position: str
     source: str
@@ -122,7 +126,9 @@ class BulkRatingTableModel(QAbstractTableModel):
             if col == COL_EN:
                 return meta.display_name
             if col == COL_KO:
-                return ""
+                return meta.korean_name
+            if col == COL_TEAM:
+                return meta.team
             if col == COL_AGE:
                 return str(cfg.age)
             if col == COL_PROSPECT:

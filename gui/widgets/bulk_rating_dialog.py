@@ -33,13 +33,16 @@ from core.roster.combined import (
     save_modified_rosters,
     sync_player_rows_to_sources,
 )
+from core.roster.korean_names import KoreanNameMapper
 from core.roster.ootp_format import player_display_name
 from core.roster.position_filter import POSITION_GROUP_OPTIONS, matches_position_group
 from core.roster.row_access import row_get
 from core.stats.aggregator import Aggregator
 from gui.widgets.bulk_rating_table import (
     COL_BASE,
+    COL_EN,
     COL_PROSPECT_FAME,
+    COL_TEAM,
     BulkPlayerIndex,
     BulkRatingTableModel,
     FameRadioDelegate,
@@ -74,6 +77,7 @@ class BulkRatingDialog(QDialog):
         self._player_indices: list[BulkPlayerIndex] = []
         self._players_by_id = {p.player_id: p for p in self.combined.players}
         fieldnames = self.combined.fieldnames
+        self._korean_names = KoreanNameMapper.load()
 
         for player in self.combined.players:
             age = age_from_row(player.row, fieldnames, self.reference_date)
@@ -85,11 +89,17 @@ class BulkRatingDialog(QDialog):
                 is_prospect=age <= 25,
             )
             name = player_display_name(player.row, fieldnames)
+            last_name = row_get(player.row, fieldnames, "LastName").strip()
+            first_name = row_get(player.row, fieldnames, "FirstName").strip()
+            korean_name = self._korean_names.format_player_name(last_name, first_name)
             self._player_indices.append(
                 BulkPlayerIndex(
                     player_id=player.player_id,
                     display_name=name,
                     name_lower=name.lower(),
+                    korean_name=korean_name,
+                    korean_name_lower=korean_name.casefold(),
+                    team=row_get(player.row, fieldnames, "Team Name").strip(),
                     nation=row_get(player.row, fieldnames, "Nation").strip(),
                     position=row_get(player.row, fieldnames, "Position"),
                     source=player.source,
@@ -152,7 +162,10 @@ class BulkRatingDialog(QDialog):
         self.table.setSortingEnabled(False)
         self.table.horizontalHeader().setStretchLastSection(False)
         self.table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch
+            COL_EN, QHeaderView.ResizeMode.Stretch
+        )
+        self.table.horizontalHeader().setSectionResizeMode(
+            COL_TEAM, QHeaderView.ResizeMode.ResizeToContents
         )
         self.table.horizontalHeader().setSectionResizeMode(
             COL_BASE, QHeaderView.ResizeMode.Stretch
@@ -215,7 +228,7 @@ class BulkRatingDialog(QDialog):
                 continue
             if not matches_position_group(meta.position, pos_group):
                 continue
-            if needle and needle not in meta.name_lower:
+            if needle and needle not in meta.name_lower and needle not in meta.korean_name_lower:
                 continue
             visible_positions.append(pos)
 
