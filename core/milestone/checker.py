@@ -76,6 +76,10 @@ class MilestoneAchievement:
     season: int | None = None
     team: str | None = None
     notes: str | None = None
+    opponent_team: str | None = None
+    opponent_player: str | None = None
+    games_at_achievement: int | None = None
+    description: str | None = None
 
 
 class MilestoneChecker:
@@ -194,7 +198,14 @@ class MilestoneChecker:
                         )
         return achievements
 
-    def record_achievements(self, achievements: list[MilestoneAchievement]) -> int:
+    def record_achievements(
+        self,
+        achievements: list[MilestoneAchievement],
+        *,
+        game_logs_dir: str | None = None,
+    ) -> int:
+        from core.milestone.record_context import enrich_achievement_for_record
+
         recorded = 0
         conn = self.aggregator.conn
         for item in achievements:
@@ -202,12 +213,19 @@ class MilestoneChecker:
                 continue
             if self._achievement_exists(item):
                 continue
+            enrich_achievement_for_record(
+                self.aggregator,
+                item,
+                game_logs_dir=game_logs_dir,
+            )
             conn.execute(
                 """
                 INSERT INTO milestone_records (
                     player_id, milestone_key, milestone_label, scope,
-                    season, game_id, achieved_date, achieved_value, team, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    season, game_id, achieved_date, achieved_value, team, notes,
+                    opponent_team, opponent_player, description,
+                    games_at_achievement, is_manual
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                 """,
                 (
                     item.player_id,
@@ -220,6 +238,10 @@ class MilestoneChecker:
                     item.current_value,
                     item.team,
                     item.notes,
+                    item.opponent_team,
+                    item.opponent_player,
+                    item.description,
+                    item.games_at_achievement,
                 ),
             )
             recorded += 1
@@ -540,7 +562,7 @@ class MilestoneChecker:
                     current_value=current,
                     achieved=True,
                     achieved_date=date,
-                    game_id=None,
+                    game_id=game_id,
                     season=season,
                     team=team,
                 )

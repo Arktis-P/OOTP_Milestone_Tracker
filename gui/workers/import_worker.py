@@ -79,7 +79,10 @@ class ImportWorker(QThread):
                             cur, total, name, "milestone"
                         ),
                     )
-                recorded = checker.record_achievements(achievements)
+                recorded = checker.record_achievements(
+                    achievements,
+                    game_logs_dir=self.settings.game_logs_dir or None,
+                )
 
                 if result.imported_game_ids:
                     PredictionStore(

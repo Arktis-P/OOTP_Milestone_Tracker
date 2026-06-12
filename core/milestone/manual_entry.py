@@ -78,7 +78,7 @@ def scope_needs_season(scope: str) -> bool:
 
 
 def scope_needs_games_at_achievement(scope: str) -> bool:
-    return scope in ("season", "career")
+    return scope in ("season", "career", "team_season")
 
 
 def milestones_for_target(

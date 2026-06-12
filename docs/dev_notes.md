@@ -20,6 +20,8 @@
 - `MilestoneChecker.record_manual_milestone()` — `is_manual=1` INSERT
 - 마일스톤 기록 탭 — 「수동 입력」 버튼, 「수동」 배지, 상세 패널, `game_id` 없을 때 게임 로그 비활성
 - `tests/test_manual_milestone.py`
+- 자동 기록 시 `record_context.py` — scope별 경기수·상대팀·상대선수(시즌/통산, 게임 로그 우선)
+- 마일스톤 기록 탭 표 컬럼: 날짜·선수·한글명·마일스톤·경기수·상대팀·상대선수·설명·비고
 
 ## 2026-06-12 — Phase 8: 레이팅 일괄 편집
 

@@ -34,9 +34,20 @@ from core.roster.korean_names import (
 from core.stats.aggregator import Aggregator
 from core.stats.team_filter import expand_tracked_teams
 from gui.widgets.error_banner import ErrorBanner
-from gui.widgets.grade_styles import apply_grade_style
 from gui.widgets.table_widgets import TablePanel
 from gui.widgets.manual_milestone_dialog import ManualMilestoneDialog
+
+_TABLE_COLUMNS = [
+    "날짜",
+    "선수 이름",
+    "선수 이름(한글)",
+    "마일스톤 이름",
+    "경기수",
+    "상대팀",
+    "상대선수",
+    "마일스톤 설명",
+    "비고",
+]
 
 
 class MilestoneView(QWidget):
@@ -87,26 +98,15 @@ class MilestoneView(QWidget):
         self.season_spin.valueChanged.connect(self.refresh)
 
         self.table_panel = TablePanel(
-            [
-                "선수/팀",
-                "한글명",
-                "마일스톤",
-                "구분",
-                "등급",
-                "scope",
-                "달성일",
-                "달성 수치",
-                "시즌",
-                "경기",
-            ],
+            _TABLE_COLUMNS,
             placeholder="선수·팀 또는 마일스톤 검색...",
         )
         self.table_panel.filter_bar.search_input.textChanged.connect(self.refresh)
 
-        self.detail_label = QLabel("행을 선택하면 상세 정보가 표시됩니다.")
-        self.detail_label.setWordWrap(True)
-        self.detail_label.setStyleSheet(
-            "padding: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px;"
+        self.meta_label = QLabel("")
+        self.meta_label.setWordWrap(True)
+        self.meta_label.setStyleSheet(
+            "padding: 6px; color: #64748b; font-size: 12px;"
         )
         self.game_log_button = QPushButton("게임 로그 열기")
         self.game_log_button.setEnabled(False)
@@ -119,7 +119,7 @@ class MilestoneView(QWidget):
         self.export_button.clicked.connect(self.export_history_csv)
         self.manual_button.clicked.connect(self._open_manual_dialog)
         self.table_panel.table.cellDoubleClicked.connect(self._open_game_log)
-        self.table_panel.table.itemSelectionChanged.connect(self._update_detail_panel)
+        self.table_panel.table.itemSelectionChanged.connect(self._update_meta_panel)
 
         button_row = QHBoxLayout()
         button_row.addWidget(QLabel("대상:"))
@@ -136,15 +136,15 @@ class MilestoneView(QWidget):
         button_row.addStretch()
         button_row.addWidget(QLabel("더블클릭: 게임 로그 열기"))
 
-        detail_row = QHBoxLayout()
-        detail_row.addWidget(self.detail_label, stretch=1)
-        detail_row.addWidget(self.game_log_button)
+        meta_row = QHBoxLayout()
+        meta_row.addWidget(self.meta_label, stretch=1)
+        meta_row.addWidget(self.game_log_button)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.banner)
         layout.addLayout(button_row)
         layout.addWidget(self.table_panel)
-        layout.addLayout(detail_row)
+        layout.addLayout(meta_row)
 
         self._selected_row: int | None = None
         self.refresh()
@@ -202,8 +202,11 @@ class MilestoneView(QWidget):
         self.table_panel.table.setRowCount(len(self._records))
         for row_idx, record in enumerate(self._records):
             milestone = self.milestones.get_by_key(record["milestone_key"])
-            label = milestone.label if milestone else record.get("milestone_label", record["milestone_key"])
-            grade = milestone.grade if milestone else "common"
+            label = (
+                milestone.label
+                if milestone
+                else record.get("milestone_label", record["milestone_key"])
+            )
             is_team = bool(record.get("team"))
             display_name = str(record["team"]) if is_team else record["player_name"]
             korean_name = ""
@@ -216,27 +219,23 @@ class MilestoneView(QWidget):
                     player_id=pid,
                     roster_names=roster_names,
                 )
-            is_manual = bool(record.get("is_manual"))
-            badge = "수동" if is_manual else ""
+            games = record.get("games_at_achievement")
             values = [
+                record.get("achieved_date") or "",
                 display_name,
                 korean_name,
                 label,
-                badge,
-                grade,
-                record.get("scope") or "",
-                record["achieved_date"],
-                record["achieved_value"],
-                record.get("season") or "",
-                record.get("game_id") or "",
+                "" if games is None else str(games),
+                record.get("opponent_team") or "",
+                record.get("opponent_player") or "",
+                record.get("description") or "",
+                record.get("notes") or "",
             ]
             for col_idx, value in enumerate(values):
                 item = QTableWidgetItem("" if value is None else str(value))
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                if col_idx == 3 and is_manual:
+                if bool(record.get("is_manual")) and col_idx == 3:
                     item.setForeground(QColor("#b45309"))
-                if col_idx == 4:
-                    apply_grade_style(item, grade)
                 if self._highlight_id is not None and record.get("id") == self._highlight_id:
                     item.setBackground(QColor("#FDE68A"))
                 self.table_panel.table.setItem(row_idx, col_idx, item)
@@ -271,45 +270,47 @@ class MilestoneView(QWidget):
         if not filepath:
             return
 
+        mapper = load_korean_name_mapper()
+        full_names = load_player_full_names(self.aggregator)
+        roster_names = load_roster_player_names(
+            self.settings.import_export_dir or self.settings.initial_stats_dir
+        )
         records = self.aggregator.get_all_milestone_records_export()
         with open(filepath, "w", newline="", encoding="utf-8-sig") as handle:
             writer = csv.writer(handle)
-            writer.writerow(
-                [
-                    "type",
-                    "target",
-                    "milestone_label",
-                    "grade",
-                    "scope",
-                    "season",
-                    "game_id",
-                    "achieved_date",
-                    "achieved_value",
-                    "notes",
-                ]
-            )
+            writer.writerow(_TABLE_COLUMNS)
             for record in records:
                 is_team = bool(record.get("team"))
-                type_ = "team" if is_team else "individual"
-                target = record["team"] if is_team else record.get("player_name", "")
+                display_name = (
+                    record["team"] if is_team else record.get("player_name", "")
+                )
+                korean_name = ""
+                if not is_team:
+                    pid = record.get("player_id")
+                    player_id = int(pid) if pid else None
+                    korean_name = korean_display_for_player(
+                        mapper,
+                        full_name=full_names.get(player_id) if player_id else None,
+                        player_id=player_id,
+                        roster_names=roster_names,
+                    )
                 milestone = self.milestones.get_by_key(record["milestone_key"])
-                grade = milestone.grade if milestone else "common"
                 label = (
                     milestone.label
                     if milestone
                     else record.get("milestone_label", record["milestone_key"])
                 )
+                games = record.get("games_at_achievement")
                 writer.writerow(
                     [
-                        type_,
-                        target,
-                        label,
-                        grade,
-                        record.get("scope") or "",
-                        record.get("season") or "",
-                        record.get("game_id") or "",
                         record.get("achieved_date") or "",
-                        record.get("achieved_value") or "",
+                        display_name,
+                        korean_name,
+                        label,
+                        "" if games is None else games,
+                        record.get("opponent_team") or "",
+                        record.get("opponent_player") or "",
+                        record.get("description") or "",
                         record.get("notes") or "",
                     ]
                 )
@@ -326,11 +327,11 @@ class MilestoneView(QWidget):
             self.refresh()
             self.records_changed.emit()
 
-    def _update_detail_panel(self) -> None:
+    def _update_meta_panel(self) -> None:
         rows = self.table_panel.table.selectionModel().selectedRows()
         if not rows:
             self._selected_row = None
-            self.detail_label.setText("행을 선택하면 상세 정보가 표시됩니다.")
+            self.meta_label.setText("")
             self.game_log_button.setEnabled(False)
             return
         row = rows[0].row()
@@ -339,19 +340,17 @@ class MilestoneView(QWidget):
         self._selected_row = row
         record = self._records[row]
         parts: list[str] = []
-        if record.get("description"):
-            parts.append(f"설명: {record['description']}")
-        if record.get("opponent_team"):
-            parts.append(f"상대팀: {record['opponent_team']}")
-        if record.get("opponent_player"):
-            parts.append(f"상대선수: {record['opponent_player']}")
-        if record.get("games_at_achievement") is not None:
-            parts.append(f"동안 경기수: {record['games_at_achievement']}")
-        if record.get("notes"):
-            parts.append(f"비고: {record['notes']}")
-        if not parts:
-            parts.append("추가 상세 정보 없음")
-        self.detail_label.setText(" · ".join(parts))
+        if record.get("scope"):
+            parts.append(f"scope: {record['scope']}")
+        if record.get("achieved_value") is not None:
+            parts.append(f"달성 수치: {record['achieved_value']}")
+        if record.get("season"):
+            parts.append(f"시즌: {record['season']}")
+        if record.get("game_id"):
+            parts.append(f"경기 ID: {record['game_id']}")
+        if record.get("is_manual"):
+            parts.append("수동 입력")
+        self.meta_label.setText(" · ".join(parts))
         self.game_log_button.setEnabled(bool(record.get("game_id")))
 
     def _open_selected_game_log(self) -> None:
