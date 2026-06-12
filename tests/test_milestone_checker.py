@@ -54,7 +54,7 @@ def test_load_milestones_csv_grade(milestones: MilestoneDefinitions) -> None:
     cg = milestones.get_by_key("game_cg")
     assert cg is not None
     assert cg.grade == "uncommon"
-    assert len(milestones.all_milestones) == 37
+    assert len(milestones.all_milestones) == 38
     ratio_keys = {
         item.key for item in milestones.all_milestones if item.scope == "season_ratio"
     }

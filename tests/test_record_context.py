@@ -69,6 +69,25 @@ def test_enrich_career_sets_games_opponent_team_and_player(
     assert item.opponent_team != item.team
 
 
+def test_record_achievements_persists_description_for_game_scope(
+    checker: MilestoneChecker, aggregator
+) -> None:
+    if not (SAMPLES_BOX / "game_box_20.html").is_file():
+        pytest.skip("game_box_20 sample missing")
+    data = BoxscoreHTMLParser(SAMPLES_BOX / "game_box_20.html").parse()
+    aggregator.import_boxscore(data, season=2026)
+    achievements = checker.check_new_games([data.meta.game_id], season=2026)
+    game_hr = [a for a in achievements if a.milestone.key == "game_hr_2"]
+    if not game_hr:
+        pytest.skip("no game_hr_2 in sample")
+    checker.record_achievements(game_hr)
+    row = aggregator.conn.execute(
+        "SELECT description FROM milestone_records WHERE milestone_key = 'game_hr_2'"
+    ).fetchone()
+    assert row["description"]
+    assert "타수" in row["description"]
+
+
 def test_record_achievements_persists_context_fields(
     aggregator: Aggregator, checker: MilestoneChecker
 ) -> None:

@@ -43,6 +43,7 @@ class MilestoneDefinition:
     grade: Grade = "common"
     track_from: float | None = None
     near_n: float | None = None
+    description_template: str = ""
     active: bool = True
 
     def effective_near_n(self) -> float:
@@ -148,6 +149,8 @@ def _load_csv(file_path: Path) -> MilestoneDefinitions:
             near_raw = (row.get("near_n") or "").strip()
             near_n = float(near_raw) if near_raw else None
 
+            description_template = (row.get("description_template") or "").strip()
+
             item = MilestoneDefinition(
                 key=key,
                 label=(row.get("label") or "").strip(),
@@ -159,6 +162,7 @@ def _load_csv(file_path: Path) -> MilestoneDefinitions:
                 grade=grade,  # type: ignore[arg-type]
                 track_from=track_from,
                 near_n=near_n,
+                description_template=description_template,
                 active=active,
             )
             if category == "batting":
@@ -200,5 +204,6 @@ def _parse_definition(item: dict, category: str) -> MilestoneDefinition:
         grade=grade,  # type: ignore[arg-type]
         track_from=float(track_from) if track_from is not None else None,
         near_n=float(near_n) if near_n is not None else None,
+        description_template=str(item.get("description_template", "") or ""),
         active=active,
     )

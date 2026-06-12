@@ -2,7 +2,11 @@
 
 from core.parser.boxscore_html import BoxScoreHtmlParseError, BoxscoreHTMLParser, parse_boxscore_html
 from core.parser.common import ParserError
-from core.parser.game_log_html import GameLogHTMLParser, parse_game_log_html
+from core.parser.game_log_html import (
+    GameLogHTMLParser,
+    extract_player_at_bats,
+    parse_game_log_html,
+)
 
 __all__ = [
     "BoxScoreHtmlParseError",
@@ -10,5 +14,6 @@ __all__ = [
     "GameLogHTMLParser",
     "ParserError",
     "parse_boxscore_html",
+    "extract_player_at_bats",
     "parse_game_log_html",
 ]

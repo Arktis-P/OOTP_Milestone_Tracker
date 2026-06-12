@@ -12,7 +12,16 @@ from core.milestone.checker import (
     MilestoneAchievement,
 )
 from core.milestone.definitions import MilestoneDefinition
+from core.milestone.description_templates import (
+    build_description_context,
+    fill_description,
+)
 from core.parser.game_log_html import GameLogHTMLParser
+from core.roster.korean_names import (
+    korean_display_for_player,
+    load_korean_name_mapper,
+    load_player_full_names,
+)
 from core.stats.aggregator import Aggregator
 from core.stats.models import AtBatData, GameLogData
 
@@ -51,6 +60,47 @@ def enrich_achievement_for_record(
         )
     else:
         achievement.opponent_player = None
+
+    achievement.description = _fill_achievement_description(aggregator, achievement)
+
+
+def _fill_achievement_description(
+    aggregator: Aggregator,
+    achievement: MilestoneAchievement,
+) -> str | None:
+    milestone = achievement.milestone
+    if not milestone.description_template or milestone.description_template == "situational":
+        return None
+
+    team = achievement.team
+    if not team and achievement.game_id and achievement.player_id:
+        team = _player_team_in_game(aggregator, achievement.player_id, achievement.game_id)
+
+    context = build_description_context(
+        aggregator.conn,
+        game_id=achievement.game_id,
+        player_id=achievement.player_id or None,
+        team=team,
+    )
+    mapper = load_korean_name_mapper()
+    full_names = load_player_full_names(aggregator)
+
+    def name_resolver(player_id: int, english: str) -> str:
+        return (
+            korean_display_for_player(
+                mapper,
+                full_name=full_names.get(player_id),
+                player_id=player_id,
+            )
+            or english
+        )
+
+    return fill_description(
+        milestone,
+        context,
+        conn=aggregator.conn,
+        name_resolver=name_resolver,
+    )
 
 
 def _games_at_achievement(

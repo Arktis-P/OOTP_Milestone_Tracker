@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -31,6 +32,7 @@ from core.roster.korean_names import (
     load_player_full_names,
     load_roster_player_names,
 )
+from core.parser.game_log_html import extract_player_at_bats
 from core.stats.aggregator import Aggregator
 from core.stats.team_filter import expand_tracked_teams
 from gui.widgets.error_banner import ErrorBanner
@@ -112,6 +114,12 @@ class MilestoneView(QWidget):
         self.game_log_button.setEnabled(False)
         self.game_log_button.clicked.connect(self._open_selected_game_log)
 
+        self.log_hint_panel = QTextEdit()
+        self.log_hint_panel.setReadOnly(True)
+        self.log_hint_panel.setPlaceholderText("")
+        self.log_hint_panel.setMaximumHeight(140)
+        self.log_hint_panel.hide()
+
         self.refresh_button = QPushButton("새로고침")
         self.export_button = QPushButton("CSV로 보내기")
         self.manual_button = QPushButton("수동 입력")
@@ -144,6 +152,7 @@ class MilestoneView(QWidget):
         layout.addWidget(self.banner)
         layout.addLayout(button_row)
         layout.addWidget(self.table_panel)
+        layout.addWidget(self.log_hint_panel)
         layout.addLayout(meta_row)
 
         self._selected_row: int | None = None
@@ -333,6 +342,7 @@ class MilestoneView(QWidget):
             self._selected_row = None
             self.meta_label.setText("")
             self.game_log_button.setEnabled(False)
+            self.log_hint_panel.hide()
             return
         row = rows[0].row()
         if row < 0 or row >= len(self._records):
@@ -352,6 +362,46 @@ class MilestoneView(QWidget):
             parts.append("수동 입력")
         self.meta_label.setText(" · ".join(parts))
         self.game_log_button.setEnabled(bool(record.get("game_id")))
+        self._update_log_hint_panel(record)
+
+    def _update_log_hint_panel(self, record: dict) -> None:
+        if record.get("description"):
+            self.log_hint_panel.hide()
+            return
+        game_id = record.get("game_id")
+        player_id = record.get("player_id")
+        if not game_id or not player_id:
+            self.log_hint_panel.hide()
+            return
+        logs_dir = self.settings.game_logs_dir
+        if not logs_dir:
+            self.log_hint_panel.setPlainText("게임 로그 경로가 설정되지 않았습니다.")
+            self.log_hint_panel.show()
+            return
+        log_path = Path(logs_dir) / f"log_{game_id}.html"
+        if not log_path.is_file():
+            self.log_hint_panel.setPlainText("게임 로그 파일을 찾을 수 없습니다.")
+            self.log_hint_panel.show()
+            return
+        try:
+            entries = extract_player_at_bats(log_path, int(player_id))
+        except Exception:
+            self.log_hint_panel.setPlainText("게임 로그를 읽을 수 없습니다.")
+            self.log_hint_panel.show()
+            return
+        if not entries:
+            self.log_hint_panel.setPlainText("해당 선수의 타석 기록이 게임 로그에 없습니다.")
+            self.log_hint_panel.show()
+            return
+        lines = [
+            "게임 로그 참고 (자동 작성 아님 — 참고용)",
+            "※ 위 내용을 참고해 「마일스톤 설명」을 직접 입력하세요.",
+            "",
+        ]
+        for entry in entries:
+            lines.append(f"[{entry['label']}] {entry['raw_text']}")
+        self.log_hint_panel.setPlainText("\n".join(lines))
+        self.log_hint_panel.show()
 
     def _open_selected_game_log(self) -> None:
         if self._selected_row is None:

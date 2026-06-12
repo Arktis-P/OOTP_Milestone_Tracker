@@ -257,3 +257,57 @@ class GameLogHTMLParser:
 def parse_game_log_html(file_path: str | Path) -> GameLogData:
     """Parse an OOTP HTML game log file."""
     return GameLogHTMLParser(file_path).parse()
+
+
+def _half_label(half: str) -> str:
+    return "초" if half.upper() == "TOP" else "말"
+
+
+def _format_at_bat_raw(at_bat: AtBatData) -> str:
+    hand = at_bat.batter_hand or ""
+    batter = at_bat.batter_name
+    pitcher = at_bat.pitcher_name or ""
+    result = at_bat.result or ""
+    sequence = (at_bat.pitch_sequence or "").replace("\n", " ").strip()
+    parts = [f"Batting: {hand} {batter}".strip()]
+    if pitcher:
+        parts.append(f"vs {pitcher}")
+    if sequence:
+        parts.append(sequence)
+    if result:
+        parts.append(f"→ {result}")
+    return " ".join(parts)
+
+
+def extract_player_at_bats(log_path: str | Path, player_id: int) -> list[dict]:
+    """
+    Extract raw at-bat text for a player as batter or pitcher.
+
+    No base-state simulation — returns verbatim log snippets for GUI hints.
+    """
+    data = GameLogHTMLParser(log_path).parse()
+    entries: list[dict] = []
+    seen: set[tuple[int, str, str, str]] = set()
+
+    for inning in data.innings:
+        for at_bat in inning.at_bats:
+            is_batter = at_bat.batter_id == player_id
+            is_pitcher = at_bat.pitcher_id == player_id
+            if not is_batter and not is_pitcher:
+                continue
+            raw_text = _format_at_bat_raw(at_bat)
+            key = (at_bat.inning, at_bat.half, raw_text, at_bat.result)
+            if key in seen:
+                continue
+            seen.add(key)
+            label = f"{at_bat.inning}회{_half_label(at_bat.half)}"
+            entries.append(
+                {
+                    "inning": at_bat.inning,
+                    "half": at_bat.half,
+                    "label": label,
+                    "raw_text": raw_text,
+                    "role": "batter" if is_batter else "pitcher",
+                }
+            )
+    return entries

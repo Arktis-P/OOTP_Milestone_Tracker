@@ -16,6 +16,7 @@
 | `grade` | string | `common` / `uncommon` / `rare` / `epic` / `legendary` (GUI 표시 서식용) |
 | `track_from` | number | (선택) 예측 감시 목록 진입 최소 통계값. 미지정 시 career `threshold * 0.8` |
 | `near_n` | number | (선택) 임박 표시 기준 — 남은 수치가 이 값 이하면 "🔥 임박". 미지정 시 `threshold * 0.05` (정수 내림) |
+| `description_template` | string | (선택) 마일스톤 설명 자동 생성 템플릿 (아래 참조) |
 
 ## CSV 형식
 
@@ -55,6 +56,24 @@ pitching,season_era_200,시즌 2점대 ERA,season_ratio,season_era,2.99,lower,le
 
 마일스톤 기록 탭 **팀 마일스톤 수동 입력**에서 `team_manual` 항목만 선택할 수 있습니다.
 와일드카드·디비전·리그·월드시리즈 우승 등 시즌당 1회 기록되며, 중복 시 거부됩니다.
+
+## 마일스톤 설명 자동 생성 (`description_template`)
+
+박스스코어 import 시 `milestone_records.description`을 템플릿별로 자동 채웁니다.
+구현: `core/milestone/description_templates.py`, `record_context.py`.
+
+| 값 | 템플릿 | 예시 |
+|----|--------|------|
+| `batting_cumulative` | A — 경기 타격 누적 | `4타수 3안타 1홈런 5타점` (0인 홈런/타점 생략) |
+| `pitching_full` | B — 투구 전체 | `8.0이닝 5피안타 3볼넷 9탈삼진 1실점 승리` |
+| `pitching_k_only` | B 단순 — 탈삼진 중심 | `7.1이닝 12탈삼진` |
+| `team_game` | C — 팀 경기형 | `선발(홍길동-김철수-…) 전원 안타` (한글명 우선) |
+| `team_season` | D — 팀 시즌 승수 | `3-1 승리` (달성 경기 점수) |
+| `situational` | E — 상황형 | 자동 생성 없음. 게임 로그 원문을 GUI 참고 패널에 표시 |
+
+투구 결과 우선순위: **세이브** > **완봉승** > **승리** > **투구**
+
+`team_manual` 등 템플릿 미지정 항목은 설명을 비워 둡니다.
 
 ## 특수 투구 기록 (game scope)
 
