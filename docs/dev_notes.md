@@ -25,6 +25,7 @@
 - `record_backfill.py` — 기존 기록 `games_at_achievement` 백필 (구 UI 「경기」= game_id 기준, 달성 시점 경기수 산출)
 - `description_templates.py` — 마일스톤 설명 템플릿 A~D 자동 생성, E는 게임 로그 참고 패널
 - `milestones.csv` — `description_template` 컬럼, `extract_player_at_bats()` 게임 로그 원문 추출
+- 마일스톤 기록 탭 — F2/「수정」팝업으로 개별 기록 편집, 「삭제」버튼으로 단건 삭제
 
 ## 2026-06-12 — Phase 8: 레이팅 일괄 편집
 

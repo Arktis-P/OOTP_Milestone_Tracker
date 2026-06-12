@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -37,6 +37,7 @@ from core.stats.aggregator import Aggregator
 from core.stats.team_filter import expand_tracked_teams
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.table_widgets import TablePanel
+from gui.widgets.edit_milestone_record_dialog import EditMilestoneRecordDialog
 from gui.widgets.manual_milestone_dialog import ManualMilestoneDialog
 
 _TABLE_COLUMNS = [
@@ -123,11 +124,17 @@ class MilestoneView(QWidget):
         self.refresh_button = QPushButton("새로고침")
         self.export_button = QPushButton("CSV로 보내기")
         self.manual_button = QPushButton("수동 입력")
+        self.edit_button = QPushButton("수정")
+        self.delete_button = QPushButton("삭제")
         self.refresh_button.clicked.connect(self.refresh)
         self.export_button.clicked.connect(self.export_history_csv)
         self.manual_button.clicked.connect(self._open_manual_dialog)
+        self.edit_button.clicked.connect(self._edit_selected_record)
+        self.delete_button.clicked.connect(self._delete_selected_record)
         self.table_panel.table.cellDoubleClicked.connect(self._open_game_log)
         self.table_panel.table.itemSelectionChanged.connect(self._update_meta_panel)
+        self._edit_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F2), self.table_panel.table)
+        self._edit_shortcut.activated.connect(self._edit_selected_record)
 
         button_row = QHBoxLayout()
         button_row.addWidget(QLabel("대상:"))
@@ -141,8 +148,10 @@ class MilestoneView(QWidget):
         button_row.addWidget(self.refresh_button)
         button_row.addWidget(self.export_button)
         button_row.addWidget(self.manual_button)
+        button_row.addWidget(self.edit_button)
+        button_row.addWidget(self.delete_button)
         button_row.addStretch()
-        button_row.addWidget(QLabel("더블클릭: 게임 로그 열기"))
+        button_row.addWidget(QLabel("F2: 수정 · 더블클릭: 게임 로그"))
 
         meta_row = QHBoxLayout()
         meta_row.addWidget(self.meta_label, stretch=1)
@@ -155,7 +164,7 @@ class MilestoneView(QWidget):
         layout.addWidget(self.log_hint_panel)
         layout.addLayout(meta_row)
 
-        self._selected_row: int | None = None
+        self._selected_record_id: int | None = None
         self.refresh()
 
     def _reload_team_filter(self) -> None:
@@ -240,9 +249,12 @@ class MilestoneView(QWidget):
                 record.get("description") or "",
                 record.get("notes") or "",
             ]
+            record_id = record.get("id")
             for col_idx, value in enumerate(values):
                 item = QTableWidgetItem("" if value is None else str(value))
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                if record_id is not None:
+                    item.setData(Qt.ItemDataRole.UserRole, int(record_id))
                 if bool(record.get("is_manual")) and col_idx == 3:
                     item.setForeground(QColor("#b45309"))
                 if self._highlight_id is not None and record.get("id") == self._highlight_id:
@@ -336,19 +348,81 @@ class MilestoneView(QWidget):
             self.refresh()
             self.records_changed.emit()
 
-    def _update_meta_panel(self) -> None:
+    def _selected_record_id_from_table(self) -> int | None:
         rows = self.table_panel.table.selectionModel().selectedRows()
         if not rows:
-            self._selected_row = None
+            return None
+        item = self.table_panel.table.item(rows[0].row(), 0)
+        if item is None:
+            return None
+        record_id = item.data(Qt.ItemDataRole.UserRole)
+        return int(record_id) if record_id is not None else None
+
+    def _selected_record(self) -> dict | None:
+        record_id = self._selected_record_id_from_table()
+        if record_id is None:
+            return None
+        return self.aggregator.get_milestone_record_by_id(record_id)
+
+    def _edit_selected_record(self) -> None:
+        record_id = self._selected_record_id_from_table()
+        if record_id is None:
+            QMessageBox.information(self, "수정", "수정할 기록을 선택하세요.")
+            return
+        try:
+            dialog = EditMilestoneRecordDialog(
+                self.aggregator,
+                self.milestones,
+                record_id,
+                parent=self,
+            )
+        except ValueError:
+            QMessageBox.warning(self, "수정", "선택한 기록을 찾을 수 없습니다.")
+            self.refresh()
+            return
+        if dialog.exec():
+            self._highlight_id = record_id
+            self.refresh()
+            self.records_changed.emit()
+
+    def _delete_selected_record(self) -> None:
+        record = self._selected_record()
+        if record is None:
+            QMessageBox.information(self, "삭제", "삭제할 기록을 선택하세요.")
+            return
+        milestone = self.milestones.get_by_key(str(record["milestone_key"]))
+        label = (
+            milestone.label
+            if milestone
+            else record.get("milestone_label", record["milestone_key"])
+        )
+        is_team = bool(record.get("team"))
+        target = str(record["team"]) if is_team else str(record.get("player_name", ""))
+        confirm = QMessageBox.question(
+            self,
+            "마일스톤 기록 삭제",
+            f"다음 기록을 삭제하시겠습니까?\n\n{target} · {label}\n{record.get('achieved_date', '')}",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        record_id = int(record["id"])
+        if not self.aggregator.delete_milestone_record(record_id):
+            QMessageBox.warning(self, "삭제", "기록을 삭제하지 못했습니다.")
+            return
+        self.banner.show_info("마일스톤 기록을 삭제했습니다.")
+        self.refresh()
+        self.records_changed.emit()
+
+    def _update_meta_panel(self) -> None:
+        record = self._selected_record()
+        if record is None:
+            self._selected_record_id = None
             self.meta_label.setText("")
             self.game_log_button.setEnabled(False)
             self.log_hint_panel.hide()
             return
-        row = rows[0].row()
-        if row < 0 or row >= len(self._records):
-            return
-        self._selected_row = row
-        record = self._records[row]
+        self._selected_record_id = int(record["id"])
         parts: list[str] = []
         if record.get("scope"):
             parts.append(f"scope: {record['scope']}")
@@ -404,14 +478,22 @@ class MilestoneView(QWidget):
         self.log_hint_panel.show()
 
     def _open_selected_game_log(self) -> None:
-        if self._selected_row is None:
+        rows = self.table_panel.table.selectionModel().selectedRows()
+        if not rows:
             return
-        self._open_game_log(self._selected_row, 0)
+        self._open_game_log(rows[0].row(), 0)
 
     def _open_game_log(self, row: int, _column: int) -> None:
-        if row < 0 or row >= len(self._records):
+        item = self.table_panel.table.item(row, 0)
+        if item is None:
             return
-        game_id = self._records[row].get("game_id")
+        record_id = item.data(Qt.ItemDataRole.UserRole)
+        if record_id is None:
+            return
+        record = self.aggregator.get_milestone_record_by_id(int(record_id))
+        if not record:
+            return
+        game_id = record.get("game_id")
         if not game_id:
             QMessageBox.information(
                 self,

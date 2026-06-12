@@ -1335,6 +1335,71 @@ class Aggregator:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def get_milestone_record_by_id(self, record_id: int) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            """
+            SELECT mr.*,
+                   CASE
+                       WHEN mr.team IS NOT NULL AND mr.team != '' THEN mr.team
+                       ELSE COALESCE(p.short_name, p.full_name, '')
+                   END AS player_name
+            FROM milestone_records mr
+            LEFT JOIN players p ON p.player_id = mr.player_id
+            WHERE mr.id = ?
+            """,
+            (record_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def update_milestone_record(
+        self,
+        record_id: int,
+        *,
+        achieved_date: str,
+        achieved_value: float,
+        season: int | None,
+        games_at_achievement: int | None,
+        opponent_team: str | None,
+        opponent_player: str | None,
+        description: str | None,
+        notes: str | None,
+    ) -> bool:
+        cursor = self._conn.execute(
+            """
+            UPDATE milestone_records
+            SET achieved_date = ?,
+                achieved_value = ?,
+                season = ?,
+                games_at_achievement = ?,
+                opponent_team = ?,
+                opponent_player = ?,
+                description = ?,
+                notes = ?
+            WHERE id = ?
+            """,
+            (
+                achieved_date,
+                achieved_value,
+                season,
+                games_at_achievement,
+                opponent_team or None,
+                opponent_player or None,
+                description or None,
+                notes or None,
+                record_id,
+            ),
+        )
+        self._conn.commit()
+        return cursor.rowcount > 0
+
+    def delete_milestone_record(self, record_id: int) -> bool:
+        cursor = self._conn.execute(
+            "DELETE FROM milestone_records WHERE id = ?",
+            (record_id,),
+        )
+        self._conn.commit()
+        return cursor.rowcount > 0
+
 
 _BATTING_GAME_STAT_COLUMNS = {
     "h": "h",
