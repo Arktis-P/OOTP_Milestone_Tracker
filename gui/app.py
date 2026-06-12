@@ -110,6 +110,7 @@ class MainWindow(QMainWindow):
 
         setup_tab = SetupView(self.settings_manager, self.settings, embedded=True)
         setup_tab.setup_completed.connect(self._on_setup_tab_saved)
+        setup_tab.milestones_changed.connect(self._reload_milestones)
         setup_tab.confirm_button.setText("설정 저장")
         self._tabs.addTab(setup_tab, "설정")
 
@@ -166,6 +167,20 @@ class MainWindow(QMainWindow):
         self._build_tabs()
         self.data_refreshed.emit("all")
 
+    def _reload_milestones(self) -> None:
+        self._milestones = load_milestones(
+            resolve_data_path(self.settings.milestones_path)
+        )
+        for view in (
+            self._dashboard_view,
+            self._milestone_view,
+            self._stats_view,
+            self._predict_view,
+        ):
+            if view is not None:
+                view.milestones = self._milestones
+        self.data_refreshed.emit("all")
+
     def _on_boxscore_import_finished(self, _message: str) -> None:
         self._update_status_message()
         self.data_refreshed.emit("boxscore")
@@ -211,6 +226,7 @@ class MainWindow(QMainWindow):
         setup.setup_completed.connect(
             lambda updated: self._apply_settings(dialog, updated)
         )
+        setup.milestones_changed.connect(self._reload_milestones)
 
         layout = QVBoxLayout(dialog)
         layout.addWidget(setup)

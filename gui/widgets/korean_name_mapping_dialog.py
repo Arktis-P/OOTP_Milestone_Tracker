@@ -82,7 +82,7 @@ class KoreanNameMappingDialog(QDialog):
 
         self.table.setRowCount(len(rows))
         for row_idx, item in enumerate(rows):
-            self.table.setItem(row_idx, 0, self._read_only_item(_part_label(item.part)))
+            self.table.setItem(row_idx, 0, self._read_only_item(self._part_label(item.part)))
             self.table.setItem(
                 row_idx, 1, self._read_only_item(pending_full_name_label(item))
             )

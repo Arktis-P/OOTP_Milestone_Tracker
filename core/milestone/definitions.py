@@ -29,6 +29,41 @@ PREDICTABLE_SCOPES = frozenset({"career"})
 VALID_GRADES: frozenset[str] = frozenset(
     {"common", "uncommon", "rare", "epic", "legendary"}
 )
+VALID_CATEGORIES: frozenset[str] = frozenset({"batting", "pitching", "team"})
+VALID_SCOPES: frozenset[str] = frozenset(
+    {
+        "career",
+        "season",
+        "game",
+        "season_ratio",
+        "team_game",
+        "team_season",
+        "team_manual",
+    }
+)
+VALID_DIRECTIONS: frozenset[str] = frozenset({"higher", "lower"})
+DESCRIPTION_TEMPLATES: tuple[str, ...] = (
+    "",
+    "situational",
+    "batting_cumulative",
+    "pitching_full",
+    "pitching_k_only",
+    "team_game",
+    "team_season",
+)
+CSV_FIELDNAMES: tuple[str, ...] = (
+    "category",
+    "key",
+    "label",
+    "scope",
+    "stat",
+    "threshold",
+    "direction",
+    "grade",
+    "track_from",
+    "near_n",
+    "description_template",
+)
 
 
 @dataclass(frozen=True)
@@ -91,6 +126,105 @@ class MilestoneDefinitions:
             if milestone.key == key:
                 return milestone
         return None
+
+    def with_milestones(
+        self,
+        items: list[MilestoneDefinition],
+    ) -> MilestoneDefinitions:
+        batting = [item for item in items if item.category == "batting"]
+        pitching = [item for item in items if item.category == "pitching"]
+        team = [item for item in items if item.category == "team"]
+        return MilestoneDefinitions(batting=batting, pitching=pitching, team=team)
+
+    def replace_all(self, items: list[MilestoneDefinition]) -> MilestoneDefinitions:
+        return self.with_milestones(items)
+
+
+def validate_milestone_definition(
+    item: MilestoneDefinition,
+    *,
+    existing_keys: set[str],
+    editing_key: str | None = None,
+) -> list[str]:
+    errors: list[str] = []
+    key = item.key.strip()
+    if not key:
+        errors.append("key를 입력하세요.")
+    elif not key.replace("_", "").isalnum():
+        errors.append("key는 영문·숫자·밑줄만 사용할 수 있습니다.")
+    elif key in existing_keys and key != editing_key:
+        errors.append(f"이미 사용 중인 key입니다: {key}")
+
+    if item.category not in VALID_CATEGORIES:
+        errors.append(f"유효하지 않은 category: {item.category}")
+    if item.scope not in VALID_SCOPES:
+        errors.append(f"유효하지 않은 scope: {item.scope}")
+    if item.direction not in VALID_DIRECTIONS:
+        errors.append(f"유효하지 않은 direction: {item.direction}")
+    if item.grade not in VALID_GRADES:
+        errors.append(f"유효하지 않은 grade: {item.grade}")
+
+    if not item.label.strip():
+        errors.append("표시 이름(label)을 입력하세요.")
+
+    if item.scope != "team_manual" and not item.stat.strip():
+        errors.append("stat을 입력하세요.")
+
+    if item.threshold <= 0 and item.scope not in {"team_manual"}:
+        errors.append("threshold는 0보다 커야 합니다.")
+
+    template = (item.description_template or "").strip()
+    if template and template not in DESCRIPTION_TEMPLATES:
+        errors.append(f"알 수 없는 description_template: {template}")
+
+    return errors
+
+
+def save_milestones_csv(path: str | Path, definitions: MilestoneDefinitions) -> None:
+    """Write milestone definitions to CSV."""
+    file_path = Path(path)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    keys: set[str] = set()
+    for item in definitions.all_milestones:
+        dup_errors = validate_milestone_definition(item, existing_keys=keys)
+        if dup_errors:
+            raise ValueError("; ".join(dup_errors))
+        keys.add(item.key)
+
+    with file_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(CSV_FIELDNAMES))
+        writer.writeheader()
+        for item in definitions.all_milestones:
+            writer.writerow(_definition_to_row(item))
+
+
+def _definition_to_row(item: MilestoneDefinition) -> dict[str, str]:
+    return {
+        "category": item.category,
+        "key": item.key,
+        "label": item.label,
+        "scope": item.scope,
+        "stat": item.stat,
+        "threshold": _format_number(item.threshold),
+        "direction": item.direction,
+        "grade": item.grade,
+        "track_from": _format_optional_number(item.track_from),
+        "near_n": _format_optional_number(item.near_n),
+        "description_template": item.description_template or "",
+    }
+
+
+def _format_number(value: float) -> str:
+    if value == int(value):
+        return str(int(value))
+    return str(value)
+
+
+def _format_optional_number(value: float | None) -> str:
+    if value is None:
+        return ""
+    return _format_number(value)
 
 
 def load_milestones(path: str | Path) -> MilestoneDefinitions:

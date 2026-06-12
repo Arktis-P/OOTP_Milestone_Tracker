@@ -29,6 +29,7 @@ from core.config import (
     detect_save_roots,
     infer_ootp_version_from_path,
     is_valid_save_root,
+    resolve_data_path,
     scan_saves,
 )
 from gui.widgets.tracked_teams_widget import TrackedTeamsWidget
@@ -38,6 +39,7 @@ class SetupView(QWidget):
     """First-run and league selection UI."""
 
     setup_completed = pyqtSignal(object)  # AppSettings
+    milestones_changed = pyqtSignal()
 
     def __init__(
         self,
@@ -148,6 +150,21 @@ class SetupView(QWidget):
         )
         names_layout.addWidget(self.korean_names_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
+        self.milestones_button = QPushButton("마일스톤 기준 관리...")
+        self.milestones_button.clicked.connect(self._open_milestone_definitions)
+
+        milestones_group = QGroupBox("마일스톤 기준")
+        milestones_layout = QVBoxLayout(milestones_group)
+        milestones_layout.addWidget(
+            QLabel(
+                "달성 판정에 사용되는 마일스톤 목록을 확인·추가·수정·삭제합니다. "
+                "변경 사항은 milestones.csv에 저장됩니다."
+            )
+        )
+        milestones_layout.addWidget(
+            self.milestones_button, alignment=Qt.AlignmentFlag.AlignLeft
+        )
+
         self.selected_path_label = QLabel("")
         self.selected_path_label.setWordWrap(True)
         self.selected_path_label.setStyleSheet("color: #555;")
@@ -164,6 +181,7 @@ class SetupView(QWidget):
         layout.addWidget(season_group)
         layout.addWidget(tracking_group)
         layout.addWidget(names_group)
+        layout.addWidget(milestones_group)
         layout.addWidget(QLabel("선택된 경로:"))
         layout.addWidget(self.selected_path_label)
         layout.addStretch()
@@ -349,6 +367,14 @@ class SetupView(QWidget):
         dialog = KoreanNameMappingDialog(self)
         dialog.exec()
         self._refresh_korean_names_button()
+
+    def _open_milestone_definitions(self) -> None:
+        from gui.widgets.milestone_definitions_dialog import MilestoneDefinitionsDialog
+
+        path = resolve_data_path(self.settings.milestones_path)
+        dialog = MilestoneDefinitionsDialog(path, self)
+        dialog.definitions_changed.connect(self.milestones_changed.emit)
+        dialog.exec()
 
     def _refresh_korean_names_button(self) -> None:
         from core.roster.korean_names import KoreanNameStore
