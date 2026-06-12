@@ -36,7 +36,7 @@ from core.stats.team_filter import expand_tracked_teams
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.grade_styles import apply_grade_style
 from gui.widgets.table_widgets import TablePanel
-from gui.widgets.team_milestone_dialog import TeamMilestoneDialog
+from gui.widgets.manual_milestone_dialog import ManualMilestoneDialog
 
 
 class MilestoneView(QWidget):
@@ -91,6 +91,7 @@ class MilestoneView(QWidget):
                 "선수/팀",
                 "한글명",
                 "마일스톤",
+                "구분",
                 "등급",
                 "scope",
                 "달성일",
@@ -102,13 +103,23 @@ class MilestoneView(QWidget):
         )
         self.table_panel.filter_bar.search_input.textChanged.connect(self.refresh)
 
+        self.detail_label = QLabel("행을 선택하면 상세 정보가 표시됩니다.")
+        self.detail_label.setWordWrap(True)
+        self.detail_label.setStyleSheet(
+            "padding: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px;"
+        )
+        self.game_log_button = QPushButton("게임 로그 열기")
+        self.game_log_button.setEnabled(False)
+        self.game_log_button.clicked.connect(self._open_selected_game_log)
+
         self.refresh_button = QPushButton("새로고침")
         self.export_button = QPushButton("CSV로 보내기")
-        self.manual_button = QPushButton("팀 마일스톤 수동 입력")
+        self.manual_button = QPushButton("수동 입력")
         self.refresh_button.clicked.connect(self.refresh)
         self.export_button.clicked.connect(self.export_history_csv)
         self.manual_button.clicked.connect(self._open_manual_dialog)
         self.table_panel.table.cellDoubleClicked.connect(self._open_game_log)
+        self.table_panel.table.itemSelectionChanged.connect(self._update_detail_panel)
 
         button_row = QHBoxLayout()
         button_row.addWidget(QLabel("대상:"))
@@ -125,11 +136,17 @@ class MilestoneView(QWidget):
         button_row.addStretch()
         button_row.addWidget(QLabel("더블클릭: 게임 로그 열기"))
 
+        detail_row = QHBoxLayout()
+        detail_row.addWidget(self.detail_label, stretch=1)
+        detail_row.addWidget(self.game_log_button)
+
         layout = QVBoxLayout(self)
         layout.addWidget(self.banner)
         layout.addLayout(button_row)
         layout.addWidget(self.table_panel)
+        layout.addLayout(detail_row)
 
+        self._selected_row: int | None = None
         self.refresh()
 
     def _reload_team_filter(self) -> None:
@@ -199,10 +216,13 @@ class MilestoneView(QWidget):
                     player_id=pid,
                     roster_names=roster_names,
                 )
+            is_manual = bool(record.get("is_manual"))
+            badge = "수동" if is_manual else ""
             values = [
                 display_name,
                 korean_name,
                 label,
+                badge,
                 grade,
                 record.get("scope") or "",
                 record["achieved_date"],
@@ -213,7 +233,9 @@ class MilestoneView(QWidget):
             for col_idx, value in enumerate(values):
                 item = QTableWidgetItem("" if value is None else str(value))
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                if col_idx == 3:
+                if col_idx == 3 and is_manual:
+                    item.setForeground(QColor("#b45309"))
+                if col_idx == 4:
                     apply_grade_style(item, grade)
                 if self._highlight_id is not None and record.get("id") == self._highlight_id:
                     item.setBackground(QColor("#FDE68A"))
@@ -294,7 +316,7 @@ class MilestoneView(QWidget):
         self.banner.show_info(f"보내기 완료: {filepath}")
 
     def _open_manual_dialog(self) -> None:
-        dialog = TeamMilestoneDialog(
+        dialog = ManualMilestoneDialog(
             self.aggregator,
             self.milestones,
             self.settings,
@@ -304,11 +326,49 @@ class MilestoneView(QWidget):
             self.refresh()
             self.records_changed.emit()
 
+    def _update_detail_panel(self) -> None:
+        rows = self.table_panel.table.selectionModel().selectedRows()
+        if not rows:
+            self._selected_row = None
+            self.detail_label.setText("행을 선택하면 상세 정보가 표시됩니다.")
+            self.game_log_button.setEnabled(False)
+            return
+        row = rows[0].row()
+        if row < 0 or row >= len(self._records):
+            return
+        self._selected_row = row
+        record = self._records[row]
+        parts: list[str] = []
+        if record.get("description"):
+            parts.append(f"설명: {record['description']}")
+        if record.get("opponent_team"):
+            parts.append(f"상대팀: {record['opponent_team']}")
+        if record.get("opponent_player"):
+            parts.append(f"상대선수: {record['opponent_player']}")
+        if record.get("games_at_achievement") is not None:
+            parts.append(f"동안 경기수: {record['games_at_achievement']}")
+        if record.get("notes"):
+            parts.append(f"비고: {record['notes']}")
+        if not parts:
+            parts.append("추가 상세 정보 없음")
+        self.detail_label.setText(" · ".join(parts))
+        self.game_log_button.setEnabled(bool(record.get("game_id")))
+
+    def _open_selected_game_log(self) -> None:
+        if self._selected_row is None:
+            return
+        self._open_game_log(self._selected_row, 0)
+
     def _open_game_log(self, row: int, _column: int) -> None:
         if row < 0 or row >= len(self._records):
             return
         game_id = self._records[row].get("game_id")
         if not game_id:
+            QMessageBox.information(
+                self,
+                "게임 로그",
+                "수동 입력 기록에는 연결된 경기가 없습니다.",
+            )
             return
         logs_dir = self.settings.game_logs_dir
         if not logs_dir:

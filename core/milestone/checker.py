@@ -251,7 +251,12 @@ class MilestoneChecker:
                    mr.achieved_value,
                    mr.season,
                    mr.notes,
-                   mr.team
+                   mr.team,
+                   mr.opponent_team,
+                   mr.opponent_player,
+                   mr.description,
+                   mr.games_at_achievement,
+                   mr.is_manual
             FROM milestone_records mr
             LEFT JOIN players p ON p.player_id = mr.player_id
             WHERE 1 = 1
@@ -281,6 +286,53 @@ class MilestoneChecker:
         query += " ORDER BY mr.achieved_date DESC, player_name"
         rows = self.aggregator.conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
+
+    def record_manual_milestone(self, form) -> int:
+        from core.milestone.manual_entry import ManualMilestoneFormData
+
+        if not isinstance(form, ManualMilestoneFormData):
+            raise TypeError("expected ManualMilestoneFormData")
+
+        milestone = self.definitions.get_by_key(form.milestone_key)
+        if milestone is None:
+            raise ValueError(f"Unknown milestone: {form.milestone_key}")
+
+        player_id = int(form.player_id or 0)
+        team = (form.team or "").strip() or None
+        if form.target == "team":
+            player_id = 0
+        else:
+            team = None
+
+        conn = self.aggregator.conn
+        conn.execute(
+            """
+            INSERT INTO milestone_records (
+                player_id, milestone_key, milestone_label, scope,
+                season, game_id, achieved_date, achieved_value,
+                team, notes, opponent_team, opponent_player,
+                description, games_at_achievement, is_manual
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+            """,
+            (
+                player_id,
+                milestone.key,
+                milestone.label,
+                milestone.scope,
+                form.season,
+                None,
+                form.achieved_date.isoformat(),
+                float(form.achieved_value),
+                team,
+                form.notes or None,
+                form.opponent_team or None,
+                form.opponent_player or None,
+                form.description or None,
+                form.games_at_achievement,
+            ),
+        )
+        conn.commit()
+        return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
     def record_manual_team_milestone(
         self,

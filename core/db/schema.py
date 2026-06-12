@@ -213,6 +213,7 @@ def _migrate_post_schema(conn: sqlite3.Connection) -> None:
     _ensure_position_columns(conn)
     _ensure_batting_substitute_column(conn)
     _ensure_milestone_records_team(conn)
+    _ensure_milestone_records_manual_columns(conn)
 
 
 def _ensure_db_meta(conn: sqlite3.Connection) -> None:
@@ -428,6 +429,24 @@ def _ensure_milestone_records_team(conn: sqlite3.Connection) -> None:
     columns = _table_columns(conn, "milestone_records")
     if columns and "team" not in columns:
         conn.execute("ALTER TABLE milestone_records ADD COLUMN team TEXT")
+
+
+def _ensure_milestone_records_manual_columns(conn: sqlite3.Connection) -> None:
+    columns = _table_columns(conn, "milestone_records")
+    if not columns:
+        return
+    additions = {
+        "opponent_team": "TEXT",
+        "opponent_player": "TEXT",
+        "description": "TEXT",
+        "games_at_achievement": "INTEGER",
+        "is_manual": "INTEGER NOT NULL DEFAULT 0",
+    }
+    for name, col_type in additions.items():
+        if name not in columns:
+            conn.execute(
+                f"ALTER TABLE milestone_records ADD COLUMN {name} {col_type}"
+            )
 
 
 def _ensure_milestone_predictions(conn: sqlite3.Connection) -> None:
