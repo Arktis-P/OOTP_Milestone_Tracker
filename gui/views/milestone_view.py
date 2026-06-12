@@ -25,6 +25,12 @@ from PyQt6.QtWidgets import (
 from core.config import AppSettings
 from core.milestone.checker import MilestoneChecker
 from core.milestone.definitions import MilestoneDefinitions
+from core.roster.korean_names import (
+    korean_display_for_player,
+    load_korean_name_mapper,
+    load_player_full_names,
+    load_roster_player_names,
+)
 from core.stats.aggregator import Aggregator
 from core.stats.team_filter import expand_tracked_teams
 from gui.widgets.error_banner import ErrorBanner
@@ -81,7 +87,17 @@ class MilestoneView(QWidget):
         self.season_spin.valueChanged.connect(self.refresh)
 
         self.table_panel = TablePanel(
-            ["선수/팀", "마일스톤", "등급", "scope", "달성일", "달성 수치", "시즌", "경기"],
+            [
+                "선수/팀",
+                "한글명",
+                "마일스톤",
+                "등급",
+                "scope",
+                "달성일",
+                "달성 수치",
+                "시즌",
+                "경기",
+            ],
             placeholder="선수·팀 또는 마일스톤 검색...",
         )
         self.table_panel.filter_bar.search_input.textChanged.connect(self.refresh)
@@ -159,17 +175,33 @@ class MilestoneView(QWidget):
             subject=subject,
             team=team or None,
         )
+        mapper = load_korean_name_mapper()
+        full_names = load_player_full_names(self.aggregator)
+        roster_names = load_roster_player_names(
+            self.settings.import_export_dir or self.settings.initial_stats_dir
+        )
+
         self.table_panel.table.setSortingEnabled(False)
         self.table_panel.table.setRowCount(len(self._records))
         for row_idx, record in enumerate(self._records):
             milestone = self.milestones.get_by_key(record["milestone_key"])
             label = milestone.label if milestone else record.get("milestone_label", record["milestone_key"])
             grade = milestone.grade if milestone else "common"
-            display_name = record["player_name"]
-            if record.get("team"):
-                display_name = str(record["team"])
+            is_team = bool(record.get("team"))
+            display_name = str(record["team"]) if is_team else record["player_name"]
+            korean_name = ""
+            if not is_team:
+                player_id = record.get("player_id")
+                pid = int(player_id) if player_id else None
+                korean_name = korean_display_for_player(
+                    mapper,
+                    full_name=full_names.get(pid) if pid else None,
+                    player_id=pid,
+                    roster_names=roster_names,
+                )
             values = [
                 display_name,
+                korean_name,
                 label,
                 grade,
                 record.get("scope") or "",
@@ -181,7 +213,7 @@ class MilestoneView(QWidget):
             for col_idx, value in enumerate(values):
                 item = QTableWidgetItem("" if value is None else str(value))
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                if col_idx == 2:
+                if col_idx == 3:
                     apply_grade_style(item, grade)
                 if self._highlight_id is not None and record.get("id") == self._highlight_id:
                     item.setBackground(QColor("#FDE68A"))

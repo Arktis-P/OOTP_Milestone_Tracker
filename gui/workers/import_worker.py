@@ -11,6 +11,7 @@ from core.config.settings_manager import AppSettings, SettingsManager
 from core.milestone.checker import MilestoneAchievement, MilestoneChecker
 from core.milestone.prediction_store import PredictionStore
 from core.milestone.definitions import MilestoneDefinitions
+from core.roster.korean_names import note_players_from_boxscore_import
 from core.stats.aggregator import Aggregator
 from core.stats.models import BatchImportResult
 
@@ -89,6 +90,10 @@ class ImportWorker(QThread):
                         tracked_teams=self.settings.tracked_teams,
                         custom_teams=self.settings.custom_mlb_teams,
                     ).update_after_import(result.imported_game_ids)
+                    if self.settings.import_mlb_only:
+                        note_players_from_boxscore_import(
+                            aggregator, result.imported_game_ids
+                        )
 
             settings = self.settings_manager.load()
             updated = self.settings_manager.update_boxscore_import_timestamp(

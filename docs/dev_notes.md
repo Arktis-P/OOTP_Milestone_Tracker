@@ -6,8 +6,7 @@
 - [ ] **마일스톤 기준 재정의** — `milestones.csv` 항목·threshold·scope 전반 검토·정리
 - [ ] **앱 내 마일스톤 기준 편집** — 프로그램에서 기준 확인·수정 UI (기본은 외부 CSV 편집)
 - [ ] **수동 마일스톤 입력** — 별도 팝업으로 개인/팀 수동 달성 기록 (현재 팀 수동만 부분 구현)
-- [x] **선수 이름 한글 매핑 (일괄 편집)** — `data/korean_last_names.csv`, `data/korean_first_names.csv` → `KoreanNameMapper`, 일괄 편집 「한글명」 열 표시
-- [ ] **선수 이름 한글 매핑 (전역)** — 다른 탭·목록에도 동일 매핑 적용
+- [x] **선수 이름 한글 매핑** — CSV 시드·pending 큐·설정 팝업·일괄 편집·마일스톤 기록·선수 기록·마일스톤 예측 탭 표시
 - [ ] **season_ratio** — 타율·ERA 등 (커리어 종료 시점 감지 후 별도 Phase)
 - [ ] **연속 기록(streak) 마일스톤** — 별도 Phase에서 설계·검증 예정 (`ACTIVE_SCOPES`에 `streak` 미포함)
 

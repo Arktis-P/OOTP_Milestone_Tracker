@@ -33,7 +33,7 @@ from core.roster.combined import (
     save_modified_rosters,
     sync_player_rows_to_sources,
 )
-from core.roster.korean_names import KoreanNameMapper
+from core.roster.korean_names import KoreanNameMapper, load_korean_name_mapper
 from core.roster.ootp_format import player_display_name
 from core.roster.position_filter import POSITION_GROUP_OPTIONS, matches_position_group
 from core.roster.row_access import row_get
@@ -77,7 +77,7 @@ class BulkRatingDialog(QDialog):
         self._player_indices: list[BulkPlayerIndex] = []
         self._players_by_id = {p.player_id: p for p in self.combined.players}
         fieldnames = self.combined.fieldnames
-        self._korean_names = KoreanNameMapper.load()
+        self._korean_names = load_korean_name_mapper()
 
         for player in self.combined.players:
             age = age_from_row(player.row, fieldnames, self.reference_date)
@@ -91,7 +91,12 @@ class BulkRatingDialog(QDialog):
             name = player_display_name(player.row, fieldnames)
             last_name = row_get(player.row, fieldnames, "LastName").strip()
             first_name = row_get(player.row, fieldnames, "FirstName").strip()
-            korean_name = self._korean_names.format_player_name(last_name, first_name)
+            nation = row_get(player.row, fieldnames, "Nation").strip()
+            korean_name = self._korean_names.format_player_name(
+                last_name,
+                first_name,
+                western_order=KoreanNameMapper.uses_western_name_order(nation),
+            )
             self._player_indices.append(
                 BulkPlayerIndex(
                     player_id=player.player_id,
@@ -100,7 +105,7 @@ class BulkRatingDialog(QDialog):
                     korean_name=korean_name,
                     korean_name_lower=korean_name.casefold(),
                     team=row_get(player.row, fieldnames, "Team Name").strip(),
-                    nation=row_get(player.row, fieldnames, "Nation").strip(),
+                    nation=nation,
                     position=row_get(player.row, fieldnames, "Position"),
                     source=player.source,
                 )

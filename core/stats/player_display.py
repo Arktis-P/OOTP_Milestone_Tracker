@@ -46,7 +46,7 @@ def format_player_list_label(player: dict) -> str:
     return f"{prefix}{display}"
 
 
-def format_player_header(player: dict) -> str:
+def format_player_header(player: dict, *, korean_name: str = "") -> str:
     """Multi-line header above stat tables."""
     full = str(player.get("full_name") or "").strip()
     short = str(player.get("short_name") or "").strip()
@@ -58,7 +58,10 @@ def format_player_header(player: dict) -> str:
     if player.get("is_pitcher"):
         roles.append("투구")
     role_text = " · ".join(roles) if roles else "기록 없음"
-    lines = [f"<b>{display}</b>", f"ID {player_id} · {role_text}"]
+    lines = [f"<b>{display}</b>"]
+    if korean_name:
+        lines.append(f"한글명: <b>{korean_name}</b>")
+    lines.append(f"ID {player_id} · {role_text}")
     if full and short and full != short:
         lines.append(f"박스스코어 표기: {short}")
     return "<br>".join(lines)

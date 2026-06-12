@@ -18,6 +18,12 @@ from PyQt6.QtWidgets import (
 from core.config import AppSettings
 from core.milestone.definitions import MilestoneDefinitions
 from core.milestone.prediction_store import PredictionStore
+from core.roster.korean_names import (
+    korean_display_for_player,
+    load_korean_name_mapper,
+    load_player_full_names,
+    load_roster_player_names,
+)
 from core.stats.aggregator import Aggregator
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.grade_styles import apply_grade_style
@@ -71,6 +77,7 @@ class PredictView(QWidget):
         self.table = SortableTable(
             [
                 "선수",
+                "한글명",
                 "마일스톤",
                 "등급",
                 "현재값",
@@ -151,13 +158,26 @@ class PredictView(QWidget):
         else:
             self.banner.hide()
 
+        mapper = load_korean_name_mapper()
+        full_names = load_player_full_names(self.aggregator)
+        roster_names = load_roster_player_names(
+            self.settings.import_export_dir or self.settings.initial_stats_dir
+        )
+
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(predictions))
         for row_idx, item in enumerate(predictions):
             grade = item.milestone.grade if item.milestone else item.grade
             status = "🔥 임박" if item.is_near else ""
+            korean_name = korean_display_for_player(
+                mapper,
+                full_name=full_names.get(item.player_id),
+                player_id=item.player_id,
+                roster_names=roster_names,
+            )
             values = [
                 item.player_name,
+                korean_name,
                 item.milestone_label,
                 grade,
                 f"{item.current_value:,.0f}",
@@ -170,9 +190,9 @@ class PredictView(QWidget):
             for col_idx, value in enumerate(values):
                 cell = QTableWidgetItem(str(value))
                 cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                if col_idx == 2:
+                if col_idx == 3:
                     apply_grade_style(cell, grade)
-                if col_idx == 7 and item.is_near:
+                if col_idx == 8 and item.is_near:
                     cell.setForeground(QColor("#EF4444"))
                 self.table.setItem(row_idx, col_idx, cell)
         self.table.setSortingEnabled(True)

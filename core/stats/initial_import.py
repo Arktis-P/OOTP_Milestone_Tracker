@@ -195,6 +195,7 @@ class InitialImporter:
 
     def __init__(self, aggregator: Aggregator) -> None:
         self.aggregator = aggregator
+        self._korean_name_store_cache = None
 
     def import_batting(
         self,
@@ -602,9 +603,26 @@ class InitialImporter:
                     )
         return diffs
 
+    def _korean_name_store(self):
+        from core.roster.korean_names import KoreanNameStore
+
+        if self._korean_name_store_cache is None:
+            self._korean_name_store_cache = KoreanNameStore.load()
+        return self._korean_name_store_cache
+
     def _player_name(self, player_id: int, row: dict[str, Any]) -> str:
-        full_name = f"{row.get('firstname', '')} {row.get('lastname', '')}".strip()
-        short = f"{row.get('firstname', '')[:1]}. {row.get('lastname', '')}".strip()
+        last_name = str(row.get("lastname", "") or "").strip()
+        first_name = str(row.get("firstname", "") or "").strip()
+        if is_ootp_mlb_league_row(row):
+            self._korean_name_store().note_names(
+                last_name, first_name, source="stats"
+            )
+        full_name = f"{first_name} {last_name}".strip()
+        short = (
+            f"{first_name[:1]}. {last_name}".strip()
+            if first_name and last_name
+            else full_name
+        )
         self.aggregator.upsert_player(player_id, short, full_name)
         existing = self.aggregator.conn.execute(
             "SELECT COALESCE(short_name, full_name) AS name FROM players WHERE player_id = ?",

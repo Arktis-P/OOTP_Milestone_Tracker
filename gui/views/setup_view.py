@@ -134,6 +134,20 @@ class SetupView(QWidget):
             ),
         )
 
+        self.korean_names_button = QPushButton("한글 이름 매핑...")
+        self.korean_names_button.clicked.connect(self._open_korean_name_mapping)
+        self._refresh_korean_names_button()
+
+        names_group = QGroupBox("한글 이름")
+        names_layout = QVBoxLayout(names_group)
+        names_layout.addWidget(
+            QLabel(
+                "성·이름 로마자 표기의 한글 매핑을 관리합니다. "
+                "스탯·박스스코어 불러오기 후 미등록 항목이 있으면 여기서 입력하세요."
+            )
+        )
+        names_layout.addWidget(self.korean_names_button, alignment=Qt.AlignmentFlag.AlignLeft)
+
         self.selected_path_label = QLabel("")
         self.selected_path_label.setWordWrap(True)
         self.selected_path_label.setStyleSheet("color: #555;")
@@ -149,6 +163,7 @@ class SetupView(QWidget):
         layout.addWidget(league_group)
         layout.addWidget(season_group)
         layout.addWidget(tracking_group)
+        layout.addWidget(names_group)
         layout.addWidget(QLabel("선택된 경로:"))
         layout.addWidget(self.selected_path_label)
         layout.addStretch()
@@ -327,6 +342,22 @@ class SetupView(QWidget):
             self.selected_path_label.setText(str(path) if path else "")
         else:
             self.selected_path_label.setText("(리그를 선택하세요)")
+
+    def _open_korean_name_mapping(self) -> None:
+        from gui.widgets.korean_name_mapping_dialog import KoreanNameMappingDialog
+
+        dialog = KoreanNameMappingDialog(self)
+        dialog.exec()
+        self._refresh_korean_names_button()
+
+    def _refresh_korean_names_button(self) -> None:
+        from core.roster.korean_names import KoreanNameStore
+
+        count = KoreanNameStore.load().pending_count()
+        text = "한글 이름 매핑..."
+        if count:
+            text += f" ({count})"
+        self.korean_names_button.setText(text)
 
     def _confirm(self) -> None:
         save_root = self.save_root_input.text().strip()

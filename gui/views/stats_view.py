@@ -25,6 +25,11 @@ from core.db.meta import get_init_season_coverage
 from core.milestone.definitions import MilestoneDefinitions
 from core.stats.aggregator import Aggregator
 from core.stats.ip_utils import outs_to_ip_str
+from core.roster.korean_names import (
+    korean_display_for_player,
+    load_korean_name_mapper,
+    load_roster_player_names,
+)
 from core.stats.player_display import (
     best_display_name,
     format_player_header,
@@ -292,7 +297,17 @@ class StatsView(QWidget):
             self.milestone_timeline.load_player(None)
             return
 
-        self.player_header.setText(format_player_header(player))
+        mapper = load_korean_name_mapper()
+        roster_names = load_roster_player_names(
+            self.settings.import_export_dir or self.settings.initial_stats_dir
+        )
+        korean_name = korean_display_for_player(
+            mapper,
+            full_name=str(player.get("full_name") or ""),
+            player_id=player_id,
+            roster_names=roster_names,
+        )
+        self.player_header.setText(format_player_header(player, korean_name=korean_name))
         self.milestone_timeline.load_player(player_id)
 
         career_mode = self._career_mode or self.season_combo.currentData() == "career"
