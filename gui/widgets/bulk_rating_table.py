@@ -1,11 +1,12 @@
-"""Virtualized table model + delegates for bulk rating edit."""
+"""Virtualized table model + painted fame radio delegate for bulk rating edit."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt, pyqtSignal
-from PyQt6.QtWidgets import QComboBox, QStyledItemDelegate, QStyleOptionViewItem, QWidget
+from PyQt6.QtCore import QAbstractTableModel, QEvent, QModelIndex, QRect, Qt, pyqtSignal
+from PyQt6.QtGui import QMouseEvent, QPainter
+from PyQt6.QtWidgets import QStyle, QStyleOptionButton, QStyleOptionViewItem, QStyledItemDelegate, QWidget
 
 from core.roster.bulk_rating import FameLevel, PlayerBulkSettings
 
@@ -16,8 +17,9 @@ _FAME_OPTIONS: list[tuple[str, FameLevel]] = [
     ("슈퍼스타", FameLevel.SUPERSTAR),
 ]
 
+_FAME_SHORT_LABELS = ("—", "지역", "전국", "슈퍼")
+_FAME_LEVELS = tuple(level for _label, level in _FAME_OPTIONS)
 _FAME_LABEL_BY_LEVEL = {level: label for label, level in _FAME_OPTIONS}
-_FAME_LEVEL_BY_LABEL = {label: level for label, level in _FAME_OPTIONS}
 
 COL_EN = 0
 COL_KO = 1
@@ -27,6 +29,7 @@ COL_BASE = 4
 COL_PROSPECT_FAME = 5
 
 HEADERS = ["영문명", "한글명", "나이", "유망주", "기본 인지도", "유망주 인지도"]
+FAME_COLUMNS = (COL_BASE, COL_PROSPECT_FAME)
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,9 @@ class BulkRatingTableModel(QAbstractTableModel):
     ):
         if role == Qt.ItemDataRole.DisplayRole and orientation == Qt.Orientation.Horizontal:
             return HEADERS[section]
+        if role == Qt.ItemDataRole.ToolTipRole and orientation == Qt.Orientation.Horizontal:
+            if section in FAME_COLUMNS:
+                return "클릭으로 선택 · 같은 항목을 다시 클릭하면 미선택"
         return None
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:
@@ -89,9 +95,19 @@ class BulkRatingTableModel(QAbstractTableModel):
             return Qt.ItemFlag.NoItemFlags
         base = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
         col = index.column()
-        if col in (COL_AGE, COL_PROSPECT, COL_BASE, COL_PROSPECT_FAME):
+        if col == COL_PROSPECT:
+            return base | Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsUserCheckable
+        if col == COL_AGE:
             return base | Qt.ItemFlag.ItemIsEditable
+        if col in FAME_COLUMNS:
+            return base
         return base
+
+    def _fame_level(self, meta: BulkPlayerIndex, col: int) -> FameLevel:
+        cfg = self._settings[meta.player_id]
+        if col == COL_BASE:
+            return cfg.base_fame
+        return cfg.prospect_fame
 
     def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
         if not index.isValid():
@@ -111,10 +127,11 @@ class BulkRatingTableModel(QAbstractTableModel):
                 return str(cfg.age)
             if col == COL_PROSPECT:
                 return ""
-            if col == COL_BASE:
-                return _FAME_LABEL_BY_LEVEL[cfg.base_fame]
-            if col == COL_PROSPECT_FAME:
-                return _FAME_LABEL_BY_LEVEL[cfg.prospect_fame]
+            if col in FAME_COLUMNS:
+                return ""
+
+        if role == Qt.ItemDataRole.UserRole and col in FAME_COLUMNS:
+            return self._fame_level(meta, col)
 
         if role == Qt.ItemDataRole.CheckStateRole and col == COL_PROSPECT:
             return (
@@ -126,8 +143,6 @@ class BulkRatingTableModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.TextAlignmentRole and col in (
             COL_AGE,
             COL_PROSPECT,
-            COL_BASE,
-            COL_PROSPECT_FAME,
         ):
             return int(Qt.AlignmentFlag.AlignCenter)
 
@@ -163,8 +178,8 @@ class BulkRatingTableModel(QAbstractTableModel):
             self.dataChanged.emit(index, index)
             return True
 
-        if col in (COL_BASE, COL_PROSPECT_FAME) and role == Qt.ItemDataRole.EditRole:
-            level = _FAME_LEVEL_BY_LABEL.get(str(value), FameLevel.NONE)
+        if col in FAME_COLUMNS and role == Qt.ItemDataRole.EditRole:
+            level = value if isinstance(value, FameLevel) else FameLevel.NONE
             if col == COL_BASE:
                 cfg.base_fame = level
             else:
@@ -183,27 +198,146 @@ class BulkRatingTableModel(QAbstractTableModel):
         return self._indices[pos]
 
 
-class FameComboDelegate(QStyledItemDelegate):
-    def createEditor(
+def _segment_rects(cell_rect: QRect, count: int) -> list[QRect]:
+    if count <= 0 or cell_rect.width() <= 0:
+        return []
+    seg_width = cell_rect.width() // count
+    rects: list[QRect] = []
+    for i in range(count):
+        left = cell_rect.left() + i * seg_width
+        width = seg_width if i < count - 1 else cell_rect.right() - left + 1
+        rects.append(QRect(left, cell_rect.top(), width, cell_rect.height()))
+    return rects
+
+
+def _segment_index_at(cell_rect: QRect, pos) -> int | None:
+    for index, rect in enumerate(_segment_rects(cell_rect, len(_FAME_LEVELS))):
+        if rect.contains(pos):
+            return index
+    return None
+
+
+class FameRadioDelegate(QStyledItemDelegate):
+    """Paint four inline radio choices per fame cell; click toggles or clears selection."""
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+        if index.column() not in FAME_COLUMNS:
+            super().paint(painter, option, index)
+            return
+
+        self.initStyleOption(option, index)
+        painter.save()
+
+        if option.state & QStyle.StateFlag.State_Selected:
+            painter.fillRect(option.rect, option.palette.highlight())
+
+        current = index.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(current, FameLevel):
+            current = FameLevel.NONE
+
+        widget = option.widget
+        style = widget.style() if widget is not None else None
+        if style is None:
+            painter.restore()
+            return
+
+        fm = painter.fontMetrics()
+        indicator_size = style.pixelMetric(
+            QStyle.PixelMetric.PM_IndicatorWidth, None, widget
+        )
+        spacing = style.pixelMetric(
+            QStyle.PixelMetric.PM_RadioButtonLabelSpacing, None, widget
+        )
+
+        for seg_index, (level, short_label) in enumerate(
+            zip(_FAME_LEVELS, _FAME_SHORT_LABELS, strict=True)
+        ):
+            seg_rect = _segment_rects(option.rect, len(_FAME_LEVELS))[seg_index]
+            if seg_rect.isEmpty():
+                continue
+
+            indicator_opt = QStyleOptionButton()
+            indicator_opt.initFrom(widget)
+            indicator_opt.state = QStyle.StateFlag.State_Enabled
+            if level == current:
+                indicator_opt.state |= QStyle.StateFlag.State_On
+            else:
+                indicator_opt.state |= QStyle.StateFlag.State_Off
+
+            text_width = fm.horizontalAdvance(short_label)
+            content_width = indicator_size + spacing + text_width
+            content_left = seg_rect.left() + max(0, (seg_rect.width() - content_width) // 2)
+            content_top = seg_rect.top() + (seg_rect.height() - indicator_size) // 2
+
+            indicator_opt.rect = QRect(
+                content_left,
+                content_top,
+                indicator_size,
+                indicator_size,
+            )
+            style.drawPrimitive(
+                QStyle.PrimitiveElement.PE_IndicatorRadioButton,
+                indicator_opt,
+                painter,
+                widget,
+            )
+
+            text_rect = QRect(
+                content_left + indicator_size + spacing,
+                seg_rect.top(),
+                text_width,
+                seg_rect.height(),
+            )
+            painter.drawText(
+                text_rect,
+                int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+                short_label,
+            )
+
+        painter.restore()
+
+    def editorEvent(
         self,
-        parent: QWidget,
+        event: QEvent,
+        model: QAbstractTableModel,
         option: QStyleOptionViewItem,
         index: QModelIndex,
-    ) -> QWidget:
-        combo = QComboBox(parent)
-        for label, _level in _FAME_OPTIONS:
-            combo.addItem(label)
-        return combo
+    ) -> bool:
+        if index.column() not in FAME_COLUMNS:
+            return super().editorEvent(event, model, option, index)
 
-    def setEditorData(self, editor: QWidget, index: QModelIndex) -> None:
-        if isinstance(editor, QComboBox):
-            text = str(index.model().data(index, Qt.ItemDataRole.DisplayRole) or "")
-            row = editor.findText(text)
-            if row >= 0:
-                editor.setCurrentIndex(row)
+        if event.type() not in (
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.MouseButtonRelease,
+        ):
+            return False
 
-    def setModelData(
-        self, editor: QWidget, model: QAbstractTableModel, index: QModelIndex
-    ) -> None:
-        if isinstance(editor, QComboBox):
-            model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
+        mouse_event = event
+        if not isinstance(mouse_event, QMouseEvent):
+            return False
+        if event.type() == QEvent.Type.MouseButtonRelease:
+            return True
+        if mouse_event.button() != Qt.MouseButton.LeftButton:
+            return False
+
+        seg_index = _segment_index_at(option.rect, mouse_event.position().toPoint())
+        if seg_index is None:
+            return False
+
+        picked = _FAME_LEVELS[seg_index]
+        current = index.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(current, FameLevel):
+            current = FameLevel.NONE
+        new_level = FameLevel.NONE if picked == current else picked
+        return model.setData(index, new_level, Qt.ItemDataRole.EditRole)
+
+    def helpEvent(self, event, view, option, index):
+        if index.column() in FAME_COLUMNS:
+            level = index.data(Qt.ItemDataRole.UserRole)
+            if isinstance(level, FameLevel):
+                from PyQt6.QtWidgets import QToolTip
+
+                full = _FAME_LABEL_BY_LEVEL.get(level, "미선택")
+                QToolTip.showText(event.globalPos(), full, view)
+                return True
+        return super().helpEvent(event, view, option, index)

@@ -42,7 +42,7 @@ from gui.widgets.bulk_rating_table import (
     COL_PROSPECT_FAME,
     BulkPlayerIndex,
     BulkRatingTableModel,
-    FameComboDelegate,
+    FameRadioDelegate,
 )
 
 
@@ -150,14 +150,24 @@ class BulkRatingDialog(QDialog):
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.table.setSortingEnabled(False)
-        self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.horizontalHeader().setStretchLastSection(False)
         self.table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
         )
-        self.table.setItemDelegateForColumn(COL_BASE, FameComboDelegate(self.table))
-        self.table.setItemDelegateForColumn(
-            COL_PROSPECT_FAME, FameComboDelegate(self.table)
+        self.table.horizontalHeader().setSectionResizeMode(
+            COL_BASE, QHeaderView.ResizeMode.Stretch
         )
+        self.table.horizontalHeader().setSectionResizeMode(
+            COL_PROSPECT_FAME, QHeaderView.ResizeMode.Stretch
+        )
+        self.table.setEditTriggers(
+            QTableView.EditTrigger.DoubleClicked
+            | QTableView.EditTrigger.SelectedClicked
+        )
+        fame_delegate = FameRadioDelegate(self.table)
+        self.table.setItemDelegateForColumn(COL_BASE, fame_delegate)
+        self.table.setItemDelegateForColumn(COL_PROSPECT_FAME, fame_delegate)
+        self.table.setMouseTracking(True)
 
         self.progress = QProgressBar()
         self.progress.setVisible(False)

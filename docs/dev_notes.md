@@ -18,7 +18,7 @@
 - `load_combined_roster()` — MLB+KBO 병합, id 중복·무소속 처리, source 태그
 - `bulk_rating.py` — 유망주/기본·유망주 인지도 배율 누적, Velocity 가산, 수비 1.1배
 - `BulkRatingDialog` — 검색/리그/국가/포지션/유망주 필터, 적용 후 `mod_mlb_rosters.txt` / `mod_kbo_rosters.txt` 저장
-- **성능** — `QTableView` + `BulkRatingTableModel`(가상화), 행별 `QComboBox` 제거, 검색 250ms 디바운스, `load_ootp_roster_cached()`(mtime 캐시), 저장 시에만 `deepcopy` 스냅샷
+- **성능** — `QTableView` + `BulkRatingTableModel`(가상화), `FameRadioDelegate`(인지도 셀에 라디오 버튼 페인트·클릭, 위젯 0개), 검색 250ms 디바운스, `load_ootp_roster_cached()`(mtime 캐시), 저장 시에만 `deepcopy` 스냅샷
 - `tests/test_bulk_rating.py`, `tests/fixtures/roster_txt/mlb_rosters.txt`
 
 ## 2026-06-12 — Phase 7: 예측 확장 + 대시보드 + 이력보내기 + 타임라인
