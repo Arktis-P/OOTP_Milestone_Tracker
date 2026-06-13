@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from core.config.paths import default_settings_path, resolve_data_path
 from core.config.save_scanner import is_valid_league_folder
 from core.stats.qualifiers import RatioQualifiers
 from core.stats.team_filter import (
@@ -79,18 +80,6 @@ class AppSettings:
             batting_ab_per_game=float(raw.get("batting_ab_per_game", 3.1)),
             pitching_ip_per_game=float(raw.get("pitching_ip_per_game", 1.0)),
         )
-
-
-def get_project_root() -> Path:
-    return Path(__file__).resolve().parent.parent.parent
-
-
-def resolve_data_path(relative: str) -> Path:
-    return get_project_root() / relative
-
-
-def default_settings_path() -> Path:
-    return resolve_data_path("data/settings.json")
 
 
 class SettingsManager:

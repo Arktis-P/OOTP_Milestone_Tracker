@@ -12,6 +12,19 @@ ROOT = Path(__file__).resolve().parent
 DIST_DIR = ROOT / "dist"
 BUILD_DIR = ROOT / "build"
 APP_NAME = "ootp_milestone_tracker"
+ASSETS_DIR = ROOT / "assets"
+ICON_SOURCE = ROOT / "icon.png"
+ICON_PNG = ASSETS_DIR / "icon.png"
+ICON_ICO = ASSETS_DIR / "icon.ico"
+
+# Default templates bundled into _MEIPASS/data/; copied to user data dir on first run.
+BUNDLE_DATA_FILES = (
+    "milestones.csv",
+    "settings.json.example",
+    "korean_last_names.csv",
+    "korean_first_names.csv",
+    "korean_names_pending.csv",
+)
 
 
 def read_version() -> str:
@@ -32,9 +45,35 @@ def ensure_default_data() -> None:
         shutil.copy2(settings_example, settings_target)
 
 
+def _pyinstaller_add_data(relative_path: str, *, dest_dir: str = "data") -> str:
+    sep = ";" if sys.platform == "win32" else ":"
+    return f"{relative_path}{sep}{dest_dir}"
+
+
+def ensure_app_icon() -> Path:
+    """Copy icon.png into assets/ and build a multi-size Windows .ico."""
+    ASSETS_DIR.mkdir(exist_ok=True)
+    source = ICON_SOURCE if ICON_SOURCE.is_file() else ICON_PNG
+    if not source.is_file():
+        raise FileNotFoundError(
+            f"App icon not found. Expected {ICON_SOURCE} or {ICON_PNG}."
+        )
+
+    if source.resolve() != ICON_PNG.resolve():
+        shutil.copy2(source, ICON_PNG)
+
+    from PIL import Image
+
+    img = Image.open(ICON_PNG).convert("RGBA")
+    sizes = [(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)]
+    img.save(ICON_ICO, format="ICO", sizes=sizes)
+    return ICON_ICO
+
+
 def build() -> None:
     version = read_version()
     ensure_default_data()
+    icon_path = ensure_app_icon()
 
     cmd = [
         sys.executable,
@@ -44,16 +83,20 @@ def build() -> None:
         APP_NAME,
         "--windowed",
         "--noconfirm",
-        "--add-data",
-        f"data/milestones.csv{';' if sys.platform == 'win32' else ':'}data",
-        "--add-data",
-        f"data/settings.json.example{';' if sys.platform == 'win32' else ':'}data",
-        "main.py",
+        "--icon",
+        str(icon_path),
     ]
-
-    icon_path = ROOT / "assets" / "icon.ico"
-    if icon_path.exists():
-        cmd.extend(["--icon", str(icon_path)])
+    data_dir = ROOT / "data"
+    for name in BUNDLE_DATA_FILES:
+        path = data_dir / name
+        if not path.is_file():
+            raise FileNotFoundError(f"Build requires data file: {path}")
+        cmd.extend(["--add-data", _pyinstaller_add_data(f"data/{name}")])
+    for asset_name in ("icon.ico", "icon.png"):
+        asset_path = ASSETS_DIR / asset_name
+        if asset_path.is_file():
+            cmd.extend(["--add-data", _pyinstaller_add_data(f"assets/{asset_name}", dest_dir="assets")])
+    cmd.append("main.py")
 
     print(f"Building {APP_NAME} v{version}...")
     subprocess.run(cmd, cwd=ROOT, check=True)

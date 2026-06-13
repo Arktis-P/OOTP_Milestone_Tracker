@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -14,7 +15,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from core.config import AppSettings, SettingsManager, resolve_data_path
+from core.config import AppSettings, SettingsManager, get_bundle_root, resolve_data_path
 from core.db.validation import format_overlap_warning, validate_no_overlap
 from core.milestone.definitions import load_milestones
 from core.stats.aggregator import Aggregator
@@ -268,8 +269,23 @@ class _SetupWindow(QMainWindow):
         super().closeEvent(event)
 
 
+def _load_app_icon() -> QIcon | None:
+    assets = get_bundle_root() / "assets"
+    for name in ("icon.ico", "icon.png"):
+        path = assets / name
+        if path.is_file():
+            return QIcon(str(path))
+    return None
+
+
 def run_app() -> None:
+    from core.config.paths import ensure_user_data_dir
+
+    ensure_user_data_dir()
     app = QApplication(sys.argv)
+    icon = _load_app_icon()
+    if icon is not None:
+        app.setWindowIcon(icon)
     settings_manager = SettingsManager()
 
     main_ref: list[MainWindow] = []
