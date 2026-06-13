@@ -261,7 +261,8 @@ class MilestoneChecker:
         query = """
             SELECT mr.id,
                    CASE
-                       WHEN mr.team IS NOT NULL AND mr.team != '' THEN mr.team
+                       WHEN mr.player_id = 0 AND mr.team IS NOT NULL AND mr.team != ''
+                           THEN mr.team
                        ELSE COALESCE(p.short_name, p.full_name, '')
                    END AS player_name,
                    mr.player_id,

@@ -6,7 +6,6 @@ import webbrowser
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QLabel,
     QListWidget,
@@ -19,7 +18,7 @@ from PyQt6.QtWidgets import (
 from core.config import AppSettings
 from core.milestone.definitions import MilestoneDefinitions
 from core.stats.aggregator import Aggregator
-from gui.widgets.grade_styles import GRADE_COLORS
+from gui.widgets.grade_styles import apply_grade_to_list_item
 
 
 class PlayerMilestoneTimeline(QWidget):
@@ -78,13 +77,11 @@ class PlayerMilestoneTimeline(QWidget):
                 else record.get("milestone_label", record["milestone_key"])
             )
             grade = milestone.grade if milestone else "common"
-            colors = GRADE_COLORS.get(grade, GRADE_COLORS["common"])
             date = record.get("achieved_date") or ""
             text = f"🏆 {date}  {label}  [{grade}]"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, record)
-            item.setForeground(QColor(colors["fg"]))
-            item.setBackground(QColor(colors["bg"]))
+            apply_grade_to_list_item(item, grade)
             self.list_widget.addItem(item)
 
     def _on_item_clicked(self, item: QListWidgetItem) -> None:

@@ -24,7 +24,7 @@ from core.milestone.definitions import MilestoneDefinitions
 from core.milestone.prediction_store import CachedPrediction, PredictionStore
 from core.stats.aggregator import Aggregator
 from gui.widgets.error_banner import ErrorBanner
-from gui.widgets.grade_styles import GRADE_COLORS
+from gui.widgets.grade_styles import apply_grade_to_list_item
 from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
 
@@ -152,16 +152,14 @@ class DashboardView(QWidget):
                 else record.get("milestone_label", record["milestone_key"])
             )
             grade = milestone.grade if milestone else "common"
-            name = record.get("display_name") or record.get("team") or ""
+            name = record.get("display_name") or ""
+            if not name and int(record.get("player_id") or 0) == 0:
+                name = record.get("team") or ""
             date = (record.get("achieved_date") or "")[:10]
             text = f"🏆 {name}\n   {label} ({date})"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, record)
-            colors = GRADE_COLORS.get(grade, GRADE_COLORS["common"])
-            from PyQt6.QtGui import QColor
-
-            item.setBackground(QColor(colors["bg"]))
-            item.setForeground(QColor(colors["fg"]))
+            apply_grade_to_list_item(item, grade)
             self.recent_list.addItem(item)
 
     def refresh_near_predictions(self) -> None:

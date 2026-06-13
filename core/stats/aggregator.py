@@ -1446,8 +1446,9 @@ class Aggregator:
             """
             SELECT mr.id,
                    CASE
-                       WHEN mr.team IS NOT NULL AND mr.team != '' THEN mr.team
-                       ELSE COALESCE(p.full_name, p.short_name, '')
+                       WHEN mr.player_id = 0 AND mr.team IS NOT NULL AND mr.team != ''
+                           THEN mr.team
+                       ELSE COALESCE(p.short_name, p.full_name, '')
                    END AS display_name,
                    mr.player_id,
                    mr.milestone_key,
@@ -1499,7 +1500,8 @@ class Aggregator:
             """
             SELECT mr.*,
                    CASE
-                       WHEN mr.team IS NOT NULL AND mr.team != '' THEN mr.team
+                       WHEN mr.player_id = 0 AND mr.team IS NOT NULL AND mr.team != ''
+                           THEN mr.team
                        ELSE COALESCE(p.short_name, p.full_name, '')
                    END AS player_name
             FROM milestone_records mr
