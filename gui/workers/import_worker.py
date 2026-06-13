@@ -109,7 +109,12 @@ class ImportWorker(QThread):
                     ).update_after_import(result.imported_game_ids)
                     if self.settings.import_mlb_only:
                         note_players_from_boxscore_import(
-                            aggregator, result.imported_game_ids
+                            aggregator,
+                            result.imported_game_ids,
+                            import_export_dir=(
+                                self.settings.import_export_dir
+                                or self.settings.initial_stats_dir
+                            ),
                         )
 
             settings = self.settings_manager.load()

@@ -10,6 +10,8 @@
 - [x] **season_ratio** — 시즌 마감 후 「시즌 비율 마일스톤 기록」 버튼으로 타율·ERA 등 1회 판정 (`check_season_ratios`)
 - [x] **연속 기록(streak) 마일스톤** — DB·import 연동·마일스톤 기록 탭 scope 필터·CSV 내보내기
 - [x] **`team_id` HTML/스탯 레지스트리** — 초기 스탯 export 시드, 박스스코어·변경 시에만 갱신
+- [ ] **한글 이름 매핑 데이터 보완** — `korean_*_names.csv`·pending 큐 등 매핑 비어 있는 선수 채우기
+- [ ] **마일스톤 예측(추적) 시작값 결정** — 통산(career) 기록 위주로 예측·추적 시 baseline(시작 누적값) 정책 수립·반영
 
 ## 2026-06-13 — 수동 입력 통합·연속기록(streak)
 

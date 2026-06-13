@@ -57,18 +57,27 @@ class KoreanNameMapper:
     ) -> str:
         """Build Korean display text from mapped name parts.
 
+        Both parts must be mapped when both roman parts are present; otherwise
+        returns empty (no partial display).
+
         * Korean players (``western_order=False``): 성+이름 (e.g. 김택연)
         * Others (``western_order=True``): 이름 + 공백 + 성 (e.g. 마이크 트라우트)
         """
-        kr_last = self.korean_last(last_name)
-        kr_first = self.korean_first(first_name)
-        if kr_last and kr_first:
+        last_key = last_name.strip()
+        first_key = first_name.strip()
+        kr_last = self.korean_last(last_key) if last_key else ""
+        kr_first = self.korean_first(first_key) if first_key else ""
+
+        if last_key and first_key:
+            if not (kr_last and kr_first):
+                return ""
             if western_order:
                 return f"{kr_first} {kr_last}"
             return f"{kr_last}{kr_first}"
-        if kr_last:
+
+        if last_key:
             return kr_last
-        if kr_first:
+        if first_key:
             return kr_first
         return ""
 
@@ -111,10 +120,18 @@ class KoreanNameStore:
         table = self.last_names if part == "last" else self.first_names
         return key in table
 
-    def note_name(self, part: NamePart, name: str, *, source: str = "import") -> bool:
-        """Queue a roman name if it is not registered yet. Returns True if queued."""
+    def has_korean_mapping(self, part: NamePart, name: str) -> bool:
+        """True only when the CSV row has a non-empty Korean value."""
         key = name.strip()
-        if not key or self.is_registered(part, key):
+        if not key:
+            return True
+        table = self.last_names if part == "last" else self.first_names
+        return bool((table.get(key) or "").strip())
+
+    def note_name(self, part: NamePart, name: str, *, source: str = "import") -> bool:
+        """Queue a roman name if it has no Korean mapping yet. Returns True if queued."""
+        key = name.strip()
+        if not key or self.has_korean_mapping(part, key):
             return False
         if any(item.part == part and item.name == key for item in self.pending):
             return False
@@ -122,6 +139,20 @@ class KoreanNameStore:
         self.pending.append(PendingName(part=part, name=key, source=source, first_seen=today))
         self._save_pending()
         return True
+
+    def note_parts_if_unmapped(
+        self,
+        parts: PlayerNameParts,
+        *,
+        source: str = "import",
+    ) -> int:
+        """Queue any name parts that are known but not yet translated."""
+        added = 0
+        if parts.last_name and self.note_name("last", parts.last_name, source=source):
+            added += 1
+        if parts.first_name and self.note_name("first", parts.first_name, source=source):
+            added += 1
+        return added
 
     def note_names(
         self,
@@ -137,11 +168,24 @@ class KoreanNameStore:
             added += 1
         return added
 
-    def note_from_full_name(self, full_name: str, *, source: str = "boxscore") -> int:
-        first_name, last_name = split_ootp_full_name(full_name)
-        if not first_name and not last_name:
+    def note_from_full_name(
+        self,
+        full_name: str,
+        *,
+        source: str = "boxscore",
+        player_id: int | None = None,
+        roster_names: dict[int, PlayerNameParts] | None = None,
+        nation: str = "",
+    ) -> int:
+        parts = resolve_player_name_parts(
+            full_name=full_name,
+            player_id=player_id,
+            roster_names=roster_names,
+            nation=nation,
+        )
+        if not parts.first_name and not parts.last_name:
             return 0
-        return self.note_names(last_name, first_name, source=source)
+        return self.note_parts_if_unmapped(parts, source=source)
 
     def apply_mapping(self, part: NamePart, name: str, korean: str) -> None:
         key = name.strip()
@@ -212,14 +256,19 @@ def split_ootp_full_name(full_name: str) -> tuple[str, str]:
     return " ".join(parts[:-1]), parts[-1]
 
 
-def note_players_from_boxscore_import(aggregator, game_ids: list[int]) -> int:
-    """Queue unregistered name parts for MLB players seen in imported games."""
+def note_players_from_boxscore_import(
+    aggregator,
+    game_ids: list[int],
+    *,
+    import_export_dir: str | Path | None = None,
+) -> int:
+    """Queue unmapped name parts for MLB players seen in imported games."""
     if not game_ids:
         return 0
     placeholders = ",".join("?" for _ in game_ids)
     rows = aggregator.conn.execute(
         f"""
-        SELECT DISTINCT p.full_name
+        SELECT DISTINCT p.player_id, p.full_name
         FROM players p
         JOIN (
             SELECT player_id, game_id FROM batting_logs WHERE game_id IN ({placeholders})
@@ -230,10 +279,19 @@ def note_players_from_boxscore_import(aggregator, game_ids: list[int]) -> int:
         """,
         [*game_ids, *game_ids],
     ).fetchall()
+    roster_names = load_roster_player_names(import_export_dir)
+    nations = load_player_nations(import_export_dir)
     store = KoreanNameStore.load()
     added = 0
     for row in rows:
-        added += store.note_from_full_name(str(row["full_name"] or ""), source="boxscore")
+        player_id = int(row["player_id"])
+        added += store.note_from_full_name(
+            str(row["full_name"] or ""),
+            source="boxscore",
+            player_id=player_id,
+            roster_names=roster_names,
+            nation=nations.get(player_id, ""),
+        )
     return added
 
 
@@ -356,9 +414,14 @@ def resolve_player_name_parts(
 def format_korean_for_parts(
     parts: PlayerNameParts,
     mapper: KoreanNameMapper | None = None,
+    *,
+    source_name: str = "",
 ) -> str:
     if not parts.first_name and not parts.last_name:
         return ""
+    if source_name and looks_abbreviated(source_name):
+        if not (parts.first_name and parts.last_name):
+            return ""
     if mapper is None:
         mapper = load_korean_name_mapper()
     return mapper.format_player_name(
@@ -382,7 +445,7 @@ def format_korean_from_full_name(
         roster_names=roster_names,
         nation=nation,
     )
-    return format_korean_for_parts(parts, mapper)
+    return format_korean_for_parts(parts, mapper, source_name=full_name)
 
 
 def korean_display_for_player(
