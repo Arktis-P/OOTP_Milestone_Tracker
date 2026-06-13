@@ -356,6 +356,106 @@ class MilestoneChecker:
         conn.commit()
         return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
+    def record_manual_transfer(self, form) -> list[int]:
+        from core.milestone.manual_entry import (
+            ManualTransferFormData,
+            build_transfer_records,
+        )
+
+        if not isinstance(form, ManualTransferFormData):
+            raise TypeError("expected ManualTransferFormData")
+
+        records, errors = build_transfer_records(self.aggregator.conn, form)
+        if errors:
+            raise ValueError("\n".join(errors))
+        if not records:
+            raise ValueError("기록할 선수가 없습니다.")
+
+        conn = self.aggregator.conn
+        ids: list[int] = []
+        for item in records:
+            conn.execute(
+                """
+                INSERT INTO milestone_records (
+                    player_id, milestone_key, milestone_label, scope,
+                    season, game_id, achieved_date, achieved_value,
+                    team, notes, opponent_team, opponent_player,
+                    description, games_at_achievement, is_manual
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                """,
+                (
+                    item.player_id,
+                    f"manual_transfer_{form.event_type}",
+                    item.label,
+                    "manual_event",
+                    form.season,
+                    None,
+                    form.achieved_date.isoformat(),
+                    1.0,
+                    item.team,
+                    form.notes or None,
+                    item.opponent_team,
+                    None,
+                    item.description or None,
+                    None,
+                ),
+            )
+            ids.append(int(conn.execute("SELECT last_insert_rowid()").fetchone()[0]))
+        conn.commit()
+        return ids
+
+    def record_manual_injury(self, form) -> int:
+        from core.milestone.manual_entry import (
+            ManualInjuryFormData,
+            build_injury_description,
+            parse_player_name_list,
+            resolve_player_id,
+        )
+
+        if not isinstance(form, ManualInjuryFormData):
+            raise TypeError("expected ManualInjuryFormData")
+
+        names = parse_player_name_list(form.player_name)
+        if not names:
+            raise ValueError("선수를 입력하세요.")
+        player_id = resolve_player_id(self.aggregator.conn, names[0])
+        if player_id is None:
+            raise ValueError(f"선수를 찾을 수 없습니다: {names[0]}")
+
+        description = form.description.strip() or build_injury_description(
+            form.injury_label, form.duration
+        )
+
+        conn = self.aggregator.conn
+        conn.execute(
+            """
+            INSERT INTO milestone_records (
+                player_id, milestone_key, milestone_label, scope,
+                season, game_id, achieved_date, achieved_value,
+                team, notes, opponent_team, opponent_player,
+                description, games_at_achievement, is_manual
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+            """,
+            (
+                player_id,
+                "manual_injury",
+                "부상",
+                "manual_event",
+                form.season,
+                None,
+                form.achieved_date.isoformat(),
+                1.0,
+                form.team.strip() or None,
+                form.notes or None,
+                None,
+                None,
+                description,
+                None,
+            ),
+        )
+        conn.commit()
+        return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
+
     def record_manual_team_milestone(
         self,
         *,

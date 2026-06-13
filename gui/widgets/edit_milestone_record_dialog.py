@@ -70,7 +70,7 @@ class EditMilestoneRecordDialog(QDialog):
         form.addRow("경기수:", self.games_edit)
         form.addRow("상대팀:", self.opponent_team_edit)
         form.addRow("상대선수:", self.opponent_player_edit)
-        form.addRow("마일스톤 설명:", self.description_edit)
+        form.addRow("설명:", self.description_edit)
         form.addRow("비고:", self.notes_edit)
 
         buttons = QDialogButtonBox(

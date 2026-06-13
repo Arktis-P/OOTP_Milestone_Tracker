@@ -57,6 +57,15 @@ def requires_external_data(milestone: MilestoneDefinition) -> bool:
     return milestone.stat in EXTERNAL_DATA_STATS
 
 
+AWARD_STATS: frozenset[str] = frozenset(
+    stat for stat in EXTERNAL_DATA_STATS if stat.startswith(("award_", "title_"))
+)
+
+
+def is_award_milestone(milestone: MilestoneDefinition) -> bool:
+    return milestone.stat in AWARD_STATS
+
+
 def requires_manual_entry(milestone: MilestoneDefinition) -> bool:
     return requires_external_data(milestone)
 

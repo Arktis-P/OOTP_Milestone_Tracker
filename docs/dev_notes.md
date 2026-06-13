@@ -5,30 +5,85 @@
 - [x] **레이팅 일괄 편집** — MLB+KBO 통합 팝업, 인지도/유망주 규칙, `mod_*_rosters.txt` 저장
 - [x] **마일스톤 기준 재정의** — `milestones_v1.csv` 반영 (266건), `boolean`·복합 threshold 로더 지원
 - [x] **앱 내 마일스톤 기준 편집** — 설정 탭 팝업에서 기준 확인·추가·수정·삭제 (`milestones.csv`)
-- [x] **수동 마일스톤 입력** — 통합 팝업(개인/팀), 유연 날짜 파싱, `is_manual` 배지·상세 패널
+- [x] **수동 마일스톤 입력** — 통합 팝업(개인/팀), 수동 전용·시즌 비율 분리, `is_manual` 배지·상세 패널
 - [x] **선수 이름 한글 매핑** — CSV 시드·pending 큐·설정 팝업·일괄 편집·마일스톤 기록·선수 기록·마일스톤 예측 탭 표시
-- [ ] **season_ratio** — 타율·ERA 등 (커리어 종료 시점 감지 후 별도 Phase)
+- [x] **season_ratio** — 시즌 마감 후 「시즌 비율 마일스톤 기록」 버튼으로 타율·ERA 등 1회 판정 (`check_season_ratios`)
 - [ ] **연속 기록(streak) 마일스톤** — 별도 Phase에서 설계·검증 예정 (`ACTIVE_SCOPES`에 `streak` 미포함)
 
-## 2026-06-12 — 마일스톤 수동 입력
+## 2026-06-12 — 마일스톤 v1·판정 확장·수동 입력
 
-### 완료
-- `milestone_records` — `opponent_team`, `opponent_player`, `description`, `games_at_achievement`, `is_manual` 마이그레이션
-- `core/milestone/manual_entry.py` — `parse_flexible_date`, `validate_manual_entry`, `check_duplicate`, 달성값 후보
-- `core/roster/player_registry.py` — `add_player_stub()` (추후 선수 추가용)
-- `gui/widgets/manual_milestone_dialog.py` — 개인/팀 라디오, scope별 필드 표시, 마일스톤 자동완성
+### 배경·목표
+- `milestones_v1.csv` 기준(266건)으로 기준 데이터·자동 판정·수동 입력 흐름을 한 번에 정리
+- 박스스코어로 판정 가능한 항목은 자동화하고, 수상·플레이오프 등은 수동 전용 UI로 분리
+- 사용자 확인: 홀드(`H (N)`), 그랜드슬램(`3 on`), 비율 스탯(시즌 종료 시), 선발 등판(`career_gs`) 추정 방식
+
+### 1. 마일스톤 기준 데이터 (v1)
+- `data/milestones.csv` — v1 스펙 266건으로 교체
+- key 접두사 `bat_` / `pit_` / `team_` 통일, `team_season_wins_*` 오타 수정
+- `direction=boolean`, 복합 threshold(`20-20` 등), `description_template` 컬럼 추가
+- `core/milestone/definitions.py` — CSV 저장·검증, boolean·복합 threshold 로더
+
+### 2. 앱 내 마일스톤 기준 관리
+- 설정 탭 — 「마일스톤 기준 관리」팝업: 기준 확인·추가·수정·삭제
+- `gui/widgets/milestone_definitions_dialog.py`, `milestone_definition_form_dialog.py`
+- 저장 후 `gui/app.py` `_reload_milestones()`로 앱 전역 기준 갱신
+
+### 3. 마일스톤 기록 CRUD·표시
+- 마일스톤 기록 탭 — F2 / 「수정」팝업으로 개별 기록 편집, 「삭제」로 단건 삭제
+- `core/milestone/record_edit.py`, `aggregator` update/delete 메서드
+- 표 컬럼: 날짜·선수·한글명·마일스톤·경기수·상대팀·상대선수·설명·비고
+- `record_backfill.py` — 기존 기록 `games_at_achievement` 백필
+- `description_templates.py` — 설명 템플릿 A~D 자동 생성, E는 게임 로그 참고 패널
+- 자동 기록 시 `record_context.py` — scope별 경기수·상대팀·상대선수(게임 로그 우선)
+
+### 4. 수동 입력 UI
+- `core/milestone/manual_entry.py` — 유연 날짜 파싱, 검증, 중복 확인, 달성값 후보
+- `gui/widgets/manual_milestone_dialog.py` — 개인/팀 라디오, scope별 필드 표시
+- **「수동 입력」** — 박스스코어로 판정 가능한 항목만 (`manual_only=False`)
+- **「수동 전용 입력」** — 수상·리그 1위·플레이오프·명예의 전당 등 (`requires_external_data`)
+  - 마일스톤 선택 시 `「{이름}」 마일스톤은 수동으로 입력해야 합니다.` 안내
+- **「시즌 비율 마일스톤 기록」** — 시즌 마감 후 타율·출루·장타·OPS·ERA 1회 판정
 - `MilestoneChecker.record_manual_milestone()` — `is_manual=1` INSERT
-- 마일스톤 기록 탭 — 「수동 입력」 버튼, 「수동」 배지, 상세 패널, `game_id` 없을 때 게임 로그 비활성
-- `tests/test_manual_milestone.py`
-- 자동 기록 시 `record_context.py` — scope별 경기수·상대팀·상대선수(시즌/통산, 게임 로그 우선)
-- 마일스톤 기록 탭 표 컬럼: 날짜·선수·한글명·마일스톤·경기수·상대팀·상대선수·설명·비고
-- `record_backfill.py` — 기존 기록 `games_at_achievement` 백필 (구 UI 「경기」= game_id 기준, 달성 시점 경기수 산출)
-- `description_templates.py` — 마일스톤 설명 템플릿 A~D 자동 생성, E는 게임 로그 참고 패널
-- `milestones.csv` — `description_template` 컬럼, `extract_player_at_bats()` 게임 로그 원문 추출
-- 마일스톤 기록 탭 — F2/「수정」팝업으로 개별 기록 편집, 「삭제」버튼으로 단건 삭제
-- 설정 탭 — 「마일스톤 기준 관리」팝업: `milestones.csv` 추가·수정·삭제, 저장 후 앱 전역 기준 갱신
-- `milestones.csv` — v1 스펙(266건)으로 교체, key 접두사 `bat_`/`pit_`/`team_`, `direction=boolean`, 신규 description_template
-- v1 마일스톤 판정 확장 — stat_maps, game_events(사이클·그랜드슬램), composite(20-20), 시즌 비율/이닝/득점, 통산 g/gs/ip, 팀 선발전원득점, tier 중복 제거 (`docs/milestone_implementation.md`)
+- DB: `opponent_team`, `opponent_player`, `description`, `games_at_achievement`, `is_manual` 마이그레이션
+
+### 5. v1 자동 판정 로직
+- `core/milestone/stat_maps.py` — v1 stat 매핑 확장
+- `core/milestone/game_events.py` — 사이클링 히트, 그랜드슬램(`is_grand_slam` 플래그)
+- `core/milestone/composite_stats.py` — 20-20 / 30-30 / 40-40 / 50-50
+- `core/milestone/tier_filter.py` — 동일 stat 다단계 중복 제거(최고 threshold만)
+- `core/milestone/implementation.py` — 자동/수동/비율 구분 (`requires_external_data`, `RATIO_SEASON_STATS`)
+- `core/milestone/team_milestone.py` — 선발전원안타·타점·득점, `starter_all_run` 등
+- `core/milestone/checker.py` — game / season / career / team 판정 대폭 확장
+  - 비율 스탯은 import 시 스킵 → `check_season_ratios()`로만 기록
+  - `season_holds` 시즌·통산 홀드 집계 반영
+
+### 6. 박스스코어 파싱·DB (사용자 확인 반영)
+| 항목 | 판정 기준 |
+|------|-----------|
+| **홀드** | pitching linescore `L. Jackson H (3)` — `H`가 홀드, 괄호 안 숫자는 시즌 누적 |
+| **그랜드슬램** | BATTING `Home Runs` 노트의 `3 on`(만루) |
+| **비율 스탯** | 타율·출루·장타·OPS·ERA — 시즌 종료 후 1회만 기록 |
+| **선발 등판** | 팀별 첫 등판 투수 = 선발 추정 (`career_gs`) |
+
+- `core/parser/common.py` — `HOLD_RE`
+- `core/parser/boxscore_html.py` — `PitcherLine.hold_earned`, `season_holds`
+- `core/parser/batting_notes.py` — `parse_grand_slam_players`, `player_has_grand_slam`
+- `core/db/schema.py` — `pitching_logs.hold`, `season_holds`, `batting_logs.is_grand_slam`
+- `core/stats/aggregator.py` — import·통산 홀드 집계 반영
+
+### 7. 테스트·문서
+- `tests/test_manual_milestone.py`, `tests/test_v1_milestone_logic.py`
+- `tests/test_hold_grand_slam_parse.py` — 홀드·그랜드슬램 파싱
+- `docs/milestone_implementation.md` — v1 자동/수동/비율 정책 정리
+- **133 tests passed**
+
+### 8. 기타 수정
+- `korean_name_mapping_dialog.py` — `_part_label` → `self._part_label` 버그 수정
+- 테스트 key 갱신: `career_hr_500` → `bat_career_hr_500` 등 v1 접두사
+
+### 미완·후속
+- 연속 기록(streak) 마일스톤 — 별도 Phase (`ACTIVE_SCOPES`에 `streak` 미포함)
+- ERA 마일스톤 CSV: `pit_season_era_2` 라벨은 「2점대」이나 threshold 3.00 (의도 확인됨, CSV 유지)
 
 ## 2026-06-12 — Phase 8: 레이팅 일괄 편집
 

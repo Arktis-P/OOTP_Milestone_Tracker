@@ -44,11 +44,12 @@ _TABLE_COLUMNS = [
     "날짜",
     "선수 이름",
     "선수 이름(한글)",
-    "마일스톤 이름",
+    "소속팀",
+    "내용",
     "경기수",
     "상대팀",
     "상대선수",
-    "마일스톤 설명",
+    "설명",
     "비고",
 ]
 
@@ -124,14 +125,12 @@ class MilestoneView(QWidget):
         self.refresh_button = QPushButton("새로고침")
         self.export_button = QPushButton("CSV로 보내기")
         self.manual_button = QPushButton("수동 입력")
-        self.manual_only_button = QPushButton("수동 전용 입력")
         self.season_ratio_button = QPushButton("시즌 비율 마일스톤 기록")
         self.edit_button = QPushButton("수정")
         self.delete_button = QPushButton("삭제")
         self.refresh_button.clicked.connect(self.refresh)
         self.export_button.clicked.connect(self.export_history_csv)
         self.manual_button.clicked.connect(self._open_manual_dialog)
-        self.manual_only_button.clicked.connect(self._open_manual_only_dialog)
         self.season_ratio_button.clicked.connect(self._record_season_ratio_milestones)
         self.edit_button.clicked.connect(self._edit_selected_record)
         self.delete_button.clicked.connect(self._delete_selected_record)
@@ -152,7 +151,6 @@ class MilestoneView(QWidget):
         button_row.addWidget(self.refresh_button)
         button_row.addWidget(self.export_button)
         button_row.addWidget(self.manual_button)
-        button_row.addWidget(self.manual_only_button)
         button_row.addWidget(self.season_ratio_button)
         button_row.addWidget(self.edit_button)
         button_row.addWidget(self.delete_button)
@@ -231,8 +229,9 @@ class MilestoneView(QWidget):
                 if milestone
                 else record.get("milestone_label", record["milestone_key"])
             )
-            is_team = bool(record.get("team"))
+            is_team = int(record.get("player_id") or 0) == 0 and bool(record.get("team"))
             display_name = str(record["team"]) if is_team else record["player_name"]
+            affiliation = str(record.get("team") or "")
             korean_name = ""
             if not is_team:
                 player_id = record.get("player_id")
@@ -248,6 +247,7 @@ class MilestoneView(QWidget):
                 record.get("achieved_date") or "",
                 display_name,
                 korean_name,
+                affiliation,
                 label,
                 "" if games is None else str(games),
                 record.get("opponent_team") or "",
@@ -261,7 +261,7 @@ class MilestoneView(QWidget):
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 if record_id is not None:
                     item.setData(Qt.ItemDataRole.UserRole, int(record_id))
-                if bool(record.get("is_manual")) and col_idx == 3:
+                if bool(record.get("is_manual")) and col_idx == 4:
                     item.setForeground(QColor("#b45309"))
                 if self._highlight_id is not None and record.get("id") == self._highlight_id:
                     item.setBackground(QColor("#FDE68A"))
@@ -307,10 +307,11 @@ class MilestoneView(QWidget):
             writer = csv.writer(handle)
             writer.writerow(_TABLE_COLUMNS)
             for record in records:
-                is_team = bool(record.get("team"))
+                is_team = int(record.get("player_id") or 0) == 0 and bool(record.get("team"))
                 display_name = (
                     record["team"] if is_team else record.get("player_name", "")
                 )
+                affiliation = str(record.get("team") or "")
                 korean_name = ""
                 if not is_team:
                     pid = record.get("player_id")
@@ -333,6 +334,7 @@ class MilestoneView(QWidget):
                         record.get("achieved_date") or "",
                         display_name,
                         korean_name,
+                        affiliation,
                         label,
                         "" if games is None else games,
                         record.get("opponent_team") or "",
@@ -349,18 +351,6 @@ class MilestoneView(QWidget):
             self.milestones,
             self.settings,
             parent=self,
-        )
-        if dialog.exec():
-            self.refresh()
-            self.records_changed.emit()
-
-    def _open_manual_only_dialog(self) -> None:
-        dialog = ManualMilestoneDialog(
-            self.aggregator,
-            self.milestones,
-            self.settings,
-            parent=self,
-            manual_only=True,
         )
         if dialog.exec():
             self.refresh()
@@ -450,7 +440,7 @@ class MilestoneView(QWidget):
             if milestone
             else record.get("milestone_label", record["milestone_key"])
         )
-        is_team = bool(record.get("team"))
+        is_team = int(record.get("player_id") or 0) == 0 and bool(record.get("team"))
         target = str(record["team"]) if is_team else str(record.get("player_name", ""))
         confirm = QMessageBox.question(
             self,
@@ -523,7 +513,7 @@ class MilestoneView(QWidget):
             return
         lines = [
             "게임 로그 참고 (자동 작성 아님 — 참고용)",
-            "※ 위 내용을 참고해 「마일스톤 설명」을 직접 입력하세요.",
+            "※ 위 내용을 참고해 「설명」을 직접 입력하세요.",
             "",
         ]
         for entry in entries:
