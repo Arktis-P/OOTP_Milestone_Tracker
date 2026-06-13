@@ -377,6 +377,7 @@ class Aggregator:
         win = 1 if pitcher.decision == "W" else 0
         loss = 1 if pitcher.decision == "L" else 0
         save = 1 if pitcher.decision == "S" else 0
+        is_starter = 1 if team_pitchers and team_pitchers[0].player_id == pitcher.player_id else 0
         special = detect_special_game(
             pitcher, team_pitchers, data.meta, pitcher.team, data
         )
@@ -389,8 +390,8 @@ class Aggregator:
                 decision, win, loss, save, season_era,
                 game_score, wild_pitch, hit_batsmen,
                 is_cg, is_sho, is_no_hitter, is_perfect_game,
-                hold, season_holds
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                hold, season_holds, is_starter
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data.meta.game_id,
@@ -421,6 +422,7 @@ class Aggregator:
                 special["is_perfect_game"],
                 1 if pitcher.hold_earned else 0,
                 pitcher.season_holds if pitcher.hold_earned else None,
+                is_starter,
             ),
         )
 

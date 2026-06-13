@@ -216,6 +216,7 @@ def _migrate_post_schema(conn: sqlite3.Connection) -> None:
     _ensure_milestone_records_manual_columns(conn)
     _ensure_pitching_holds_columns(conn)
     _ensure_batting_grand_slam_column(conn)
+    _ensure_streak_schema(conn)
     _backfill_milestone_games_at_achievement(conn)
 
 
@@ -320,6 +321,51 @@ def _ensure_batting_grand_slam_column(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE batting_logs ADD COLUMN is_grand_slam INTEGER NOT NULL DEFAULT 0"
         )
+
+
+def _ensure_streak_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS player_streak_state (
+            season                  INTEGER NOT NULL,
+            player_id               INTEGER NOT NULL,
+            streak_type             TEXT NOT NULL,
+            run_index               INTEGER NOT NULL DEFAULT 1,
+            current_value           INTEGER NOT NULL DEFAULT 0,
+            ip_outs_accum           INTEGER NOT NULL DEFAULT 0,
+            last_success_game_id    INTEGER,
+            last_success_game_date  TEXT,
+            recorded_milestones     TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (season, player_id, streak_type)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS streak_processed_games (
+            season      INTEGER NOT NULL,
+            game_id     INTEGER NOT NULL,
+            processed_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (season, game_id)
+        )
+        """
+    )
+    pitching_cols = _table_columns(conn, "pitching_logs")
+    if pitching_cols and "is_starter" not in pitching_cols:
+        conn.execute(
+            "ALTER TABLE pitching_logs ADD COLUMN is_starter INTEGER NOT NULL DEFAULT 0"
+        )
+    mr_cols = _table_columns(conn, "milestone_records")
+    if mr_cols:
+        for name, ddl in (
+            ("streak_type", "TEXT"),
+            ("streak_run_id", "TEXT"),
+            ("streak_event_type", "TEXT"),
+        ):
+            if name not in mr_cols:
+                conn.execute(
+                    f"ALTER TABLE milestone_records ADD COLUMN {name} {ddl}"
+                )
 
 
 def _migrate_milestone_records(conn: sqlite3.Connection) -> None:

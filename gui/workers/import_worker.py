@@ -12,6 +12,7 @@ from core.milestone.checker import MilestoneAchievement, MilestoneChecker
 from core.milestone.prediction_store import PredictionStore
 from core.milestone.definitions import MilestoneDefinitions
 from core.roster.korean_names import note_players_from_boxscore_import
+from core.streak.tracker import StreakTracker
 from core.stats.aggregator import Aggregator
 from core.stats.models import BatchImportResult
 
@@ -83,6 +84,19 @@ class ImportWorker(QThread):
                     achievements,
                     game_logs_dir=self.settings.game_logs_dir or None,
                 )
+
+                streak_recorded = 0
+                if result.imported_game_ids:
+                    streak_tracker = StreakTracker(aggregator)
+                    streak_events = streak_tracker.process_new_games(
+                        result.imported_game_ids,
+                        self.season,
+                        progress_callback=lambda cur, total, name: self.progress.emit(
+                            cur, total, name, "streak"
+                        ),
+                    )
+                    streak_recorded = len(streak_events)
+                    aggregator.conn.commit()
 
                 if result.imported_game_ids:
                     PredictionStore(

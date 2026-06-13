@@ -250,6 +250,10 @@ class DashboardView(QWidget):
             self.progress_label.setText(
                 f"마일스톤 확인 중... ({current}/{total}) {filename}"
             )
+        elif phase == "streak":
+            self.progress_label.setText(
+                f"연속기록 확인 중... ({current}/{total}) {filename}"
+            )
         else:
             self.progress_label.setText(
                 f"박스스코어 가져오는 중... ({current}/{total}) {filename}"

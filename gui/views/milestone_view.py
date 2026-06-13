@@ -91,7 +91,7 @@ class MilestoneView(QWidget):
         self.scope_combo.addItem("통산", "career")
         self.scope_combo.addItem("팀 경기", "team_game")
         self.scope_combo.addItem("팀 시즌", "team_season")
-        self.scope_combo.addItem("팀 수동", "team_manual")
+        self.scope_combo.addItem("연속기록", "streak")
         self.scope_combo.currentIndexChanged.connect(self.refresh)
 
         self.season_spin = QSpinBox()

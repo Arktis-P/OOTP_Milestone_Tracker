@@ -305,6 +305,8 @@ class BoxscoreHTMLParser:
         decision_match = DECISION_RE.search(remainder)
         if decision_match:
             decision = decision_match.group(1)
+            if decision == "SV":
+                decision = "S"
             decision_record = f"({decision_match.group(2)})"
 
         hold_earned = False
