@@ -16,14 +16,16 @@ from core.streak.engine import (
     update_counter_streak,
 )
 
-APPEARANCE_STREAK_TYPE = "appearance_streak_team_games"
-_LEGACY_APPEARANCE_STREAK_TYPE = "appearance_streak_player_games"
 from core.streak.game_log import batting_log_from_row, pitching_log_from_row
+from core.streak.memory_store import InMemoryStreakStore
 from core.streak.policies import (
     batting_policies,
     load_streak_policies,
     pitching_policies,
 )
+
+APPEARANCE_STREAK_TYPE = "appearance_streak_team_games"
+_LEGACY_APPEARANCE_STREAK_TYPE = "appearance_streak_player_games"
 
 ProgressCallback = Callable[[int, int, str], None]
 
@@ -48,6 +50,119 @@ class StreakTracker:
             for key, value in self._batting_policies.items()
             if key != APPEARANCE_STREAK_TYPE
         }
+        self._replay_store: InMemoryStreakStore | None = None
+
+    def replay_season(self, season: int) -> InMemoryStreakStore:
+        """Replay all season games in memory (no DB writes). Used for CSV export."""
+        self._replay_store = InMemoryStreakStore()
+        rows = self.aggregator.conn.execute(
+            "SELECT game_id FROM games WHERE season = ? ORDER BY date, game_id",
+            (season,),
+        ).fetchall()
+        for row in rows:
+            self._process_single_game(int(row["game_id"]), season, replay=True)
+        store = self._replay_store
+        self._replay_store = None
+        return store
+
+    def replay_season_with_snapshots(
+        self, season: int
+    ) -> tuple[InMemoryStreakStore, list[dict[str, Any]], list[dict[str, Any]]]:
+        """Replay season and collect per-game batting/pitching streak snapshots."""
+        self._replay_store = InMemoryStreakStore()
+        batting_types = set(self._batting_policies.keys())
+        pitching_types = set(self._pitching_policies.keys())
+        bat_snapshots: list[dict[str, Any]] = []
+        pit_snapshots: list[dict[str, Any]] = []
+
+        rows = self.aggregator.conn.execute(
+            "SELECT game_id, date FROM games WHERE season = ? ORDER BY date, game_id",
+            (season,),
+        ).fetchall()
+        for row in rows:
+            game_id = int(row["game_id"])
+            game_date = str(row["date"])
+            self._process_single_game(game_id, season, replay=True)
+            bat_rows, pit_rows = self._collect_snapshots(
+                season,
+                game_id,
+                game_date,
+                batting_types,
+                pitching_types,
+            )
+            bat_snapshots.extend(bat_rows)
+            pit_snapshots.extend(pit_rows)
+
+        store = self._replay_store
+        self._replay_store = None
+        return store, bat_snapshots, pit_snapshots
+
+    def _collect_snapshots(
+        self,
+        season: int,
+        game_id: int,
+        game_date: str,
+        batting_types: set[str],
+        pitching_types: set[str],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        if not self._replay_store:
+            return [], []
+
+        batting_rows: list[dict[str, Any]] = []
+        pitching_rows: list[dict[str, Any]] = []
+        for (player_id, streak_type), state in self._replay_store.states.items():
+            if state.current <= 0 and state.ip_outs_accum <= 0:
+                continue
+            team, player_name = self._player_identity_in_game(game_id, player_id)
+            base = {
+                "season": season,
+                "game_id": game_id,
+                "game_date": game_date,
+                "player_id": player_id,
+                "player_name": player_name,
+                "team": team,
+                "streak_type": streak_type,
+                "streak_label": self.labels.get(streak_type, streak_type),
+                "current_value": state.current,
+                "ip_outs_accum": state.ip_outs_accum,
+                "run_index": state.run_index,
+                "streak_run_id": state.run_id(season, player_id, streak_type),
+            }
+            if streak_type in batting_types:
+                batting_rows.append(base)
+            elif streak_type in pitching_types:
+                pitching_rows.append(base)
+        return batting_rows, pitching_rows
+
+    def _player_identity_in_game(
+        self, game_id: int, player_id: int
+    ) -> tuple[str, str]:
+        row = self.aggregator.conn.execute(
+            """
+            SELECT bl.team, COALESCE(p.short_name, p.full_name, '') AS player_name
+            FROM batting_logs bl
+            LEFT JOIN players p ON p.player_id = bl.player_id
+            WHERE bl.game_id = ? AND bl.player_id = ?
+            UNION ALL
+            SELECT pl.team, COALESCE(p.short_name, p.full_name, '') AS player_name
+            FROM pitching_logs pl
+            LEFT JOIN players p ON p.player_id = pl.player_id
+            WHERE pl.game_id = ? AND pl.player_id = ?
+            LIMIT 1
+            """,
+            (game_id, player_id, game_id, player_id),
+        ).fetchone()
+        if row:
+            return str(row["team"]), str(row["player_name"])
+        row = self.aggregator.conn.execute(
+            """
+            SELECT COALESCE(p.short_name, p.full_name, '') AS player_name
+            FROM players p WHERE p.player_id = ?
+            """,
+            (player_id,),
+        ).fetchone()
+        name = str(row["player_name"]) if row else ""
+        return "", name
 
     def process_new_games(
         self,
@@ -82,8 +197,10 @@ class StreakTracker:
         ).fetchall()
         return [int(row["game_id"]) for row in rows]
 
-    def _process_single_game(self, game_id: int, season: int) -> list[StreakEvent]:
-        if self._game_already_processed(game_id, season):
+    def _process_single_game(
+        self, game_id: int, season: int, *, replay: bool = False
+    ) -> list[StreakEvent]:
+        if not replay and self._game_already_processed(game_id, season):
             return []
 
         events: list[StreakEvent] = []
@@ -123,17 +240,19 @@ class StreakTracker:
             )
 
         for event in events:
-            self._persist_event(event, season, game_id)
+            if not replay:
+                self._persist_event(event, season, game_id)
 
-        self._mark_game_processed(game_id, season)
-        if events:
-            self.aggregator.conn.commit()
+        if not replay:
+            self._mark_game_processed(game_id, season)
+            if events:
+                self.aggregator.conn.commit()
         return events
 
     def _fetch_game_meta(self, game_id: int) -> dict[str, Any] | None:
         row = self.aggregator.conn.execute(
             """
-            SELECT game_id, date, away_team, home_team
+            SELECT game_id, date, away_team, home_team, away_team_id, home_team_id
             FROM games
             WHERE game_id = ?
             """,
@@ -157,15 +276,26 @@ class StreakTracker:
         away_team = str(game_meta["away_team"])
         home_team = str(game_meta["home_team"])
         playing_teams = {away_team, home_team}
+        playing_team_ids = {
+            int(value)
+            for value in (game_meta.get("away_team_id"), game_meta.get("home_team_id"))
+            if value
+        }
 
-        appeared: set[tuple[int, str]] = set()
+        appeared_by_id: set[tuple[int, int]] = set()
+        appeared_by_name: set[tuple[int, str]] = set()
         for row in batting_rows + pitching_rows:
-            appeared.add((int(row["player_id"]), str(row["team"])))
+            player_id = int(row["player_id"])
+            team = str(row["team"])
+            appeared_by_name.add((player_id, team))
+            team_id = row.get("team_id")
+            if team_id:
+                appeared_by_id.add((player_id, int(team_id)))
 
         events: list[StreakEvent] = []
         handled_players: set[int] = set()
 
-        for player_id, team in sorted(appeared):
+        for player_id, team in sorted(appeared_by_name):
             if player_id in handled_players:
                 continue
             handled_players.add(player_id)
@@ -186,26 +316,30 @@ class StreakTracker:
             self._save_appearance_state(season, player_id, state)
             events.extend(batch)
 
-        active_rows = self.aggregator.conn.execute(
-            """
-            SELECT player_id, current_value
-            FROM player_streak_state
-            WHERE season = ? AND streak_type = ? AND current_value > 0
-            """,
-            (season, APPEARANCE_STREAK_TYPE),
-        ).fetchall()
+        active_rows = self._active_appearance_streak_players(season)
 
         for row in active_rows:
             player_id = int(row["player_id"])
             if player_id in handled_players:
                 continue
 
-            effective_team = self._player_team_before_game(
+            effective_team, effective_team_id = self._player_team_before_game(
                 season, player_id, game_id, game_date
             )
-            if not effective_team or effective_team not in playing_teams:
+            if not self._team_is_playing_today(
+                effective_team,
+                effective_team_id,
+                playing_teams,
+                playing_team_ids,
+            ):
                 continue
-            if (player_id, effective_team) in appeared:
+            if self._player_appeared_today(
+                player_id,
+                effective_team,
+                effective_team_id,
+                appeared_by_name,
+                appeared_by_id,
+            ):
                 continue
 
             state_map = self._load_appearance_state(season, player_id)
@@ -214,7 +348,7 @@ class StreakTracker:
                 state,
                 season=season,
                 player_id=player_id,
-                team=effective_team,
+                team=effective_team or "",
                 streak_type=APPEARANCE_STREAK_TYPE,
                 outcome="break",
                 policy=policy,
@@ -227,22 +361,62 @@ class StreakTracker:
 
         return events
 
+    @staticmethod
+    def _team_is_playing_today(
+        team_name: str | None,
+        team_id: int | None,
+        playing_names: set[str],
+        playing_ids: set[int],
+    ) -> bool:
+        if team_id and playing_ids:
+            return team_id in playing_ids
+        return bool(team_name and team_name in playing_names)
+
+    @staticmethod
+    def _player_appeared_today(
+        player_id: int,
+        team_name: str | None,
+        team_id: int | None,
+        appeared_by_name: set[tuple[int, str]],
+        appeared_by_id: set[tuple[int, int]],
+    ) -> bool:
+        if team_id and (player_id, team_id) in appeared_by_id:
+            return True
+        return bool(team_name and (player_id, team_name) in appeared_by_name)
+
+    def _active_appearance_streak_players(self, season: int) -> list[Any]:
+        if self._replay_store:
+            return [
+                {"player_id": player_id}
+                for player_id in self._replay_store.active_players(
+                    APPEARANCE_STREAK_TYPE
+                )
+            ]
+        return self.aggregator.conn.execute(
+            """
+            SELECT player_id, current_value
+            FROM player_streak_state
+            WHERE season = ? AND streak_type = ? AND current_value > 0
+            """,
+            (season, APPEARANCE_STREAK_TYPE),
+        ).fetchall()
+
     def _player_team_before_game(
         self,
         season: int,
         player_id: int,
         game_id: int,
         game_date: str,
-    ) -> str | None:
+    ) -> tuple[str | None, int | None]:
         row = self.aggregator.conn.execute(
             """
-            SELECT team FROM (
-                SELECT bl.team, g.date, bl.game_id
+            SELECT team, team_id FROM (
+                SELECT bl.team, bl.team_id, g.date, bl.game_id
                 FROM batting_logs bl
                 JOIN games g ON g.game_id = bl.game_id
                 WHERE bl.player_id = ? AND bl.season = ?
                 UNION ALL
-                SELECT pl.team, g.date, pl.game_id
+                SELECT pl.team, pl.team_id, g.date, pl.game_id
                 FROM pitching_logs pl
                 JOIN games g ON g.game_id = pl.game_id
                 WHERE pl.player_id = ? AND pl.season = ?
@@ -253,7 +427,15 @@ class StreakTracker:
             """,
             (player_id, season, player_id, season, game_date, game_date, game_id),
         ).fetchone()
-        return str(row["team"]) if row else None
+        if not row:
+            return None, None
+        team = str(row["team"]) if row["team"] else None
+        team_id = int(row["team_id"]) if row["team_id"] else None
+        if team_id is None and team:
+            from core.teams.registry import TeamRegistry
+
+            team_id = TeamRegistry(self.aggregator.conn).resolve_id(team)
+        return team, team_id
 
     def _load_appearance_state(
         self, season: int, player_id: int
@@ -347,6 +529,9 @@ class StreakTracker:
         player_id: int,
         policies: dict[str, dict[str, Any]],
     ) -> dict[str, StreakState]:
+        if self._replay_store:
+            return self._replay_store.load_player_states(player_id, policies)
+
         state_map: dict[str, StreakState] = {}
         for streak_type in policies:
             row = self._fetch_streak_state_row(season, player_id, streak_type)
@@ -433,6 +618,10 @@ class StreakTracker:
         player_id: int,
         state_map: dict[str, StreakState],
     ) -> None:
+        if self._replay_store:
+            self._replay_store.save_player_states(player_id, state_map)
+            return
+
         for streak_type, state in state_map.items():
             recorded = ",".join(str(v) for v in sorted(state.recorded_milestones))
             self.aggregator.conn.execute(

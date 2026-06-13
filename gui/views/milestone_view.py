@@ -35,6 +35,7 @@ from core.roster.korean_names import (
 from core.parser.game_log_html import extract_player_at_bats
 from core.stats.aggregator import Aggregator
 from core.stats.team_filter import expand_tracked_teams
+from core.streak.export import export_streak_csvs as write_streak_csv_bundle
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.table_widgets import TablePanel
 from gui.widgets.edit_milestone_record_dialog import EditMilestoneRecordDialog
@@ -124,12 +125,14 @@ class MilestoneView(QWidget):
 
         self.refresh_button = QPushButton("새로고침")
         self.export_button = QPushButton("CSV로 보내기")
+        self.export_streak_button = QPushButton("연속기록 내보내기")
         self.manual_button = QPushButton("수동 입력")
         self.season_ratio_button = QPushButton("시즌 비율 마일스톤 기록")
         self.edit_button = QPushButton("수정")
         self.delete_button = QPushButton("삭제")
         self.refresh_button.clicked.connect(self.refresh)
         self.export_button.clicked.connect(self.export_history_csv)
+        self.export_streak_button.clicked.connect(self.export_streak_csvs)
         self.manual_button.clicked.connect(self._open_manual_dialog)
         self.season_ratio_button.clicked.connect(self._record_season_ratio_milestones)
         self.edit_button.clicked.connect(self._edit_selected_record)
@@ -150,6 +153,7 @@ class MilestoneView(QWidget):
         button_row.addWidget(self.season_spin)
         button_row.addWidget(self.refresh_button)
         button_row.addWidget(self.export_button)
+        button_row.addWidget(self.export_streak_button)
         button_row.addWidget(self.manual_button)
         button_row.addWidget(self.season_ratio_button)
         button_row.addWidget(self.edit_button)
@@ -344,6 +348,35 @@ class MilestoneView(QWidget):
                     ]
                 )
         self.banner.show_info(f"보내기 완료: {filepath}")
+
+    def export_streak_csvs(self) -> None:
+        season = self.season_spin.value() or self.settings.current_season
+        default_root = (
+            self.settings.import_export_dir or self.settings.initial_stats_dir or ""
+        )
+        default_dir = str(
+            Path(default_root)
+            / f"streak_export_{season}_{datetime.now():%Y%m%d}"
+        )
+
+        output_dir = QFileDialog.getExistingDirectory(
+            self,
+            f"연속기록 내보내기 ({season}시즌)",
+            default_dir,
+        )
+        if not output_dir:
+            return
+
+        try:
+            result = write_streak_csv_bundle(self.aggregator, output_dir, season)
+        except OSError as exc:
+            self.banner.show_error(f"연속기록 내보내기 실패: {exc}")
+            return
+
+        file_list = "\n".join(f"  · {path.name}" for path in result.files)
+        self.banner.show_info(
+            f"{season}시즌 연속기록 CSV {len(result.files)}개를 저장했습니다.\n{output_dir}\n{file_list}"
+        )
 
     def _open_manual_dialog(self) -> None:
         dialog = ManualMilestoneDialog(

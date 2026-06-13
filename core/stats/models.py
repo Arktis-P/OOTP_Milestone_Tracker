@@ -73,6 +73,8 @@ class GameMeta:
     home_team: str
     away_score: int
     home_score: int
+    away_team_id: int | None = None
+    home_team_id: int | None = None
     away_record: str = ""
     home_record: str = ""
     away_innings: list[int] = field(default_factory=list)
@@ -100,6 +102,8 @@ class LineScore:
     home_hits: int
     away_errors: int
     home_errors: int
+    away_team_id: int | None = None
+    home_team_id: int | None = None
 
 
 @dataclass
@@ -120,6 +124,7 @@ class BatterLine:
     avg: float
     season_hr: int
     season_rbi: int
+    team_id: int | None = None
 
 
 @dataclass
@@ -141,6 +146,7 @@ class PitcherLine:
     era: float
     hold_earned: bool = False
     season_holds: int = 0
+    team_id: int | None = None
 
 
 @dataclass

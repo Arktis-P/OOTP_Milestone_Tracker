@@ -16,6 +16,7 @@ from core.parser.common import (
     ParserError,
     SUB_LABEL_RE,
     extract_player_id,
+    extract_team_id,
     parse_date_iso,
     parse_float,
     parse_game_id_from_filename,
@@ -64,6 +65,11 @@ class BoxscoreHTMLParser:
         soup = self._soup
 
         linescore = self._parse_linescore(soup)
+        away_id, home_id = self._parse_team_header_ids(soup)
+        if away_id is not None:
+            linescore.away_team_id = away_id
+        if home_id is not None:
+            linescore.home_team_id = home_id
         meta = self._parse_game_meta(soup, linescore)
         away_batting, home_batting = self._parse_batting_tables(soup, linescore)
         away_pitching, home_pitching = self._parse_pitching_tables(soup, linescore)
@@ -110,6 +116,8 @@ class BoxscoreHTMLParser:
             date=parse_date_iso(date_raw),
             away_team=linescore.away_team,
             home_team=linescore.home_team,
+            away_team_id=linescore.away_team_id,
+            home_team_id=linescore.home_team_id,
             away_score=linescore.away_score,
             home_score=linescore.home_score,
             away_record=linescore.away_record,
@@ -158,8 +166,12 @@ class BoxscoreHTMLParser:
             away_cells = data_rows[0].find_all("td")
             home_cells = data_rows[1].find_all("td")
 
-            away_team, away_record = parse_team_record(away_cells[0].get_text(" ", strip=True))
-            home_team, home_record = parse_team_record(home_cells[0].get_text(" ", strip=True))
+            away_team, away_record, away_team_id = self._parse_team_linescore_cell(
+                away_cells[0]
+            )
+            home_team, home_record, home_team_id = self._parse_team_linescore_cell(
+                home_cells[0]
+            )
 
             away_inning_cells = away_cells[1:-3]
             home_inning_cells = home_cells[1:-3]
@@ -169,6 +181,8 @@ class BoxscoreHTMLParser:
                 home_team=home_team,
                 away_record=away_record,
                 home_record=home_record,
+                away_team_id=away_team_id,
+                home_team_id=home_team_id,
                 away_innings=[parse_int(td.get_text()) for td in away_inning_cells],
                 home_innings=[parse_int(td.get_text()) for td in home_inning_cells],
                 away_score=parse_int(away_cells[-3].get_text()),
@@ -181,14 +195,45 @@ class BoxscoreHTMLParser:
 
         raise ParserError("Could not find linescore table")
 
+    def _parse_team_header_ids(self, soup: BeautifulSoup) -> tuple[int | None, int | None]:
+        header_table = soup.find("table", class_="head_bg")
+        if header_table:
+            links = header_table.find_all("a", href=re.compile(r"team_\d+\.html", re.I))
+            if len(links) >= 2:
+                return (
+                    extract_team_id(links[0].get("href")),
+                    extract_team_id(links[1].get("href")),
+                )
+
+        links = soup.find_all("a", href=re.compile(r"team_\d+\.html", re.I))
+        if len(links) >= 2:
+            return (
+                extract_team_id(links[0].get("href")),
+                extract_team_id(links[1].get("href")),
+            )
+        if len(links) == 1:
+            return extract_team_id(links[0].get("href")), None
+        return None, None
+
+    @staticmethod
+    def _parse_team_linescore_cell(cell: Tag) -> tuple[str, str, int | None]:
+        link = cell.find("a", href=re.compile(r"team_\d+\.html", re.I))
+        team_id = extract_team_id(link.get("href")) if link else None
+        team, record = parse_team_record(cell.get_text(" ", strip=True))
+        return team, record, team_id
+
     def _parse_batting_tables(
         self, soup: BeautifulSoup, linescore: LineScore
     ) -> tuple[list[BatterLine], list[BatterLine]]:
         tables = self._find_stat_tables(soup, required_header="AB")
         if len(tables) < 2:
             raise ParserError("Expected two batting linescore tables")
-        away = self._parse_batting(soup, tables[0], linescore.away_team)
-        home = self._parse_batting(soup, tables[1], linescore.home_team)
+        away = self._parse_batting(
+            soup, tables[0], linescore.away_team, linescore.away_team_id
+        )
+        home = self._parse_batting(
+            soup, tables[1], linescore.home_team, linescore.home_team_id
+        )
         return away, home
 
     def _parse_pitching_tables(
@@ -197,8 +242,12 @@ class BoxscoreHTMLParser:
         tables = self._find_stat_tables(soup, required_header="IP")
         if len(tables) < 2:
             raise ParserError("Expected two pitching linescore tables")
-        away = self._parse_pitching(soup, tables[0], linescore.away_team)
-        home = self._parse_pitching(soup, tables[1], linescore.home_team)
+        away = self._parse_pitching(
+            soup, tables[0], linescore.away_team, linescore.away_team_id
+        )
+        home = self._parse_pitching(
+            soup, tables[1], linescore.home_team, linescore.home_team_id
+        )
         return away, home
 
     def _find_stat_tables(self, soup: BeautifulSoup, required_header: str) -> list[Tag]:
@@ -212,7 +261,13 @@ class BoxscoreHTMLParser:
                 tables.append(table)
         return tables
 
-    def _parse_batting(self, soup: BeautifulSoup, table: Tag, team: str) -> list[BatterLine]:
+    def _parse_batting(
+        self,
+        soup: BeautifulSoup,
+        table: Tag,
+        team: str,
+        team_id: int | None = None,
+    ) -> list[BatterLine]:
         rows: list[BatterLine] = []
         for row in table.find_all("tr"):
             if "sortbottom" in (row.get("class") or []):
@@ -224,13 +279,17 @@ class BoxscoreHTMLParser:
             if len(stat_cells) < 10:
                 continue
 
-            batter = self._parse_batter_row(player_td, stat_cells, team)
+            batter = self._parse_batter_row(player_td, stat_cells, team, team_id)
             if batter:
                 rows.append(batter)
         return rows
 
     def _parse_batter_row(
-        self, player_td: Tag, stat_cells: list[Tag], team: str
+        self,
+        player_td: Tag,
+        stat_cells: list[Tag],
+        team: str,
+        team_id: int | None = None,
     ) -> BatterLine | None:
         link = player_td.find("a", href=re.compile(r"player_\d+"))
         if not link:
@@ -257,6 +316,7 @@ class BoxscoreHTMLParser:
             player_name=player_name,
             player_id=player_id,
             team=team,
+            team_id=team_id,
             position=position,
             is_substitute=is_substitute,
             sub_label=sub_label,
@@ -272,7 +332,13 @@ class BoxscoreHTMLParser:
             season_rbi=parse_int(values[9]),
         )
 
-    def _parse_pitching(self, soup: BeautifulSoup, table: Tag, team: str) -> list[PitcherLine]:
+    def _parse_pitching(
+        self,
+        soup: BeautifulSoup,
+        table: Tag,
+        team: str,
+        team_id: int | None = None,
+    ) -> list[PitcherLine]:
         rows: list[PitcherLine] = []
         for row in table.find_all("tr"):
             player_td = row.find("td", class_="dl")
@@ -282,13 +348,17 @@ class BoxscoreHTMLParser:
             if len(stat_cells) < 10:
                 continue
 
-            pitcher = self._parse_pitcher_row(player_td, stat_cells, team)
+            pitcher = self._parse_pitcher_row(player_td, stat_cells, team, team_id)
             if pitcher:
                 rows.append(pitcher)
         return rows
 
     def _parse_pitcher_row(
-        self, player_td: Tag, stat_cells: list[Tag], team: str
+        self,
+        player_td: Tag,
+        stat_cells: list[Tag],
+        team: str,
+        team_id: int | None = None,
     ) -> PitcherLine | None:
         link = player_td.find("a", href=re.compile(r"player_\d+"))
         if not link:
@@ -321,6 +391,7 @@ class BoxscoreHTMLParser:
             player_name=player_name,
             player_id=player_id,
             team=team,
+            team_id=team_id,
             decision=decision,
             decision_record=decision_record,
             hold_earned=hold_earned,

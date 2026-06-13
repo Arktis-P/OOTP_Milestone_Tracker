@@ -217,6 +217,7 @@ def _migrate_post_schema(conn: sqlite3.Connection) -> None:
     _ensure_pitching_holds_columns(conn)
     _ensure_batting_grand_slam_column(conn)
     _ensure_streak_schema(conn)
+    _ensure_team_registry(conn)
     _backfill_milestone_games_at_achievement(conn)
 
 
@@ -420,6 +421,37 @@ def _ensure_player_roster(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    columns = _table_columns(conn, "player_roster")
+    if columns and "team_id" not in columns:
+        conn.execute(
+            "ALTER TABLE player_roster ADD COLUMN team_id INTEGER"
+        )
+
+
+def _ensure_team_registry(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS teams (
+            team_id       INTEGER PRIMARY KEY,
+            team_abbr     TEXT NOT NULL DEFAULT '',
+            team_name     TEXT NOT NULL DEFAULT '',
+            league_abbr   TEXT NOT NULL DEFAULT 'MLB',
+            source        TEXT NOT NULL DEFAULT '',
+            updated_at    TEXT DEFAULT (datetime('now'))
+        )
+        """
+    )
+    for table, columns in (
+        ("games", ("away_team_id", "home_team_id")),
+        ("batting_logs", ("team_id",)),
+        ("pitching_logs", ("team_id",)),
+    ):
+        existing = _table_columns(conn, table)
+        if not existing:
+            continue
+        for column in columns:
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} INTEGER")
 
 
 def _ensure_games_is_mlb(conn: sqlite3.Connection) -> None:

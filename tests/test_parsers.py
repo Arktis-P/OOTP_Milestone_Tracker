@@ -49,6 +49,8 @@ def test_boxscore_meta(box_13: Path) -> None:
     assert data.meta.game_id == 13
     assert data.meta.away_team == "New York Yankees"
     assert data.meta.home_team == "San Francisco Giants"
+    assert data.meta.away_team_id == 18
+    assert data.meta.home_team_id == 25
     assert data.meta.away_score == 4
     assert data.meta.home_score == 9
     assert data.meta.date == "2026-03-27"

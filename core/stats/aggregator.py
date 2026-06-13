@@ -107,6 +107,14 @@ class Aggregator:
 
         try:
             self._conn.execute("BEGIN")
+            from core.teams.registry import TeamRegistry
+
+            TeamRegistry(self._conn).sync_from_boxscore_meta(
+                away_team=data.meta.away_team,
+                home_team=data.meta.home_team,
+                away_team_id=data.meta.away_team_id,
+                home_team_id=data.meta.home_team_id,
+            )
             self._insert_game(data, season, is_mlb=is_mlb)
             away_events = self._batting_events_for_team(data.away_batting_notes)
             home_events = self._batting_events_for_team(data.home_batting_notes)
@@ -264,12 +272,13 @@ class Aggregator:
             """
             INSERT INTO games (
                 game_id, date, season, away_team, home_team,
+                away_team_id, home_team_id,
                 away_score, home_score, away_innings, home_innings,
                 away_hits, home_hits, away_errors, home_errors,
                 ballpark, attendance, game_time, weather,
                 player_of_game_id, player_of_game_name, special_notes,
                 is_mlb
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 meta.game_id,
@@ -277,6 +286,8 @@ class Aggregator:
                 season,
                 meta.away_team,
                 meta.home_team,
+                meta.away_team_id,
+                meta.home_team_id,
                 meta.away_score,
                 meta.home_score,
                 json.dumps(meta.away_innings),
@@ -319,21 +330,27 @@ class Aggregator:
             else data.home_batting_notes
         )
         is_grand_slam = 1 if player_has_grand_slam(note_text, batter.player_name) else 0
+        team_id = batter.team_id
+        if team_id is None:
+            from core.teams.registry import TeamRegistry
+
+            team_id = TeamRegistry(self._conn).resolve_id(batter.team)
         self._conn.execute(
             """
             INSERT INTO batting_logs (
-                game_id, player_id, season, team, date,
+                game_id, player_id, season, team, team_id, date,
                 ab, r, h, rbi, bb, k, lob,
                 season_avg, season_hr, season_rbi,
                 doubles, triples, home_runs, stolen_bases, hit_by_pitch, gidp,
                 position, is_substitute, is_grand_slam
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data.meta.game_id,
                 batter.player_id,
                 season,
                 batter.team,
+                team_id,
                 data.meta.date,
                 batter.ab,
                 batter.r,
@@ -381,23 +398,29 @@ class Aggregator:
         special = detect_special_game(
             pitcher, team_pitchers, data.meta, pitcher.team, data
         )
+        team_id = pitcher.team_id
+        if team_id is None:
+            from core.teams.registry import TeamRegistry
+
+            team_id = TeamRegistry(self._conn).resolve_id(pitcher.team)
 
         self._conn.execute(
             """
             INSERT INTO pitching_logs (
-                game_id, player_id, season, team, date,
+                game_id, player_id, season, team, team_id, date,
                 ip_outs, h, r, er, bb, k, hr, bf, pi,
                 decision, win, loss, save, season_era,
                 game_score, wild_pitch, hit_batsmen,
                 is_cg, is_sho, is_no_hitter, is_perfect_game,
                 hold, season_holds, is_starter
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data.meta.game_id,
                 pitcher.player_id,
                 season,
                 pitcher.team,
+                team_id,
                 data.meta.date,
                 ip_to_outs(pitcher.ip),
                 pitcher.h,
@@ -1098,11 +1121,12 @@ class Aggregator:
             return 0
         self._conn.executemany(
             """
-            INSERT INTO player_roster (player_id, season, team_abbr, team_name)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO player_roster (player_id, season, team_abbr, team_name, team_id)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(player_id, season) DO UPDATE SET
                 team_abbr = excluded.team_abbr,
-                team_name = excluded.team_name
+                team_name = excluded.team_name,
+                team_id = COALESCE(excluded.team_id, player_roster.team_id)
             """,
             [
                 (
@@ -1110,6 +1134,7 @@ class Aggregator:
                     season,
                     str(entry.get("team_abbr") or "").strip(),
                     str(entry.get("team_name") or "").strip(),
+                    entry.get("team_id"),
                 )
                 for entry in entries
                 if entry.get("team_abbr")

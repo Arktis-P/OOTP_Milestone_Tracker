@@ -11,6 +11,7 @@ class ParserError(Exception):
 
 
 PLAYER_ID_RE = re.compile(r"player_(\d+)\.html")
+TEAM_ID_RE = re.compile(r"team_(\d+)\.html")
 GAME_BOX_ID_RE = re.compile(r"game_box_(\d+)\.html", re.I)
 GAME_LOG_ID_RE = re.compile(r"log_(\d+)\.html", re.I)
 DATE_MDY_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
@@ -34,6 +35,13 @@ def extract_player_id(href: str | None) -> int | None:
     if not href:
         return None
     match = PLAYER_ID_RE.search(href)
+    return int(match.group(1)) if match else None
+
+
+def extract_team_id(href: str | None) -> int | None:
+    if not href:
+        return None
+    match = TEAM_ID_RE.search(href)
     return int(match.group(1)) if match else None
 
 

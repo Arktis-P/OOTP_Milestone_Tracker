@@ -8,7 +8,76 @@
 - [x] **수동 마일스톤 입력** — 통합 팝업(개인/팀), 수동 전용·시즌 비율 분리, `is_manual` 배지·상세 패널
 - [x] **선수 이름 한글 매핑** — CSV 시드·pending 큐·설정 팝업·일괄 편집·마일스톤 기록·선수 기록·마일스톤 예측 탭 표시
 - [x] **season_ratio** — 시즌 마감 후 「시즌 비율 마일스톤 기록」 버튼으로 타율·ERA 등 1회 판정 (`check_season_ratios`)
-- [ ] **연속 기록(streak) 마일스톤** — 별도 Phase에서 설계·검증 예정 (`ACTIVE_SCOPES`에 `streak` 미포함)
+- [x] **연속 기록(streak) 마일스톤** — DB·import 연동·마일스톤 기록 탭 scope 필터·CSV 내보내기
+- [x] **`team_id` HTML/스탯 레지스트리** — 초기 스탯 export 시드, 박스스코어·변경 시에만 갱신
+
+## 2026-06-13 — 수동 입력 통합·연속기록(streak)
+
+### 배경·목표
+- 「수동 입력」과 「수동 전용 입력」을 하나의 UX로 통합
+- 이적·부상 등 박스스코어로 판정 불가 항목의 입력·표시 정비
+- 연속기록(streak) Phase 구현 — 기존 `batting_logs`/`pitching_logs` 재사용, import 후 증분 처리
+
+### 1. 수동 입력 통합 UI
+- `gui/widgets/manual_milestone_dialog.py` — 탭 4개: **마일스톤**, **수상**, **이적**, **부상**
+- 기존 「수동 입력」/「수동 전용 입력」 버튼 → 통합 팝업으로 연결
+- `core/milestone/manual_entry.py` — 이적·부상 전용 검증·레코드 생성
+- `core/milestone/implementation.py` — `is_award_milestone` 등 수상 분류
+
+### 2. 이적·부상 수동 입력
+- **이적**: 합류/이탈 선수(쉼표 구분), 유형(FA·연장·트레이드·선수 구매), 합류팀·상대팀, 트레이드 시 설명 자동완성; 선수별 개별 `milestone_records`
+- **부상**: 기간 필드, 설명 자동 생성(`~으로 N일 진단` / `~으로 결장`), 내용=`부상`
+- UI: MLB 30팀(+custom) 드롭다운, 선수 editable combo(목록·직접 입력·쉼표 추가), 부상 소속팀은 추적 팀 위주
+
+### 3. 마일스톤 기록 표·SQL 표시
+- 표 헤더: `소속팀` 추가, `마일스톤 이름`→`내용`, `마일스톤 설명`→`설명`
+- `player_id=0` 팀 마일스톤만 팀명, 그 외는 선수명 (`aggregator.py`, `checker.py`)
+- 대시보드 최근 마일스톤 `display_name` SQL 수정 — 이적/부상에 팀명이 나오던 문제
+
+### 4. 등급 색상
+- `gui/widgets/grade_styles.py` — common/uncommon 배경 없음, rare `#BAE6FD`, epic `#DDD6FE`, legendary `#FEF08A`
+
+### 5. 연속기록(streak) 모듈
+- `data/streak_policies.json` — 타자 8종·투수 5종 마일스톤 기준·라벨
+- `core/streak/` — `policies`, `game_log`, `engine`, `tracker`
+- DB: `player_streak_state`, `streak_processed_games`, `milestone_records` streak 컬럼(`scope='streak'`, `streak_type`, `streak_run_id`, `streak_event_type`)
+- `pitching_logs.is_starter` 추가, `DECISION_RE`에 `SV`·`BS` 지원
+- `gui/workers/import_worker.py` — import 후 `StreakTracker.process_new_games()` 증분 실행
+- 마일스톤 기록 탭 scope **「연속기록」** 필터
+- `rebuild_season_streaks(aggregator, season)` — 시즌 백필·재계산
+- `core/streak/export.py` — 연속기록 CSV 7종 내보내기 (마일스톤 이벤트·종료·state·parsed logs·경기별 snapshot)
+- 마일스톤 기록 탭 **「연속기록 내보내기」** 버튼
+- `tests/test_streak_tracker.py`, `tests/test_streak_export.py`
+
+### 6. 연속 출장 — 팀 일정 기준
+- `appearance_streak_team_games`: 소속팀이 경기했는데 박스스코어 미등장 시 streak **종료**
+- 타격·투구 로그 중 하나라도 있으면 출장 +1; 소속팀은 직전 출장 기록의 팀으로 추정
+- 구 `appearance_streak_player_games` state → 새 키로 자동 마이그레이션
+
+### 7. 연속 승리·연속 세이브 판정 수정
+| streak | +1 | 끊김 | 무시(skip) |
+|--------|-----|------|------------|
+| **연속 승리** | `W` | `L` | 홀드·노디시전 등 |
+| **연속 세이브** | `S`/`SV` | `BS` | 승·홀드·일반 등판 등 |
+
+- `core/streak/engine.py` — W/L·S/BS 3값 판정 (`skip`/`continue`/`break`)
+- `core/parser/common.py` — `DECISION_RE`에 `BS` 추가
+- `core/streak/game_log.py` — `decision` 필드 기반 정규화
+
+### 8. `team_id` 팀 레지스트리
+- `teams` 테이블 — OOTP `team_id` ↔ abbr/name/league
+- **초기 시드**: `InitialImporter._sync_roster()` 시 stats export에서 일괄 등록
+- **증분 갱신**: 박스스코어 import 시 `TeamRegistry.sync_from_boxscore_meta()` — **변경 있을 때만** UPDATE
+- HTML: linescore `../teams/team_N.html` 링크 파싱 (`extract_team_id`)
+- DB: `games.away_team_id/home_team_id`, `batting_logs.team_id`, `pitching_logs.team_id`, `player_roster.team_id`
+- 연속 출장 streak — `team_id` 우선 매칭, 없으면 팀명 fallback
+- `core/teams/registry.py`, `tests/test_team_registry.py`
+
+### 미완·후속
+- ~~streak CSV export~~ → 2026-06-13 구현
+- ~~`team_id` HTML 추출~~ → 2026-06-13 구현
+- 기존 시즌 streak 데이터 → `rebuild_season_streaks()` 재실행 필요 (연속 출장·승/세이브 로직 변경 반영)
+- 기존 DB 경기/로그 `team_id` 백필 — 재import 또는 registry 기준 name→id 스크립트
 
 ## 2026-06-12 — 마일스톤 v1·판정 확장·수동 입력
 
@@ -82,7 +151,7 @@
 - 테스트 key 갱신: `career_hr_500` → `bat_career_hr_500` 등 v1 접두사
 
 ### 미완·후속
-- 연속 기록(streak) 마일스톤 — 별도 Phase (`ACTIVE_SCOPES`에 `streak` 미포함)
+- ~~연속 기록(streak) 마일스톤~~ → 2026-06-13 구현 (CSV export·`team_id`는 후속)
 - ERA 마일스톤 CSV: `pit_season_era_2` 라벨은 「2점대」이나 threshold 3.00 (의도 확인됨, CSV 유지)
 
 ## 2026-06-12 — Phase 8: 레이팅 일괄 편집

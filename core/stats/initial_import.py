@@ -443,6 +443,11 @@ class InitialImporter:
         return self._sync_roster(rows, current_season)
 
     def _sync_roster(self, rows: list[dict[str, Any]], current_season: int) -> int:
+        from core.teams.registry import TeamRegistry
+
+        sync = TeamRegistry(self.aggregator.conn).sync_from_export_rows(rows)
+        if sync.changed:
+            self.aggregator.conn.commit()
         for season in (current_season, current_season - 1):
             entries = self._roster_entries_for_season(rows, season)
             if entries:
@@ -467,10 +472,13 @@ class InitialImporter:
             if not abbr:
                 continue
             player_id = int(row["player_id"])
+            team_id_raw = row.get("team_id")
+            team_id = int(team_id_raw) if str(team_id_raw or "").strip().isdigit() else None
             by_player[player_id] = {
                 "player_id": player_id,
                 "team_abbr": abbr,
                 "team_name": str(row.get("team_name") or "").strip(),
+                "team_id": team_id,
                 "firstname": row.get("firstname", ""),
                 "lastname": row.get("lastname", ""),
             }
