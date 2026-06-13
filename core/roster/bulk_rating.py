@@ -61,9 +61,25 @@ class PlayerBulkSettings:
     player_id: int
     age: int
     is_prospect: bool
+    nation: str = ""
     prospect_manual: bool = False
     base_fame: FameLevel = FameLevel.NONE
     prospect_fame: FameLevel = FameLevel.NONE
+
+
+def prospect_boost_eligible(
+    settings: PlayerBulkSettings,
+    *,
+    prospect_boost: bool,
+    prospect_nation: str | None,
+) -> bool:
+    """Automatic prospect boost applies only for prospects in the selected nation."""
+    if not prospect_boost or not settings.is_prospect:
+        return False
+    nation = (prospect_nation or "").strip()
+    if not nation:
+        return False
+    return settings.nation.strip() == nation
 
 
 def is_pitcher_position(position_raw: str) -> bool:
@@ -114,10 +130,19 @@ def _velo_pot_columns(fieldnames: list[str]) -> list[tuple[str, int]]:
     return result
 
 
-def should_modify_player(settings: PlayerBulkSettings, *, prospect_boost: bool) -> bool:
+def should_modify_player(
+    settings: PlayerBulkSettings,
+    *,
+    prospect_boost: bool,
+    prospect_nation: str | None = None,
+) -> bool:
     if settings.base_fame != FameLevel.NONE or settings.prospect_fame != FameLevel.NONE:
         return True
-    return prospect_boost and settings.is_prospect
+    return prospect_boost_eligible(
+        settings,
+        prospect_boost=prospect_boost,
+        prospect_nation=prospect_nation,
+    )
 
 
 def _set_scaled(
@@ -141,8 +166,13 @@ def apply_bulk_rules_to_row(
     settings: PlayerBulkSettings,
     *,
     prospect_boost: bool,
+    prospect_nation: str | None = None,
 ) -> PlayerRow:
-    if not should_modify_player(settings, prospect_boost=prospect_boost):
+    if not should_modify_player(
+        settings,
+        prospect_boost=prospect_boost,
+        prospect_nation=prospect_nation,
+    ):
         return original
 
     row = deepcopy(original)
@@ -150,6 +180,11 @@ def apply_bulk_rules_to_row(
     pos_code = parse_position_code(position)
     pitcher = is_pitcher_position(position)
     defense_headers = _defense_headers_for_position(pos_code)
+    apply_prospect_boost = prospect_boost_eligible(
+        settings,
+        prospect_boost=prospect_boost,
+        prospect_nation=prospect_nation,
+    )
 
     current_mult = (
         BASE_CURRENT_MULT[settings.base_fame]
@@ -180,7 +215,7 @@ def apply_bulk_rules_to_row(
                 continue
             _set_scaled(row, fieldnames, col, raw * pot_mult)
 
-        if prospect_boost and settings.is_prospect:
+        if apply_prospect_boost:
             for col in DEFENSE_FIELDS:
                 if col.header not in defense_headers:
                     continue
@@ -207,7 +242,7 @@ def apply_bulk_rules_to_row(
                 continue
             key = (col.header, col.occurrence)
             if key in velo_pot_keys:
-                if prospect_boost and settings.is_prospect:
+                if apply_prospect_boost:
                     raw += 1
                 raw = raw * pot_mult + velo_pot_bonus
             else:
@@ -223,7 +258,7 @@ def apply_bulk_rules_to_row(
             raw = _parse_float(row_get(row, fieldnames, header, occurrence))
             if raw is None:
                 continue
-            if prospect_boost and settings.is_prospect:
+            if apply_prospect_boost:
                 raw += 1
             raw = raw * pot_mult + velo_pot_bonus
             row_set(
@@ -243,19 +278,25 @@ def apply_bulk_to_players(
     fieldnames: list[str],
     *,
     prospect_boost: bool,
+    prospect_nation: str | None = None,
 ) -> int:
     modified = 0
     for player in players:
         settings = settings_by_id.get(player.player_id)
         if settings is None:
             continue
-        if not should_modify_player(settings, prospect_boost=prospect_boost):
+        if not should_modify_player(
+            settings,
+            prospect_boost=prospect_boost,
+            prospect_nation=prospect_nation,
+        ):
             continue
         player.row = apply_bulk_rules_to_row(
             player.row,
             fieldnames,
             settings,
             prospect_boost=prospect_boost,
+            prospect_nation=prospect_nation,
         )
         modified += 1
     return modified

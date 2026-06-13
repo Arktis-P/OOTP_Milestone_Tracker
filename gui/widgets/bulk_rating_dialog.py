@@ -83,15 +83,16 @@ class BulkRatingDialog(QDialog):
             age = age_from_row(player.row, fieldnames, self.reference_date)
             if age is None:
                 age = 0
+            nation = row_get(player.row, fieldnames, "Nation").strip()
             self._settings[player.player_id] = PlayerBulkSettings(
                 player_id=player.player_id,
                 age=age,
                 is_prospect=age <= 25,
+                nation=nation,
             )
             name = player_display_name(player.row, fieldnames)
             last_name = row_get(player.row, fieldnames, "LastName").strip()
             first_name = row_get(player.row, fieldnames, "FirstName").strip()
-            nation = row_get(player.row, fieldnames, "Nation").strip()
             korean_name = self._korean_names.format_player_name(
                 last_name,
                 first_name,
@@ -111,7 +112,7 @@ class BulkRatingDialog(QDialog):
                 )
             )
 
-        self.prospect_boost = QCheckBox("유망주 레이팅 증가 적용")
+        self.prospect_boost = QCheckBox("유망주 레이팅 증가 적용 (국가 필터 선택 시 해당 국가만)")
         self.prospect_boost.setChecked(True)
 
         self.ref_label = QLabel(
@@ -138,6 +139,9 @@ class BulkRatingDialog(QDialog):
         self.nation_filter.addItem("전체", "")
         for nation in self._collect_nations():
             self.nation_filter.addItem(nation, nation)
+        kr_index = self.nation_filter.findData("South Korea")
+        if kr_index >= 0:
+            self.nation_filter.setCurrentIndex(kr_index)
         self.nation_filter.currentIndexChanged.connect(self._apply_filters)
 
         self.position_filter = QComboBox()
@@ -253,11 +257,16 @@ class BulkRatingDialog(QDialog):
 
     def _save(self) -> None:
         prospect_boost = self.prospect_boost.isChecked()
+        prospect_nation = self.nation_filter.currentData() or None
         fieldnames = self.combined.fieldnames
         to_modify = [
             pid
             for pid, cfg in self._settings.items()
-            if should_modify_player(cfg, prospect_boost=prospect_boost)
+            if should_modify_player(
+                cfg,
+                prospect_boost=prospect_boost,
+                prospect_nation=prospect_nation,
+            )
         ]
         if not to_modify:
             QMessageBox.information(self, "변경 없음", "적용할 레이팅 변경이 없습니다.")
@@ -275,6 +284,7 @@ class BulkRatingDialog(QDialog):
                 fieldnames,
                 cfg,
                 prospect_boost=prospect_boost,
+                prospect_nation=prospect_nation,
             )
             self.progress.setValue(index)
             self.progress_label.setText(f"적용 중... {index}/{len(to_modify)}")

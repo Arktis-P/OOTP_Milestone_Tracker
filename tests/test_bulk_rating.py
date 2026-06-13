@@ -12,6 +12,8 @@ from core.roster.bulk_rating import (
     FameLevel,
     PlayerBulkSettings,
     apply_bulk_rules_to_row,
+    prospect_boost_eligible,
+    should_modify_player,
 )
 from core.roster.combined import CombinedPlayer, load_combined_roster, save_modified_rosters
 from core.roster.columns import validate_fieldnames
@@ -79,9 +81,9 @@ def test_velo_pot_prospect_plus_one(sample_header) -> None:
     row_set(row, sample_header, "Position", "11")
     row_set(row, sample_header, "Velo Pot", "80")
 
-    settings = PlayerBulkSettings(player_id=3, age=22, is_prospect=True)
+    settings = PlayerBulkSettings(player_id=3, age=22, is_prospect=True, nation="South Korea")
     updated = apply_bulk_rules_to_row(
-        row, sample_header, settings, prospect_boost=True
+        row, sample_header, settings, prospect_boost=True, prospect_nation="South Korea"
     )
     # +1 before multipliers (no fame selected)
     assert row_get(updated, sample_header, "Velo Pot") == "81"
@@ -97,12 +99,63 @@ def test_fielder_defense_prospect_boost(sample_header) -> None:
         player_id=2,
         age=22,
         is_prospect=True,
+        nation="South Korea",
     )
     updated = apply_bulk_rules_to_row(
-        row, sample_header, settings, prospect_boost=True
+        row, sample_header, settings, prospect_boost=True, prospect_nation="South Korea"
     )
     assert row_get(updated, sample_header, "Infield Range") == "110"
     assert row_get(updated, sample_header, "OF Range") == "50"
+
+
+def test_prospect_boost_requires_matching_nation(sample_header) -> None:
+    row = ["0"] * len(sample_header)
+    row_set(row, sample_header, "Position", "11")
+    row_set(row, sample_header, "Velo Pot", "80")
+
+    settings = PlayerBulkSettings(
+        player_id=4,
+        age=22,
+        is_prospect=True,
+        nation="USA",
+    )
+    unchanged = apply_bulk_rules_to_row(
+        row, sample_header, settings, prospect_boost=True, prospect_nation="South Korea"
+    )
+    assert unchanged == row
+
+    assert not should_modify_player(
+        settings,
+        prospect_boost=True,
+        prospect_nation="South Korea",
+    )
+    assert not prospect_boost_eligible(
+        settings,
+        prospect_boost=True,
+        prospect_nation="South Korea",
+    )
+
+    kr_settings = PlayerBulkSettings(
+        player_id=5,
+        age=22,
+        is_prospect=True,
+        nation="South Korea",
+    )
+    assert prospect_boost_eligible(
+        kr_settings,
+        prospect_boost=True,
+        prospect_nation="South Korea",
+    )
+
+
+def test_prospect_boost_skipped_when_nation_filter_empty(sample_header) -> None:
+    settings = PlayerBulkSettings(
+        player_id=6,
+        age=22,
+        is_prospect=True,
+        nation="South Korea",
+    )
+    assert not should_modify_player(settings, prospect_boost=True, prospect_nation=None)
 
 
 def test_collect_nations_from_roster(sample_header) -> None:
