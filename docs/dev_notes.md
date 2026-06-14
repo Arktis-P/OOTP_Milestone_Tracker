@@ -6,12 +6,53 @@
 - [x] **마일스톤 기준 재정의** — `milestones_v1.csv` 반영 (266건), `boolean`·복합 threshold 로더 지원
 - [x] **앱 내 마일스톤 기준 편집** — 설정 탭 팝업에서 기준 확인·추가·수정·삭제 (`milestones.csv`)
 - [x] **수동 마일스톤 입력** — 통합 팝업(개인/팀), 수동 전용·시즌 비율 분리, `is_manual` 배지·상세 패널
-- [x] **선수 이름 한글 매핑** — CSV 시드·pending 큐·설정 팝업·일괄 편집·마일스톤 기록·선수 기록·마일스톤 예측 탭 표시
+- [x] **선수 이름 한글 매핑** — CSV 시드·pending 큐·설정 팝업·일괄 편집·마일스톤 기록·선수 기록·마일스톤 예측 탭 표시 (+ 2026-06-14 **부분 매핑 안전장치**)
 - [x] **season_ratio** — 시즌 마감 후 「시즌 비율 마일스톤 기록」 버튼으로 타율·ERA 등 1회 판정 (`check_season_ratios`)
 - [x] **연속 기록(streak) 마일스톤** — DB·import 연동·마일스톤 기록 탭 scope 필터·CSV 내보내기
 - [x] **`team_id` HTML/스탯 레지스트리** — 초기 스탯 export 시드, 박스스코어·변경 시에만 갱신
 - [ ] **한글 이름 매핑 데이터 보완** — `korean_*_names.csv`·pending 큐 등 매핑 비어 있는 선수 채우기
 - [ ] **마일스톤 예측(추적) 시작값 결정** — 통산(career) 기록 위주로 예측·추적 시 baseline(시작 누적값) 정책 수립·반영
+- [x] **배포 빌드·사용자 데이터 분리** — PyInstaller, 아이콘, 한글 CSV 번들, AppData 저장
+
+## 2026-06-14 — 한글 매핑 안전장치·레이팅 필터·빌드·AppData
+
+### 배경·목표
+- 한글 표기가 **부분 매핑**으로 잘못 보이는 문제 방지 (예: `A. Barnes` — Barnes 미매핑 시 빈 표시 + pending)
+- 레이팅 일괄 편집의 **유망주 포텐셜 부스트**를 전 세계 유망주가 아닌 **국가 필터(원래 의도: South Korea)** 대상으로 제한
+- PyInstaller **배포 빌드** 정비 — 아이콘·한글 매핑 CSV 포함, exe 업데이트 시 DB/설정 유지
+
+### 1. 한글 이름 매핑 안전장치
+- `KoreanNameMapper.format_player_name()` — 성·이름 **둘 다 알려진 경우**, **둘 다 한글 CSV에 있을 때만** 표시 (부분 표시 금지)
+- `KoreanNameStore.has_korean_mapping()` — CSV 행만 있고 `korean`이 비어 있으면 미매핑으로 처리
+- `note_name()` / `note_parts_if_unmapped()` / `note_from_full_name()` — roster `FirstName`/`LastName`으로 약어 풀기, 미매핑 part를 `korean_names_pending.csv`에 적재
+- **약어 이름** (`M. Trout`) — roster로 성·이름을 모두 못 구하면, 일부만 매핑돼 있어도 표시하지 않음
+- `note_players_from_boxscore_import()` — 박스스코어 import 후 MLB 선수 pending 수집 (`import_mlb_only` 시)
+- `tests/test_korean_names.py` — strict 매핑·약어·Barnes pending 시나리오 (12건)
+
+### 2. 레이팅 일괄 편집 — 유망주 국가 필터
+- `prospect_boost_eligible()` — 「유망주 레이팅 증가」는 **국가 필터에 선택된 국가**의 유망주(25세 이하)만 적용
+- 국가 필터가 **「전체」**이면 자동 유망주 부스트 없음 (수동 인지도 지정은 그대로 적용)
+- 국가 필터 기본값 **South Korea** (로스터에 있을 때)
+- `PlayerBulkSettings.nation` 필드 추가
+- `tests/test_bulk_rating.py` — 국가 불일치 시 부스트 스킵 테스트
+
+### 3. PyInstaller 빌드
+- `build.py` — `BUNDLE_DATA_FILES`: milestones, settings.example, korean_last/ first_names, pending
+- `icon.png` → `assets/icon.ico` (Pillow, 다중 해상도), exe 아이콘 + `gui/app.py` 창 아이콘
+- 산출물: `dist/ootp_milestone_tracker/`, `dist/ootp_milestone_tracker_v0.1.0.zip`
+
+### 4. 사용자 데이터 외부 저장 (AppData)
+- `core/config/paths.py` — 번들(`_MEIPASS`) vs 사용자 데이터 디렉터리 분리
+- **빌드본**: `%APPDATA%\OOTP_Milestone_Tracker\` — settings, records.db, korean CSV, milestones
+- **개발 모드**: 프로젝트 `data/` (기존과 동일)
+- `ensure_user_data_dir()` — 앱 시작 시 폴더 생성, **없는 파일만** 번들 기본값 복사
+- **레거시 마이그레이션** — 예전 `_internal/data/`에 데이터가 있고 AppData가 비어 있으면 첫 실행 시 자동 복사
+- `tests/test_paths.py`
+
+### 미완·후속
+- 한글 pending 69건 등 **매핑 데이터 보완** (백로그 유지)
+- 새 OOTP 게임으로 export → import E2E 검증 (streak·team_id·pending·AppData)
+- `version.txt` / 릴리스 노트 — 기능 추가 시 버전 bump 정책
 
 ## 2026-06-13 — 수동 입력 통합·연속기록(streak)
 
@@ -164,6 +205,7 @@
 - `load_combined_roster()` — MLB+KBO 병합, id 중복·무소속 처리, source 태그
 - `bulk_rating.py` — 유망주/기본·유망주 인지도 배율 누적, Velocity 가산, 수비 1.1배
 - `BulkRatingDialog` — 검색/리그/국가/포지션/유망주 필터, 적용 후 `mod_mlb_rosters.txt` / `mod_kbo_rosters.txt` 저장
+- **유망주 부스트** — 국가 필터 선택 시 해당 국가 유망주만 (2026-06-14, `prospect_boost_eligible`)
 - **성능** — `QTableView` + `BulkRatingTableModel`(가상화), `FameRadioDelegate`(인지도 셀에 라디오 버튼 페인트·클릭, 위젯 0개), 검색 250ms 디바운스, `load_ootp_roster_cached()`(mtime 캐시), 저장 시에만 `deepcopy` 스냅샷
 - `tests/test_bulk_rating.py`, `tests/fixtures/roster_txt/mlb_rosters.txt`
 
