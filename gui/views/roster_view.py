@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 from core.config import AppSettings, resolve_data_path
 from core.stats.aggregator import Aggregator
 from core.roster.editor import RosterEditor, RosterFilter
+from core.roster.korean_names import KoreanNameMapper, load_korean_name_mapper
 from core.roster.ootp_format import player_age, player_display_name
 from core.roster.paths import (
     RosterLeague,
@@ -32,14 +33,15 @@ from core.roster.position_filter import POSITION_GROUP_OPTIONS, position_label
 from core.roster.row_access import row_get
 from gui.widgets.bulk_rating_dialog import BulkRatingDialog
 from gui.widgets.player_rating_dialog import PlayerRatingDialog
-from gui.widgets.table_widgets import TablePanel
+from gui.widgets.table_widgets import NumericSortItem, TablePanel
 
 _LEAGUE_ITEMS: list[tuple[str, RosterLeague]] = [
     ("MLB", "mlb"),
     ("KBO", "kbo"),
 ]
 
-_TABLE_COLUMNS = ["이름", "팀", "리그", "포지션", "나이", "CON", "POW", "STU"]
+_TABLE_COLUMNS = ["이름", "한글명", "팀", "리그", "포지션", "나이", "CON", "POW", "STU"]
+_NUMERIC_COLUMNS = {5, 6, 7, 8}
 
 
 class RosterView(QWidget):
@@ -288,12 +290,22 @@ class RosterView(QWidget):
     def _show_rows(self, rows: list[list[str]]) -> None:
         fieldnames = self.editor.fieldnames
         season = self.settings.current_season
+        mapper = load_korean_name_mapper()
         display_rows = []
         for row in rows[:5000]:
             age = player_age(row, season_year=season, fieldnames=fieldnames)
+            last_name = row_get(row, fieldnames, "LastName").strip()
+            first_name = row_get(row, fieldnames, "FirstName").strip()
+            nation = row_get(row, fieldnames, "Nation").strip()
+            korean_name = mapper.format_player_name(
+                last_name,
+                first_name,
+                western_order=KoreanNameMapper.uses_western_name_order(nation),
+            )
             display_rows.append(
                 [
                     player_display_name(row, fieldnames),
+                    korean_name,
                     row_get(row, fieldnames, "Team Name"),
                     row_get(row, fieldnames, "League Name"),
                     position_label(row_get(row, fieldnames, "Position")),
@@ -308,11 +320,20 @@ class RosterView(QWidget):
         table.setRowCount(len(display_rows))
         for row_idx, values in enumerate(display_rows):
             for col_idx, value in enumerate(values):
-                cell = QTableWidgetItem("" if value is None else str(value))
+                text = "" if value is None else str(value)
+                if col_idx in _NUMERIC_COLUMNS:
+                    try:
+                        sort_value = float(text) if text else -1.0
+                    except ValueError:
+                        sort_value = -1.0
+                    cell: QTableWidgetItem = NumericSortItem(text, sort_value)
+                else:
+                    cell = QTableWidgetItem(text)
                 cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 if col_idx == 0:
                     cell.setData(Qt.ItemDataRole.UserRole, row_idx)
                 table.setItem(row_idx, col_idx, cell)
+        table.setSortingEnabled(True)
         if len(rows) > 5000:
             self.info_label.setText(
                 f"{self.info_label.text()} (표시 상한 5,000명)"

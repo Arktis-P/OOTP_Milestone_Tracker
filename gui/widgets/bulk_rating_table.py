@@ -33,6 +33,9 @@ HEADERS = ["영문명", "한글명", "소속팀", "나이", "유망주", "기본
 FAME_COLUMNS = (COL_BASE, COL_PROSPECT_FAME)
 
 
+_FAME_SORT_RANK = {level: index for index, level in enumerate(_FAME_LEVELS)}
+
+
 @dataclass(frozen=True)
 class BulkPlayerIndex:
     player_id: int
@@ -65,6 +68,36 @@ class BulkRatingTableModel(QAbstractTableModel):
         self.beginResetModel()
         self._visible = visible_positions
         self.endResetModel()
+
+    def sort(
+        self,
+        column: int,
+        order: Qt.SortOrder = Qt.SortOrder.AscendingOrder,
+    ) -> None:
+        reverse = order == Qt.SortOrder.DescendingOrder
+
+        def sort_key(visible_pos: int):
+            meta = self._indices[visible_pos]
+            cfg = self._settings[meta.player_id]
+            if column == COL_EN:
+                return meta.name_lower
+            if column == COL_KO:
+                return meta.korean_name_lower
+            if column == COL_TEAM:
+                return meta.team.casefold()
+            if column == COL_AGE:
+                return cfg.age
+            if column == COL_PROSPECT:
+                return int(cfg.is_prospect)
+            if column == COL_BASE:
+                return _FAME_SORT_RANK.get(cfg.base_fame, 0)
+            if column == COL_PROSPECT_FAME:
+                return _FAME_SORT_RANK.get(cfg.prospect_fame, 0)
+            return ""
+
+        self.layoutAboutToBeChanged.emit()
+        self._visible.sort(key=sort_key, reverse=reverse)
+        self.layoutChanged.emit()
 
     def player_id_at(self, row: int) -> int | None:
         if row < 0 or row >= len(self._visible):

@@ -35,6 +35,19 @@ class FilterBar(QWidget):
         self.search_input.clear()
 
 
+class NumericSortItem(QTableWidgetItem):
+    """Table cell that sorts by numeric value instead of display text."""
+
+    def __init__(self, display: str, sort_value: float | int) -> None:
+        super().__init__(display)
+        self._sort_value = float(sort_value)
+
+    def __lt__(self, other: QTableWidgetItem) -> bool:
+        if isinstance(other, NumericSortItem):
+            return self._sort_value < other._sort_value
+        return super().__lt__(other)
+
+
 class SortableTable(QTableWidget):
     """QTableWidget with sortable headers and helper methods."""
 
