@@ -41,6 +41,7 @@ from core.stats.aggregator import Aggregator
 from gui.widgets.bulk_rating_table import (
     COL_BASE,
     COL_EN,
+    COL_KO,
     COL_PROSPECT_FAME,
     COL_TEAM,
     BulkPlayerIndex,
