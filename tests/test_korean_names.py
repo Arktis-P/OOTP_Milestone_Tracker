@@ -182,6 +182,35 @@ def test_abbreviated_name_queues_unmapped_parts_from_roster(tmp_path: Path) -> N
     assert store.pending[0].name == "Barnes"
 
 
+def test_load_uses_user_data_dir_not_nested_data(monkeypatch, tmp_path: Path) -> None:
+    """Frozen builds seed CSVs directly under user data dir, not user_data/data/."""
+    user_dir = tmp_path / "userdata"
+    user_dir.mkdir()
+    (user_dir / "korean_last_names.csv").write_text(
+        "last_name,korean\nTrout,트라우트\n",
+        encoding="utf-8-sig",
+    )
+    (user_dir / "korean_first_names.csv").write_text(
+        "first_name,korean\nMike,마이크\n",
+        encoding="utf-8-sig",
+    )
+    (user_dir / "korean_names_pending.csv").write_text(
+        "part,name,source,first_seen\n",
+        encoding="utf-8-sig",
+    )
+
+    import core.config.paths as paths
+    import core.roster.korean_names as korean_names
+
+    monkeypatch.setattr(paths, "is_frozen", lambda: True)
+    monkeypatch.setattr(paths, "get_user_data_dir", lambda: user_dir)
+    monkeypatch.setattr(korean_names, "ensure_user_data_dir", lambda: user_dir)
+    paths._USER_DATA_READY = True
+
+    mapper = KoreanNameStore.load().to_mapper()
+    assert mapper.format_player_name("Trout", "Mike", western_order=True) == "마이크 트라우트"
+
+
 def test_partial_mapping_not_shown_when_both_parts_known(tmp_path: Path) -> None:
     (tmp_path / "korean_last_names.csv").write_text(
         "last_name,korean\nTrout,트라우트\n",

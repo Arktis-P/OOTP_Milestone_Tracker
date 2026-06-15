@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 from typing import Literal
 
-from core.config import resolve_data_path
+from core.config import ensure_user_data_dir
 from core.stats.player_display import looks_abbreviated
 
 NamePart = Literal["last", "first"]
@@ -97,7 +97,7 @@ class KoreanNameStore:
 
     @classmethod
     def load(cls, data_dir: str | Path | None = None) -> KoreanNameStore:
-        base = Path(data_dir) if data_dir is not None else resolve_data_path("data")
+        base = Path(data_dir) if data_dir is not None else ensure_user_data_dir()
         store = cls(data_dir=base)
         store.last_names = _load_part_file(base / "korean_last_names.csv", "last_name")
         store.first_names = _load_part_file(base / "korean_first_names.csv", "first_name")
