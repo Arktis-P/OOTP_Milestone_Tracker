@@ -211,6 +211,7 @@ def _migrate_post_schema(conn: sqlite3.Connection) -> None:
     _ensure_pitching_special_columns(conn)
     _migrate_milestone_records(conn)
     _ensure_player_roster(conn)
+    _ensure_player_team_affiliations(conn)
     _ensure_milestone_predictions(conn)
     _ensure_games_is_mlb(conn)
     _ensure_position_columns(conn)
@@ -429,6 +430,20 @@ def _ensure_player_roster(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE player_roster ADD COLUMN team_id INTEGER"
         )
+
+
+def _ensure_player_team_affiliations(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS player_team_affiliations (
+            player_id   INTEGER NOT NULL,
+            season      INTEGER NOT NULL,
+            team_abbr   TEXT NOT NULL,
+            team_name   TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (player_id, season, team_abbr)
+        )
+        """
+    )
 
 
 def _ensure_team_registry(conn: sqlite3.Connection) -> None:

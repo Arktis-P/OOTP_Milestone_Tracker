@@ -14,7 +14,7 @@ from core.parser.boxscore_html import BoxscoreHTMLParser, peek_is_mlb_boxscore
 from core.parser.common import ParserError
 from core.parser.pitching_notes import get_player_pitching_counts
 from core.stats.ip_utils import ip_to_outs, outs_to_ip_float, outs_to_ip_str
-from core.stats.team_filter import expand_tracked_teams
+from core.stats.team_filter import build_tracked_team_match_sql, expand_tracked_teams
 from core.stats.models import (
     BatchImportResult,
     BatterLine,
@@ -516,7 +516,51 @@ class Aggregator:
             """,
             (season, player_id),
         ).fetchone()
-        return dict(row) if row else None
+        if row:
+            return dict(row)
+        return self._batting_season_from_init(player_id, season)
+
+    def _batting_season_from_init(
+        self, player_id: int, season: int
+    ) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            """
+            SELECT
+                cbi.player_id,
+                p.short_name,
+                p.full_name,
+                cbi.g AS games_played,
+                cbi.ab,
+                cbi.h,
+                cbi.r,
+                cbi.rbi,
+                cbi.bb,
+                cbi.k,
+                cbi.doubles,
+                cbi.triples,
+                cbi.hr,
+                cbi.sb,
+                cbi.hbp
+            FROM career_batting_init cbi
+            JOIN players p ON p.player_id = cbi.player_id
+            WHERE cbi.player_id = ? AND cbi.season = ?
+            """,
+            (player_id, season),
+        ).fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        ab = int(data.get("ab") or 0)
+        h = int(data.get("h") or 0)
+        bb = int(data.get("bb") or 0)
+        hbp = int(data.get("hbp") or 0)
+        pa = ab + bb + hbp
+        data["avg"] = round(h / ab, 3) if ab else None
+        data["obp"] = round((h + bb) / pa, 3) if pa else None
+        data["slg"] = None
+        data["ops"] = None
+        data["_source"] = "init"
+        return data
 
     def get_batting_career(self, player_id: int) -> dict[str, Any] | None:
         max_init = self._get_max_init_season()
@@ -574,11 +618,53 @@ class Aggregator:
             """,
             (season, player_id),
         ).fetchone()
+        if row:
+            data = dict(row)
+            data["ip"] = outs_to_ip_float(int(data["ip_outs"]))
+            data["ip_display"] = outs_to_ip_str(int(data["ip_outs"]))
+            return data
+        return self._pitching_season_from_init(player_id, season)
+
+    def _pitching_season_from_init(
+        self, player_id: int, season: int
+    ) -> dict[str, Any] | None:
+        row = self._conn.execute(
+            """
+            SELECT
+                cpi.player_id,
+                p.short_name,
+                p.full_name,
+                cpi.g AS games,
+                cpi.gs,
+                cpi.ip_outs,
+                cpi.ha AS h,
+                cpi.er,
+                cpi.bb,
+                cpi.k,
+                cpi.hr,
+                cpi.w AS wins,
+                cpi.l AS losses,
+                cpi.s AS saves,
+                cpi.cg,
+                cpi.sho
+            FROM career_pitching_init cpi
+            JOIN players p ON p.player_id = cpi.player_id
+            WHERE cpi.player_id = ? AND cpi.season = ?
+            """,
+            (player_id, season),
+        ).fetchone()
         if not row:
             return None
         data = dict(row)
-        data["ip"] = outs_to_ip_float(int(data["ip_outs"]))
-        data["ip_display"] = outs_to_ip_str(int(data["ip_outs"]))
+        ip_outs = int(data.get("ip_outs") or 0)
+        er = int(data.get("er") or 0)
+        bb = int(data.get("bb") or 0)
+        h = int(data.get("h") or 0)
+        data["ip"] = outs_to_ip_float(ip_outs)
+        data["ip_display"] = outs_to_ip_str(ip_outs)
+        data["era"] = round(er * 27 / ip_outs, 2) if ip_outs else None
+        data["whip"] = round((bb + h) / (ip_outs / 3.0), 3) if ip_outs else None
+        data["_source"] = "init"
         return data
 
     def get_pitching_career(self, player_id: int) -> dict[str, Any] | None:
@@ -1031,6 +1117,10 @@ class Aggregator:
                 UNION
                 SELECT pl.season FROM pitching_logs pl
                 JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                UNION
+                SELECT season FROM career_batting_init
+                UNION
+                SELECT season FROM career_pitching_init
             )
             ORDER BY season DESC
             """
@@ -1082,7 +1172,15 @@ class Aggregator:
         else:
             names = expand_tracked_teams(tokens, custom_teams)
             placeholders = ",".join("?" * len(names))
-            token_placeholders = ",".join("?" * len(tokens))
+            roster_where, roster_params = build_tracked_team_match_sql(
+                tokens, custom_teams
+            )
+            affiliation_where, affiliation_params = build_tracked_team_match_sql(
+                tokens,
+                custom_teams,
+                abbr_col="pta.team_abbr",
+                name_col="pta.team_name",
+            )
             rows = self._conn.execute(
                 f"""
                 SELECT DISTINCT
@@ -1111,33 +1209,15 @@ class Aggregator:
                     WHERE pl.team IN ({placeholders})
                     UNION
                     SELECT player_id FROM player_roster
-                    WHERE team_abbr IN ({token_placeholders})
-                       OR team_name IN ({placeholders})
+                    WHERE {roster_where}
                     UNION
-                    SELECT player_id FROM career_batting_init
-                    WHERE player_id IN (
-                        SELECT player_id FROM player_roster
-                        WHERE team_abbr IN ({token_placeholders})
-                           OR team_name IN ({placeholders})
-                    )
-                    UNION
-                    SELECT player_id FROM career_pitching_init
-                    WHERE player_id IN (
-                        SELECT player_id FROM player_roster
-                        WHERE team_abbr IN ({token_placeholders})
-                           OR team_name IN ({placeholders})
-                    )
+                    SELECT DISTINCT pta.player_id
+                    FROM player_team_affiliations pta
+                    WHERE {affiliation_where}
                 )
                 ORDER BY p.full_name
                 """,
-                names
-                + names
-                + tokens
-                + names
-                + tokens
-                + names
-                + tokens
-                + names,
+                names + names + roster_params + affiliation_params,
             ).fetchall()
         return [dict(row) for row in rows]
 
@@ -1162,6 +1242,33 @@ class Aggregator:
                     str(entry.get("team_abbr") or "").strip(),
                     str(entry.get("team_name") or "").strip(),
                     entry.get("team_id"),
+                )
+                for entry in entries
+                if entry.get("team_abbr")
+            ],
+        )
+        self._conn.commit()
+        return len(entries)
+
+    def upsert_player_team_affiliations(
+        self, entries: list[dict[str, Any]]
+    ) -> int:
+        if not entries:
+            return 0
+        self._conn.executemany(
+            """
+            INSERT INTO player_team_affiliations (
+                player_id, season, team_abbr, team_name
+            ) VALUES (?, ?, ?, ?)
+            ON CONFLICT(player_id, season, team_abbr) DO UPDATE SET
+                team_name = excluded.team_name
+            """,
+            [
+                (
+                    int(entry["player_id"]),
+                    int(entry["season"]),
+                    str(entry.get("team_abbr") or "").strip().upper(),
+                    str(entry.get("team_name") or "").strip(),
                 )
                 for entry in entries
                 if entry.get("team_abbr")

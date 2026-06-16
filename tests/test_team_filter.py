@@ -12,6 +12,7 @@ from core.stats.aggregator import Aggregator
 from core.stats.team_filter import (
     CANONICAL_MLB_TEAMS,
     MLB_TEAM_ALIASES,
+    build_tracked_team_match_sql,
     discover_mlb_teams_from_rows,
     expand_tracked_teams,
     find_unknown_mlb_teams,
@@ -116,3 +117,50 @@ def giants_game_db(tmp_path: Path) -> Aggregator:
 def test_tracked_sf_matches_boxscore_team_name(giants_game_db: Aggregator) -> None:
     players = giants_game_db.get_tracked_players(["SF"])
     assert len(players) > 0
+
+
+def test_build_tracked_team_match_sql_fuzzy_custom_name() -> None:
+    clause, params = build_tracked_team_match_sql(
+        ["SY"],
+        {"SY": "Seoul Yukies"},
+    )
+    assert "LIKE" in clause
+    assert "%seoul%" in params
+
+
+def test_tracked_custom_sy_team_from_affiliations(tmp_path: Path) -> None:
+    agg = Aggregator(tmp_path / "custom.db")
+    try:
+        agg.upsert_player(90001, "Y. Player", "Yukies Player")
+        agg.upsert_player_team_affiliations(
+            [
+                {
+                    "player_id": 90001,
+                    "season": 2026,
+                    "team_abbr": "SY",
+                    "team_name": "Seoul",
+                }
+            ]
+        )
+        agg.conn.execute(
+            """
+            INSERT INTO career_batting_init (
+                player_id, season, g, pa, ab, h, doubles, triples, hr, rbi,
+                r, sb, cs, bb, hbp, k, sh, sf, gdp
+            ) VALUES (90001, 2026, 10, 40, 35, 12, 2, 0, 3, 8, 6, 1, 0, 4, 1, 7, 0, 0, 0)
+            """
+        )
+        agg.conn.commit()
+
+        players = agg.get_tracked_players(
+            ["SY"],
+            custom_teams={"SY": "Seoul Yukies"},
+        )
+        assert [p["player_id"] for p in players] == [90001]
+
+        season = agg.get_batting_season(90001, 2026)
+        assert season is not None
+        assert season["hr"] == 3
+        assert season["_source"] == "init"
+    finally:
+        agg.close()

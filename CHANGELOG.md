@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.6] - 2026-06-16
+
+### Added
+- stats 파일만으로도 선수 목록·시즌·통산 통계 조회 (박스스코어 없을 때 init 테이블 fallback)
+- 커스텀 MLB 팀 추적: `player_team_affiliations` 및 팀명 부분 일치 매칭
+- 세이브별 DB 분리, 설정에서 현재 세이브 데이터 초기화
+
+### Changed
+- 초기값 import 시 현재 시즌 stats 스냅샷 저장 (통산 커버리지는 기존과 동일)
+- roster/소속 동기화 시 export 파일의 최신 시즌도 반영
+
+### Fixed
+- 초기값 임포트 중 `cannot start a transaction within a transaction` 오류
+- DB 초기화 후 예측 탭 등에서 닫힌 DB 참조 오류
+- DB 초기화 시 WinError 32 (파일 사용 중) 처리
+
 ## [0.1.5] - 2026-06-16
 
 ### Fixed

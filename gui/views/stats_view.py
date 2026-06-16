@@ -222,9 +222,16 @@ class StatsView(QWidget):
         self._players_by_id = {int(p["player_id"]): p for p in self._players}
         if not self._players:
             self.player_list.clear()
-            self.banner.show_info(
-                "표시할 선수가 없습니다. 박스스코어를 가져오거나 tracked_teams 설정을 확인하세요."
-            )
+            if self.settings.tracked_teams:
+                self.banner.show_info(
+                    "표시할 선수가 없습니다. 초기값 설정( stats 파일 )을 했는지, "
+                    "커스텀 팀은 설정에서 약칭·팀 이름을 등록했는지 확인하세요."
+                )
+            else:
+                self.banner.show_info(
+                    "표시할 선수가 없습니다. 초기값 설정 또는 박스스코어 가져오기 후 "
+                    "다시 확인하세요."
+                )
             return
         self.banner.hide()
         self._apply_player_filter()
@@ -323,7 +330,18 @@ class StatsView(QWidget):
             self._fill_career_tables(player_id)
         else:
             season = int(self.season_combo.currentData())
-            self.info_label.setText(f"{season}시즌 기록 (더블클릭: 경기별 기록)")
+            batting = self.aggregator.get_batting_season(player_id, season)
+            pitching = self.aggregator.get_pitching_season(player_id, season)
+            from_init = (
+                (batting or {}).get("_source") == "init"
+                or (pitching or {}).get("_source") == "init"
+            )
+            if from_init:
+                self.info_label.setText(
+                    f"{season}시즌 기록 (초기값 — stats 파일, 박스스코어 없음)"
+                )
+            else:
+                self.info_label.setText(f"{season}시즌 기록 (더블클릭: 경기별 기록)")
             self._fill_season_tables(player_id, season)
 
     def _fill_season_tables(self, player_id: int, season: int) -> None:

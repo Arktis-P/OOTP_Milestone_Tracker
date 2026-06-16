@@ -177,3 +177,44 @@ def find_unknown_mlb_teams(
 
 def sorted_team_items(team_map: dict[str, str]) -> list[tuple[str, str]]:
     return sorted(team_map.items(), key=lambda item: item[1].lower())
+
+
+def build_tracked_team_match_sql(
+    tokens: list[str],
+    custom_teams: dict[str, str] | None = None,
+    *,
+    abbr_col: str = "team_abbr",
+    name_col: str = "team_name",
+) -> tuple[str, list[Any]]:
+    """Build SQL WHERE clause matching tracked team tokens and display names."""
+    tokens_upper = [token.strip().upper() for token in tokens if token.strip()]
+    if not tokens_upper:
+        return "0", []
+
+    names = expand_tracked_teams(tokens_upper, custom_teams)
+    clauses: list[str] = []
+    params: list[Any] = []
+
+    abbr_placeholders = ",".join("?" * len(tokens_upper))
+    clauses.append(f"UPPER({abbr_col}) IN ({abbr_placeholders})")
+    params.extend(tokens_upper)
+
+    if names:
+        name_placeholders = ",".join("?" * len(names))
+        clauses.append(f"{name_col} IN ({name_placeholders})")
+        params.extend(names)
+
+    seen_fragments: set[str] = set()
+    for token in tokens_upper:
+        custom_name = str((custom_teams or {}).get(token) or "").strip()
+        if not custom_name:
+            continue
+        for part in custom_name.split():
+            fragment = part.lower()
+            if len(fragment) < 4 or fragment in seen_fragments:
+                continue
+            seen_fragments.add(fragment)
+            clauses.append(f"LOWER({name_col}) LIKE ?")
+            params.append(f"%{fragment}%")
+
+    return f"({' OR '.join(clauses)})", params

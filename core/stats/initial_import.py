@@ -317,6 +317,7 @@ class InitialImporter:
             return result
 
         self._sync_roster(rows, current_season)
+        self._sync_team_affiliations(rows)
 
         result.total_scanned = len(rows)
         coverage = get_init_season_coverage(self.aggregator.conn)
@@ -336,6 +337,14 @@ class InitialImporter:
                     max(current_season - 1, 0),
                 )
                 self.aggregator.conn.commit()
+            current_rows = self._filter_and_aggregate(
+                rows,
+                season_filter="eq",
+                current_season=current_season,
+                target_season=current_season,
+            )
+            if persist and current_rows:
+                self._save_rows(kind, current_rows, replace=True)
 
         elif mode == "refresh":
             last_season = current_season - 1
@@ -450,15 +459,55 @@ class InitialImporter:
         sync = TeamRegistry(self.aggregator.conn).sync_from_export_rows(rows)
         if sync.changed:
             self.aggregator.conn.commit()
-        for season in (current_season, current_season - 1):
+
+        seasons_in_file = {
+            int(row["season"])
+            for row in rows
+            if is_ootp_mlb_league_row(row)
+        }
+        seasons_to_sync: list[int] = []
+        for season in (
+            current_season,
+            max(seasons_in_file) if seasons_in_file else current_season,
+            current_season - 1,
+        ):
+            if season not in seasons_to_sync:
+                seasons_to_sync.append(season)
+
+        total = 0
+        for season in seasons_to_sync:
             entries = self._roster_entries_for_season(rows, season)
-            if entries:
-                for entry in entries:
-                    self._player_name(int(entry["player_id"]), entry)
-                return self.aggregator.upsert_player_roster(
-                    entries, season=current_season
-                )
-        return 0
+            if not entries:
+                continue
+            for entry in entries:
+                self._player_name(int(entry["player_id"]), entry)
+            total += self.aggregator.upsert_player_roster(entries, season=season)
+        return total
+
+    def _sync_team_affiliations(self, rows: list[dict[str, Any]]) -> int:
+        entries: list[dict[str, Any]] = []
+        seen: set[tuple[int, int, str]] = set()
+        for row in rows:
+            if not is_ootp_mlb_league_row(row):
+                continue
+            abbr = str(row.get("team_abbr") or "").strip().upper()
+            if not abbr:
+                continue
+            player_id = int(row["player_id"])
+            season = int(row["season"])
+            key = (player_id, season, abbr)
+            if key in seen:
+                continue
+            seen.add(key)
+            entries.append(
+                {
+                    "player_id": player_id,
+                    "season": season,
+                    "team_abbr": abbr,
+                    "team_name": str(row.get("team_name") or "").strip(),
+                }
+            )
+        return self.aggregator.upsert_player_team_affiliations(entries)
 
     @staticmethod
     def _roster_entries_for_season(

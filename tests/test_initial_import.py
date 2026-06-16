@@ -178,3 +178,36 @@ def test_refresh_mode_compare_only_preview(aggregator: Aggregator) -> None:
     )
     assert preview.saved is False
     assert isinstance(preview.diffs, list)
+
+
+def test_init_only_season_stats_without_boxscore(aggregator: Aggregator) -> None:
+    """Stats 파일만 있어도 시즌·선수 목록을 볼 수 있다."""
+    importer = InitialImporter(aggregator)
+    importer.import_batting(
+        SAMPLES_STATS / "player_batting_stats.txt",
+        "first_time",
+        current_season=2026,
+    )
+    importer.import_pitching(
+        SAMPLES_STATS / "player_pitching_stats.txt",
+        "first_time",
+        current_season=2026,
+    )
+
+    seasons = aggregator.get_available_seasons()
+    assert 2025 in seasons
+
+    batting = aggregator.get_batting_season(28987, 2025)
+    assert batting is not None
+    assert batting["_source"] == "init"
+    assert batting["hr"] == 499
+
+    pitching = aggregator.get_pitching_season(50432, 2025)
+    assert pitching is not None
+    assert pitching["_source"] == "init"
+    assert pitching["ip_outs"] == 195
+
+    players = aggregator.get_tracked_players()
+    player_ids = {p["player_id"] for p in players}
+    assert 28987 in player_ids
+    assert 50432 in player_ids
