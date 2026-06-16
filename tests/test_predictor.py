@@ -31,7 +31,7 @@ def milestones():
     return load_milestones(ROOT / "data" / "milestones.csv")
 
 
-def test_track_from_filters_low_career_totals(
+def test_track_from_filters_distant_career_totals(
     aggregator: Aggregator, milestones
 ) -> None:
     store = PredictionStore(

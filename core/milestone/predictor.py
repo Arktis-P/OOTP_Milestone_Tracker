@@ -54,6 +54,11 @@ class CareerMilestonePrediction:
     is_near: bool = False
 
 
+def qualifies_for_watch(remaining: float, milestone: MilestoneDefinition) -> bool:
+    """True when remaining stat count is within the watch-list entry threshold."""
+    return remaining <= milestone.effective_track_from()
+
+
 def is_near(remaining: float, milestone: MilestoneDefinition) -> bool:
     """True when remaining stat count is within the milestone's near threshold."""
     return remaining <= milestone.effective_near_n()

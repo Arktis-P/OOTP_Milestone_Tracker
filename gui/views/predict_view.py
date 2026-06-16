@@ -153,7 +153,7 @@ class PredictView(QWidget):
         if not predictions:
             self.banner.show_info(
                 "표시할 통산 마일스톤 예측이 없습니다.\n"
-                "track_from 기준을 넘은 선수가 없거나, 추적 팀·박스스코어를 확인하세요."
+                "남은 수치가 추적 시작 기준 이하인 선수가 없거나, 추적 팀·박스스코어를 확인하세요."
             )
         else:
             self.banner.hide()
@@ -163,6 +163,9 @@ class PredictView(QWidget):
         roster_names = load_roster_player_names(
             self.settings.import_export_dir or self.settings.initial_stats_dir
         )
+
+        near_row_bg = QColor("#FEE2E2")
+        near_row_fg = QColor("#991B1B")
 
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(predictions))
@@ -190,10 +193,14 @@ class PredictView(QWidget):
             for col_idx, value in enumerate(values):
                 cell = QTableWidgetItem(str(value))
                 cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                if item.is_near:
+                    cell.setBackground(near_row_bg)
+                    if col_idx != 3:
+                        cell.setForeground(near_row_fg)
                 if col_idx == 3:
                     apply_grade_style(cell, grade)
-                if col_idx == 8 and item.is_near:
-                    cell.setForeground(QColor("#EF4444"))
+                    if item.is_near:
+                        cell.setBackground(near_row_bg)
                 self.table.setItem(row_idx, col_idx, cell)
         self.table.setSortingEnabled(True)
 

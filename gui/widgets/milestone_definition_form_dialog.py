@@ -73,12 +73,20 @@ class MilestoneDefinitionFormDialog(QDialog):
         self.track_from_spin.setRange(0, 1_000_000)
         self.track_from_spin.setDecimals(2)
         self.track_from_spin.setSpecialValueText("(없음)")
+        self.track_from_spin.setToolTip(
+            "목표까지 남은 수치가 이 값 이하일 때 예측 목록에 표시합니다. "
+            "비우면 threshold의 15%입니다."
+        )
         self.track_from_spin.setValue(0)
 
         self.near_n_spin = QDoubleSpinBox()
         self.near_n_spin.setRange(0, 1_000_000)
         self.near_n_spin.setDecimals(2)
         self.near_n_spin.setSpecialValueText("(없음)")
+        self.near_n_spin.setToolTip(
+            "목표까지 남은 수치가 이 값 이하일 때 임박으로 강조합니다. "
+            "비우면 threshold의 5%입니다."
+        )
         self.near_n_spin.setValue(0)
 
         self.template_combo = QComboBox()
@@ -102,8 +110,8 @@ class MilestoneDefinitionFormDialog(QDialog):
         form.addRow("threshold:", self.threshold_spin)
         form.addRow("direction:", self.direction_combo)
         form.addRow("grade:", self.grade_combo)
-        form.addRow("track_from:", self.track_from_spin)
-        form.addRow("near_n:", self.near_n_spin)
+        form.addRow("추적 시작 (남은 수):", self.track_from_spin)
+        form.addRow("임박 (남은 수):", self.near_n_spin)
         form.addRow("설명 템플릿:", self.template_combo)
         form.addRow("", self.active_check)
 

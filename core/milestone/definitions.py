@@ -104,12 +104,12 @@ class MilestoneDefinition:
         return float(int(self.threshold * 0.05))
 
     def effective_track_from(self) -> float:
-        """Minimum stat value before this milestone enters the prediction watch list."""
+        """Maximum remaining stat count before this milestone enters the watch list."""
         if self.track_from is not None:
             return self.track_from
         if self.scope == "career" and self.direction == "higher":
-            return self.threshold * 0.8
-        return 0.0
+            return float(int(self.threshold * 0.15))
+        return float("inf")
 
 
 class MilestoneDefinitions:

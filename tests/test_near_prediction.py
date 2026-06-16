@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from core.milestone.definitions import MilestoneDefinition, load_milestones
-from core.milestone.predictor import is_near
+from core.milestone.predictor import is_near, qualifies_for_watch
 from core.milestone.prediction_store import PredictionStore
 from core.parser.boxscore_html import BoxscoreHTMLParser
 from core.stats.aggregator import Aggregator
@@ -19,6 +19,35 @@ SAMPLES_BOX = ROOT / "samples" / "boxscore_html"
 @pytest.fixture
 def milestones():
     return load_milestones(ROOT / "data" / "milestones.csv")
+
+
+def test_track_from_default_fifteen_percent() -> None:
+    milestone = MilestoneDefinition(
+        key="career_hr_500",
+        label="통산 500홈런",
+        stat="career_hr",
+        threshold=500,
+        scope="career",
+        category="batting",
+    )
+    assert milestone.effective_track_from() == 75.0
+    assert qualifies_for_watch(75, milestone) is True
+    assert qualifies_for_watch(76, milestone) is False
+
+
+def test_track_from_explicit() -> None:
+    milestone = MilestoneDefinition(
+        key="career_hr_500",
+        label="통산 500홈런",
+        stat="career_hr",
+        threshold=500,
+        scope="career",
+        category="batting",
+        track_from=100,
+    )
+    assert milestone.effective_track_from() == 100.0
+    assert qualifies_for_watch(100, milestone) is True
+    assert qualifies_for_watch(101, milestone) is False
 
 
 def test_near_n_default_five_percent() -> None:

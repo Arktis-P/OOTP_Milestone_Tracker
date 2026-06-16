@@ -7,7 +7,7 @@ from typing import Any
 
 from core.milestone.checker import CAREER_BATTING_STATS, CAREER_PITCHING_STATS, MilestoneChecker
 from core.milestone.definitions import MilestoneDefinition, MilestoneDefinitions
-from core.milestone.predictor import is_near
+from core.milestone.predictor import is_near, qualifies_for_watch
 from core.stats.aggregator import Aggregator
 
 _PITCHING_TOTALS_COL = {
@@ -314,7 +314,12 @@ class PredictionStore:
     def _qualifies_for_watch(milestone: MilestoneDefinition, current: float) -> bool:
         if MilestoneChecker._is_achieved(current, milestone):
             return False
-        return current >= milestone.effective_track_from()
+        remaining = (
+            milestone.threshold - current
+            if milestone.direction == "higher"
+            else current - milestone.threshold
+        )
+        return qualifies_for_watch(remaining, milestone)
 
     @staticmethod
     def _career_value_from_totals(
