@@ -8,6 +8,22 @@ from core.db.reset import reset_save_database, summarize_save_database
 from core.stats.aggregator import Aggregator
 
 
+def test_aggregator_reopen_after_close(tmp_path: Path) -> None:
+    db_path = tmp_path / "reopen.db"
+    agg = Aggregator(db_path)
+    agg.upsert_player(1, "A. Test", "A Test")
+    agg.conn.commit()
+    agg.close()
+    assert agg.is_closed
+    agg.reopen()
+    row = agg.conn.execute(
+        "SELECT full_name FROM players WHERE player_id = 1"
+    ).fetchone()
+    assert row is not None
+    assert row["full_name"] == "A Test"
+    agg.close()
+
+
 def test_reset_save_database_clears_imported_data(tmp_path: Path) -> None:
     db_path = tmp_path / "save.db"
     with Aggregator(db_path) as agg:

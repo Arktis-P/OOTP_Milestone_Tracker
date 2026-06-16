@@ -135,6 +135,8 @@ class PredictView(QWidget):
         self.player_filter.blockSignals(False)
 
     def refresh(self, *, force_reseed: bool = False) -> None:
+        if self.aggregator.is_closed:
+            return
         store = self._prediction_store()
         if force_reseed:
             store.reseed()

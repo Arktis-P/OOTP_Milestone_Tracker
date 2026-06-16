@@ -113,6 +113,7 @@ class MainWindow(QMainWindow):
         setup_tab = SetupView(self.settings_manager, self.settings, embedded=True)
         setup_tab.setup_completed.connect(self._on_setup_tab_saved)
         setup_tab.milestones_changed.connect(self._reload_milestones)
+        setup_tab.save_database_reset_prepare.connect(self._prepare_save_database_reset)
         setup_tab.save_database_reset.connect(self._on_save_database_reset)
         setup_tab.confirm_button.setText("설정 저장")
         self._tabs.addTab(setup_tab, "설정")
@@ -165,21 +166,51 @@ class MainWindow(QMainWindow):
             self._tabs.setCurrentWidget(self._initial_import_view)
 
     def _reload_aggregator(self) -> None:
+        target = resolve_data_path(self.settings.db_path)
+        if self._aggregator.db_path.resolve() != target.resolve():
+            self._aggregator.switch_database(target)
+        else:
+            self._aggregator.reopen()
+
+    def _prepare_save_database_reset(self) -> None:
         self._aggregator.close()
-        self._aggregator = Aggregator(resolve_data_path(self.settings.db_path))
 
     def _reopen_aggregator_if_needed(self) -> bool:
         target = resolve_data_path(self.settings.db_path)
-        if self._aggregator.db_path.resolve() == target.resolve():
+        if (
+            self._aggregator.db_path.resolve() == target.resolve()
+            and not self._aggregator.is_closed
+        ):
             return False
-        self._reload_aggregator()
+        if self._aggregator.db_path.resolve() != target.resolve():
+            self._aggregator.switch_database(target)
+        else:
+            self._aggregator.reopen()
         return True
 
     def _on_save_database_reset(self) -> None:
         self.settings = self.settings_manager.load()
         self._reload_aggregator()
+        self._sync_view_settings()
         self._update_status_message()
         self.data_refreshed.emit("all")
+
+    def _sync_view_settings(self) -> None:
+        from core.stats.initial_import import InitialImporter
+
+        for view in (
+            self._dashboard_view,
+            self._milestone_view,
+            self._stats_view,
+            self._predict_view,
+            self._initial_import_view,
+        ):
+            if view is None:
+                continue
+            if hasattr(view, "settings"):
+                view.settings = self.settings
+            if hasattr(view, "importer"):
+                view.importer = InitialImporter(self._aggregator)
 
     def _apply_settings_changes(self, settings: AppSettings) -> None:
         settings = self.settings_manager.ensure_derived_paths(settings)

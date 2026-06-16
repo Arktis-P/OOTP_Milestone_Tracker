@@ -45,6 +45,7 @@ class SetupView(QWidget):
 
     setup_completed = pyqtSignal(object)  # AppSettings
     milestones_changed = pyqtSignal()
+    save_database_reset_prepare = pyqtSignal()
     save_database_reset = pyqtSignal()
 
     def __init__(
@@ -450,7 +451,22 @@ class SetupView(QWidget):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
-        reset_save_database(db_path)
+        try:
+            self.save_database_reset_prepare.emit()
+            reset_save_database(db_path)
+        except OSError as exc:
+            self.save_database_reset.emit()
+            QMessageBox.critical(
+                self,
+                "초기화 실패",
+                f"DB 파일을 삭제하지 못했습니다.\n{exc}",
+            )
+            return
+        except Exception as exc:
+            self.save_database_reset.emit()
+            QMessageBox.critical(self, "초기화 실패", str(exc))
+            return
+
         settings.import_state = {"boxscore_dir": "", "last_import_at": ""}
         self.settings = settings
         self.settings_manager.save(settings)

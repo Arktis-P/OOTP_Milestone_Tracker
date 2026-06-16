@@ -34,7 +34,7 @@ class Aggregator:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
         init_database(self.db_path)
-        self._conn = self._open_connection()
+        self._conn: sqlite3.Connection | None = self._open_connection()
 
     def _open_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -42,17 +42,33 @@ class Aggregator:
         configure_sqlite_connection(conn)
         return conn
 
+    @property
+    def is_closed(self) -> bool:
+        return self._conn is None
+
     def reopen(self) -> None:
-        """Close and reopen the connection (e.g. before a worker-thread import)."""
+        """Close and reopen the connection (e.g. after DB file reset)."""
         self.close()
+        if not self.db_path.is_file():
+            init_database(self.db_path)
         self._conn = self._open_connection()
+
+    def switch_database(self, db_path: str | Path) -> None:
+        """Point at another save DB file and reopen the connection."""
+        self.db_path = Path(db_path)
+        self.reopen()
 
     @property
     def conn(self) -> sqlite3.Connection:
+        if self._conn is None:
+            raise sqlite3.ProgrammingError("Cannot operate on a closed database.")
         return self._conn
 
     def close(self) -> None:
+        if self._conn is None:
+            return
         self._conn.close()
+        self._conn = None
 
     def __enter__(self) -> Aggregator:
         return self
