@@ -39,6 +39,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.settings_manager = settings_manager or SettingsManager()
         self.settings = settings or self.settings_manager.load()
+        self.settings = self.settings_manager.ensure_derived_paths(self.settings)
 
         self.setWindowTitle("OOTP Milestone Tracker")
         self.resize(1100, 720)
@@ -162,11 +163,24 @@ class MainWindow(QMainWindow):
         if self._initial_import_view:
             self._tabs.setCurrentWidget(self._initial_import_view)
 
-    def _on_setup_tab_saved(self, settings: AppSettings) -> None:
+    def _reopen_aggregator_if_needed(self) -> bool:
+        target = resolve_data_path(self.settings.db_path)
+        if self._aggregator.db_path.resolve() == target.resolve():
+            return False
+        self._aggregator.close()
+        self._aggregator = Aggregator(target)
+        return True
+
+    def _apply_settings_changes(self, settings: AppSettings) -> None:
+        settings = self.settings_manager.ensure_derived_paths(settings)
         self.settings = settings
+        self._reopen_aggregator_if_needed()
         self._update_status_message()
         self._build_tabs()
         self.data_refreshed.emit("all")
+
+    def _on_setup_tab_saved(self, settings: AppSettings) -> None:
+        self._apply_settings_changes(settings)
 
     def _reload_milestones(self) -> None:
         self._milestones = load_milestones(
@@ -234,10 +248,7 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _apply_settings(self, dialog: QDialog, settings: AppSettings) -> None:
-        self.settings = settings
-        self._update_status_message()
-        self._build_tabs()
-        self.data_refreshed.emit("all")
+        self._apply_settings_changes(settings)
         dialog.accept()
 
 

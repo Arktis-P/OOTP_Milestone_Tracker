@@ -86,6 +86,6 @@ samples/
 
 - `data/milestones.csv` — 마일스톤 기준 정의 (Git 포함, Excel 편집 가능)
 - `data/settings.json` — 앱 설정, OOTP 파일 경로 (Git 제외, 로컬)
-- `data/records.db` — SQLite DB (자동 생성, Git 제외)
+- `saves/{세이브}/records.db` — 세이브(리그)별 SQLite DB (자동 생성, Git 제외)
 
 자세한 내용은 `docs/` 디렉토리를 참조하세요.

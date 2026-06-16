@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from core.config.paths import default_settings_path, resolve_data_path
+from core.config.save_db import migrate_legacy_shared_db, save_db_relative_path
 from core.config.save_scanner import is_valid_league_folder
 from core.stats.qualifiers import RatioQualifiers
 from core.stats.team_filter import (
@@ -109,6 +110,8 @@ class SettingsManager:
             settings.initial_stats_dir = str(
                 Path(settings.active_save_path) / "import_export"
             )
+        settings.db_path = save_db_relative_path(settings.active_save_path)
+        migrate_legacy_shared_db(settings.active_save_path)
         return settings
 
     def save(self, settings: AppSettings) -> None:
@@ -161,6 +164,8 @@ class SettingsManager:
             settings.ootp_version = ootp_version
         settings.paths = self._derive_paths(save_path, settings.paths)
         settings.initial_stats_dir = str(Path(save_path) / "import_export")
+        settings.db_path = save_db_relative_path(save_path)
+        migrate_legacy_shared_db(save_path)
         return settings
 
     @staticmethod
