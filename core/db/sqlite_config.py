@@ -10,3 +10,9 @@ def configure_sqlite_connection(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA busy_timeout=30000")
+
+
+def commit_if_in_transaction(conn: sqlite3.Connection) -> None:
+    """Close an implicit transaction before an explicit BEGIN."""
+    if conn.in_transaction:
+        conn.commit()

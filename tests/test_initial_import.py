@@ -121,6 +121,43 @@ def test_career_totals_respect_season_coverage(aggregator: Aggregator) -> None:
     assert career_after["career_hr"] == 500  # init 499 + boxscore 1
 
 
+def test_refresh_persist_batting_then_pitching_same_connection(
+    aggregator: Aggregator,
+) -> None:
+    """Worker imports batting then pitching on one connection (compare leaves implicit tx)."""
+    importer = InitialImporter(aggregator)
+    season = 2026
+    importer.import_batting(
+        SAMPLES_STATS / "player_batting_stats.txt",
+        "first_time",
+        season,
+    )
+    importer.import_pitching(
+        SAMPLES_STATS / "player_pitching_stats.txt",
+        "first_time",
+        season,
+    )
+    parser = __import__(
+        "core.parser.boxscore_html", fromlist=["BoxscoreHTMLParser"]
+    ).BoxscoreHTMLParser(ROOT / "samples" / "boxscore_html" / "game_box_13.html")
+    aggregator.import_boxscore(parser.parse(), season=2025)
+
+    batting = importer.import_batting(
+        SAMPLES_STATS / "player_batting_stats.txt",
+        "refresh",
+        season,
+        persist=True,
+    )
+    pitching = importer.import_pitching(
+        SAMPLES_STATS / "player_pitching_stats.txt",
+        "refresh",
+        season,
+        persist=True,
+    )
+    assert batting.saved
+    assert pitching.saved
+
+
 def test_refresh_mode_compare_only_preview(aggregator: Aggregator) -> None:
     importer = InitialImporter(aggregator)
     importer.import_batting(

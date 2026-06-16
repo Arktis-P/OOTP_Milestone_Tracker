@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from core.db.meta import get_init_season_coverage, touch_import_meta
+from core.db.sqlite_config import commit_if_in_transaction
 from core.stats.aggregator import Aggregator
 from core.stats.ip_utils import ip_to_outs
 from core.stats.team_filter import (
@@ -246,6 +247,7 @@ class InitialImporter:
         if not result.pending_rows:
             return result
         conn = self.aggregator.conn
+        commit_if_in_transaction(conn)
         try:
             conn.execute("BEGIN")
             if result.kind == "batting":
@@ -642,6 +644,7 @@ class InitialImporter:
         self, kind: str, rows: dict[tuple[int, int], dict[str, Any]], *, replace: bool
     ) -> tuple[int, int]:
         conn = self.aggregator.conn
+        commit_if_in_transaction(conn)
         conn.execute("BEGIN")
         try:
             if kind == "batting":
