@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from core.db.schema import init_database
+from core.db.sqlite_config import configure_sqlite_connection
 from core.parser.batting_notes import get_player_event_counts, player_has_grand_slam
 from core.parser.boxscore_html import BoxscoreHTMLParser, peek_is_mlb_boxscore
 from core.parser.common import ParserError
@@ -33,8 +34,18 @@ class Aggregator:
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
         init_database(self.db_path)
-        self._conn = sqlite3.connect(self.db_path)
-        self._conn.row_factory = sqlite3.Row
+        self._conn = self._open_connection()
+
+    def _open_connection(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        configure_sqlite_connection(conn)
+        return conn
+
+    def reopen(self) -> None:
+        """Close and reopen the connection (e.g. before a worker-thread import)."""
+        self.close()
+        self._conn = self._open_connection()
 
     @property
     def conn(self) -> sqlite3.Connection:

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.5] - 2026-06-16
+
+### Fixed
+- 초기값 임포트 시 `database is locked` 오류 수정 (WAL 모드, 저장 중 메인 DB 연결 해제)
+
 ## [0.1.4] - 2026-06-16
 
 ### Changed

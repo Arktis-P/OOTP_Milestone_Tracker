@@ -72,6 +72,7 @@ class InitialImportView(QWidget):
         batting_button = QPushButton("타격")
         pitching_button = QPushButton("투구")
         all_button = QPushButton("전체 임포트")
+        self._import_buttons = (batting_button, pitching_button, all_button)
         batting_button.clicked.connect(lambda: self._run_import("batting"))
         pitching_button.clicked.connect(lambda: self._run_import("pitching"))
         all_button.clicked.connect(lambda: self._run_import("all"))
@@ -220,9 +221,22 @@ class InitialImportView(QWidget):
         }
         self._start_persist_worker()
 
+    def _set_import_busy(self, busy: bool) -> None:
+        for button in self._import_buttons:
+            button.setEnabled(not busy)
+
+    def _release_db_for_worker(self) -> None:
+        self.aggregator.close()
+
+    def _restore_db_after_worker(self) -> None:
+        self.aggregator.reopen()
+        self.importer = InitialImporter(self.aggregator)
+
     def _start_persist_worker(self) -> None:
         if not self._pending_import:
             return
+        self._set_import_busy(True)
+        self._release_db_for_worker()
         self.progress_bar.setVisible(True)
         self.progress_label.setVisible(True)
         self.progress_bar.setValue(0)
@@ -241,22 +255,27 @@ class InitialImportView(QWidget):
         self._import_worker.error.connect(self._on_import_error)
         self._import_worker.start()
 
+    def _finish_import_worker(self) -> None:
+        self.progress_bar.setVisible(False)
+        self.progress_label.setVisible(False)
+        self._restore_db_after_worker()
+        self._set_import_busy(False)
+
     def _on_import_progress(self, current: int, total: int, filename: str) -> None:
         self.progress_bar.setMaximum(max(total, 1))
         self.progress_bar.setValue(current)
         self.progress_label.setText(f"저장 중... ({current}/{total}) {filename}")
 
     def _on_import_finished(self, _results: object) -> None:
-        self.progress_bar.setVisible(False)
-        self.progress_label.setVisible(False)
         self._pending_import = None
+        self._finish_import_worker()
         self._update_status()
         self.import_finished.emit()
         QMessageBox.information(self, "완료", "임포트가 완료되었습니다.")
 
     def _on_import_error(self, message: str) -> None:
-        self.progress_bar.setVisible(False)
-        self.progress_label.setVisible(False)
+        self._pending_import = None
+        self._finish_import_worker()
         QMessageBox.critical(self, "임포트 실패", message)
 
     def _should_persist_after_preview(

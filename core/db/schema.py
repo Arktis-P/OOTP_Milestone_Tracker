@@ -5,6 +5,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from core.db.sqlite_config import configure_sqlite_connection
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS games (
     game_id         INTEGER PRIMARY KEY,
@@ -187,6 +189,7 @@ def init_database(db_path: str | Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     try:
+        configure_sqlite_connection(conn)
         conn.executescript(SCHEMA_SQL)
         _migrate_pre_schema(conn)
         conn.executescript(SCHEMA_SQL)
