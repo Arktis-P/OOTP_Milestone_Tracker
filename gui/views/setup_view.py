@@ -32,6 +32,11 @@ from core.config import (
     resolve_data_path,
     scan_saves,
 )
+from core.db.reset import (
+    format_save_data_summary,
+    reset_save_database,
+    summarize_save_database,
+)
 from gui.widgets.tracked_teams_widget import TrackedTeamsWidget
 
 
@@ -40,6 +45,7 @@ class SetupView(QWidget):
 
     setup_completed = pyqtSignal(object)  # AppSettings
     milestones_changed = pyqtSignal()
+    save_database_reset = pyqtSignal()
 
     def __init__(
         self,
@@ -165,14 +171,6 @@ class SetupView(QWidget):
             self.milestones_button, alignment=Qt.AlignmentFlag.AlignLeft
         )
 
-        self.selected_path_label = QLabel("")
-        self.selected_path_label.setWordWrap(True)
-        self.selected_path_label.setStyleSheet("color: #555;")
-
-        self.confirm_button = QPushButton("확인 및 시작")
-        self.confirm_button.clicked.connect(self._confirm)
-        self.confirm_button.setDefault(True)
-
         layout = QVBoxLayout(self)
         layout.addWidget(title)
         layout.addSpacing(12)
@@ -182,9 +180,17 @@ class SetupView(QWidget):
         layout.addWidget(tracking_group)
         layout.addWidget(names_group)
         layout.addWidget(milestones_group)
+        if embedded:
+            layout.addWidget(self._build_database_reset_group())
         layout.addWidget(QLabel("선택된 경로:"))
+        self.selected_path_label = QLabel("")
+        self.selected_path_label.setWordWrap(True)
+        self.selected_path_label.setStyleSheet("color: #555;")
         layout.addWidget(self.selected_path_label)
         layout.addStretch()
+        self.confirm_button = QPushButton("확인 및 시작")
+        self.confirm_button.clicked.connect(self._confirm)
+        self.confirm_button.setDefault(True)
         layout.addWidget(self.confirm_button, alignment=Qt.AlignmentFlag.AlignRight)
 
         self.save_root_input.textChanged.connect(self._on_save_root_changed)
@@ -360,6 +366,102 @@ class SetupView(QWidget):
             self.selected_path_label.setText(str(path) if path else "")
         else:
             self.selected_path_label.setText("(리그를 선택하세요)")
+        if hasattr(self, "db_summary_label"):
+            self._refresh_database_summary()
+
+    def _build_database_reset_group(self) -> QGroupBox:
+        group = QGroupBox("현재 세이브 데이터")
+        layout = QVBoxLayout(group)
+
+        self.db_summary_label = QLabel()
+        self.db_summary_label.setWordWrap(True)
+        self.db_summary_label.setStyleSheet("color: #444;")
+        layout.addWidget(self.db_summary_label)
+
+        self.db_path_label = QLabel()
+        self.db_path_label.setWordWrap(True)
+        self.db_path_label.setStyleSheet("color: #666; font-size: 11px;")
+        layout.addWidget(self.db_path_label)
+
+        button_row = QHBoxLayout()
+        self.refresh_db_summary_button = QPushButton("현황 새로고침")
+        self.refresh_db_summary_button.clicked.connect(self._refresh_database_summary)
+        self.reset_db_button = QPushButton("현재 세이브 데이터 초기화...")
+        self.reset_db_button.clicked.connect(self._reset_save_database)
+        button_row.addWidget(self.refresh_db_summary_button)
+        button_row.addWidget(self.reset_db_button)
+        button_row.addStretch()
+        layout.addLayout(button_row)
+
+        layout.addWidget(
+            QLabel(
+                "현재 선택된 리그 세이브의 DB만 삭제합니다. "
+                "마일스톤 기록, 박스스코어, 통산 초기값, 예측 목록이 모두 지워집니다."
+            )
+        )
+        self._refresh_database_summary()
+        return group
+
+    def _current_db_path(self) -> Path | None:
+        settings = self.settings_manager.ensure_derived_paths(self.settings)
+        if not settings.active_save_path:
+            return None
+        return resolve_data_path(settings.db_path)
+
+    def _refresh_database_summary(self) -> None:
+        db_path = self._current_db_path()
+        if db_path is None:
+            self.db_summary_label.setText("리그를 선택하면 DB 현황이 표시됩니다.")
+            self.db_path_label.setText("")
+            self.reset_db_button.setEnabled(False)
+            return
+
+        summary = summarize_save_database(db_path)
+        if summary.has_data:
+            self.db_summary_label.setText(format_save_data_summary(summary))
+        else:
+            self.db_summary_label.setText("저장된 경기·마일스톤·초기값 데이터가 없습니다.")
+        self.db_path_label.setText(f"DB: {db_path}")
+        self.reset_db_button.setEnabled(True)
+
+    def _reset_save_database(self) -> None:
+        settings = self.settings_manager.ensure_derived_paths(self.settings)
+        if not settings.active_save_path:
+            QMessageBox.warning(self, "리그 필요", "초기화할 리그를 먼저 선택하세요.")
+            return
+
+        db_path = resolve_data_path(settings.db_path)
+        summary = summarize_save_database(db_path)
+        save_name = settings.active_save or "현재 세이브"
+        detail = format_save_data_summary(summary) if summary.has_data else "저장된 데이터 없음"
+
+        reply = QMessageBox.warning(
+            self,
+            "데이터 초기화",
+            (
+                f"「{save_name}」 세이브의 추적 데이터를 모두 삭제합니다.\n\n"
+                f"{detail}\n\n"
+                "마일스톤 기록, 시즌/통산 기록, 예측 목록이 삭제되며 "
+                "되돌릴 수 없습니다. 계속하시겠습니까?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        reset_save_database(db_path)
+        settings.import_state = {"boxscore_dir": "", "last_import_at": ""}
+        self.settings = settings
+        self.settings_manager.save(settings)
+        self._refresh_database_summary()
+        self.save_database_reset.emit()
+        QMessageBox.information(
+            self,
+            "초기화 완료",
+            "현재 세이브 데이터를 초기화했습니다.\n"
+            "초기값 설정과 박스스코어 가져오기를 다시 진행하세요.",
+        )
 
     def _open_korean_name_mapping(self) -> None:
         from gui.widgets.korean_name_mapping_dialog import KoreanNameMappingDialog

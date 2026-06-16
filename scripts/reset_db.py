@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from core.config.settings_manager import SettingsManager, resolve_data_path
-from core.db.meta import ensure_meta_defaults, get_meta
-from core.db.schema import init_database
+from core.db.meta import get_meta
+from core.db.reset import reset_save_database
 
 
 def main() -> int:
@@ -21,15 +21,10 @@ def main() -> int:
     db_path = resolve_data_path(settings.db_path)
 
     if db_path.is_file():
-        db_path.unlink()
-        print(f"Deleted: {db_path}")
-
-    init_database(db_path)
+        print(f"Deleting: {db_path}")
+    reset_save_database(db_path)
 
     conn = sqlite3.connect(db_path)
-    ensure_meta_defaults(conn)
-    conn.commit()
-
     tables = [
         r[0]
         for r in conn.execute(

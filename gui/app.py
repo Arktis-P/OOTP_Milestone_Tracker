@@ -113,6 +113,7 @@ class MainWindow(QMainWindow):
         setup_tab = SetupView(self.settings_manager, self.settings, embedded=True)
         setup_tab.setup_completed.connect(self._on_setup_tab_saved)
         setup_tab.milestones_changed.connect(self._reload_milestones)
+        setup_tab.save_database_reset.connect(self._on_save_database_reset)
         setup_tab.confirm_button.setText("설정 저장")
         self._tabs.addTab(setup_tab, "설정")
 
@@ -163,13 +164,22 @@ class MainWindow(QMainWindow):
         if self._initial_import_view:
             self._tabs.setCurrentWidget(self._initial_import_view)
 
+    def _reload_aggregator(self) -> None:
+        self._aggregator.close()
+        self._aggregator = Aggregator(resolve_data_path(self.settings.db_path))
+
     def _reopen_aggregator_if_needed(self) -> bool:
         target = resolve_data_path(self.settings.db_path)
         if self._aggregator.db_path.resolve() == target.resolve():
             return False
-        self._aggregator.close()
-        self._aggregator = Aggregator(target)
+        self._reload_aggregator()
         return True
+
+    def _on_save_database_reset(self) -> None:
+        self.settings = self.settings_manager.load()
+        self._reload_aggregator()
+        self._update_status_message()
+        self.data_refreshed.emit("all")
 
     def _apply_settings_changes(self, settings: AppSettings) -> None:
         settings = self.settings_manager.ensure_derived_paths(settings)
