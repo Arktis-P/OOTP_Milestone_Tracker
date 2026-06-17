@@ -159,6 +159,87 @@ def test_tracker_records_milestone_to_db(aggregator: Aggregator) -> None:
     assert row["streak_event_type"] == "ongoing_milestone"
 
 
+def _seed_batter_hit_log(
+    aggregator: Aggregator,
+    *,
+    game_id: int,
+    day: int,
+    player_id: int,
+    player_name: str,
+    team: str,
+    h: int = 1,
+) -> None:
+    aggregator.conn.execute(
+        """
+        INSERT OR IGNORE INTO players (player_id, full_name, short_name)
+        VALUES (?, ?, ?)
+        """,
+        (player_id, player_name, player_name),
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO batting_logs (
+            game_id, player_id, season, team, date,
+            ab, r, h, rbi, bb, k, lob,
+            home_runs, stolen_bases, hit_by_pitch, is_substitute, is_grand_slam
+        ) VALUES (?, ?, 2026, ?, ?, 4, 0, ?, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+        """,
+        (game_id, player_id, team, f"2026-03-{day:02d}", h),
+    )
+
+
+def test_tracker_respects_tracked_teams(aggregator: Aggregator) -> None:
+    giants = "San Francisco Giants"
+    dodgers = "Los Angeles Dodgers"
+    for i in range(1, 11):
+        _seed_team_game(
+            aggregator, game_id=i, day=i, away_team=giants, home_team=dodgers
+        )
+        _seed_batter_hit_log(
+            aggregator,
+            game_id=i,
+            day=i,
+            player_id=42,
+            player_name="G. Giant",
+            team=giants,
+        )
+        _seed_batter_hit_log(
+            aggregator,
+            game_id=i,
+            day=i,
+            player_id=99,
+            player_name="D. Dodger",
+            team=dodgers,
+        )
+    aggregator.conn.commit()
+
+    tracker = StreakTracker(aggregator, tracked_teams=["SF"])
+    tracker.process_new_games(list(range(1, 11)), 2026)
+
+    giants_milestone = aggregator.conn.execute(
+        """
+        SELECT 1 FROM milestone_records
+        WHERE player_id = 42 AND scope = 'streak' AND achieved_value = 10
+        """
+    ).fetchone()
+    dodgers_milestone = aggregator.conn.execute(
+        """
+        SELECT 1 FROM milestone_records
+        WHERE player_id = 99 AND scope = 'streak'
+        """
+    ).fetchone()
+    dodgers_state = aggregator.conn.execute(
+        """
+        SELECT current_value FROM player_streak_state
+        WHERE player_id = 99 AND streak_type = 'hit_streak'
+        """
+    ).fetchone()
+
+    assert giants_milestone is not None
+    assert dodgers_milestone is None
+    assert dodgers_state is None
+
+
 def test_tracker_skips_reprocessing_same_game(aggregator: Aggregator) -> None:
     _seed_game_with_hit_streak(aggregator, game_id=1, day=1, h=1)
     tracker = StreakTracker(aggregator)

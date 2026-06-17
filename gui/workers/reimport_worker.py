@@ -85,7 +85,11 @@ class ReimportBoxscoreWorker(QThread):
                     )
 
                     self.progress.emit("연속 기록 처리 중...")
-                    streak_tracker = StreakTracker(aggregator)
+                    streak_tracker = StreakTracker(
+                        aggregator,
+                        tracked_teams=self.settings.tracked_teams,
+                        custom_teams=self.settings.custom_mlb_teams,
+                    )
                     streak_tracker.process_new_games(
                         batch.imported_game_ids,
                         self.season,

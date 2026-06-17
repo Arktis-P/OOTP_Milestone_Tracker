@@ -87,7 +87,11 @@ class ImportWorker(QThread):
 
                 streak_recorded = 0
                 if result.imported_game_ids:
-                    streak_tracker = StreakTracker(aggregator)
+                    streak_tracker = StreakTracker(
+                        aggregator,
+                        tracked_teams=self.settings.tracked_teams,
+                        custom_teams=self.settings.custom_mlb_teams,
+                    )
                     streak_events = streak_tracker.process_new_games(
                         result.imported_game_ids,
                         self.season,

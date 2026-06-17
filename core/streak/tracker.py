@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from core.stats.aggregator import Aggregator
+from core.stats.team_filter import expand_tracked_teams
 from core.streak.engine import (
     StreakEvent,
     StreakState,
@@ -38,8 +39,12 @@ class StreakTracker:
         aggregator: Aggregator,
         *,
         policies_path: str | Path | None = None,
+        tracked_teams: list[str] | None = None,
+        custom_teams: dict[str, str] | None = None,
     ) -> None:
         self.aggregator = aggregator
+        self.tracked_teams = tracked_teams or []
+        self.custom_teams = custom_teams or {}
         self.policies = load_streak_policies(policies_path)
         self.labels: dict[str, str] = dict(self.policies.get("labels") or {})
         self._batting_policies = batting_policies(self.policies)
@@ -204,8 +209,8 @@ class StreakTracker:
             return []
 
         events: list[StreakEvent] = []
-        batting_rows = self._fetch_batting_rows(game_id)
-        pitching_rows = self._fetch_pitching_rows(game_id)
+        batting_rows = self._filter_game_log_rows(self._fetch_batting_rows(game_id))
+        pitching_rows = self._filter_game_log_rows(self._fetch_pitching_rows(game_id))
         game_meta = self._fetch_game_meta(game_id)
 
         for row in batting_rows:
@@ -298,6 +303,8 @@ class StreakTracker:
         for player_id, team in sorted(appeared_by_name):
             if player_id in handled_players:
                 continue
+            if not self._team_is_tracked(team):
+                continue
             handled_players.add(player_id)
             state_map = self._load_appearance_state(season, player_id)
             state = state_map[APPEARANCE_STREAK_TYPE]
@@ -326,6 +333,8 @@ class StreakTracker:
             effective_team, effective_team_id = self._player_team_before_game(
                 season, player_id, game_id, game_date
             )
+            if not self._team_is_tracked(effective_team):
+                continue
             if not self._team_is_playing_today(
                 effective_team,
                 effective_team_id,
@@ -722,8 +731,42 @@ class StreakTracker:
         ).fetchone()
         return str(row["date"]) if row else ""
 
+    def _tracked_team_names(self) -> set[str]:
+        return set(expand_tracked_teams(self.tracked_teams, self.custom_teams))
 
-def rebuild_season_streaks(aggregator: Aggregator, season: int) -> int:
+    def _team_is_tracked(self, team_name: str | None) -> bool:
+        if not self.tracked_teams:
+            return True
+        if not team_name:
+            return False
+        names = self._tracked_team_names()
+        if team_name in names:
+            return True
+        return team_name.upper() in {
+            token.strip().upper() for token in self.tracked_teams if token.strip()
+        }
+
+    def _filter_game_log_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not self.tracked_teams:
+            return rows
+        tracked_names = self._tracked_team_names()
+        filtered: list[dict[str, Any]] = []
+        for row in rows:
+            team = str(row.get("team") or "")
+            if team in tracked_names or team.upper() in {
+                token.strip().upper() for token in self.tracked_teams if token.strip()
+            }:
+                filtered.append(row)
+        return filtered
+
+
+def rebuild_season_streaks(
+    aggregator: Aggregator,
+    season: int,
+    *,
+    tracked_teams: list[str] | None = None,
+    custom_teams: dict[str, str] | None = None,
+) -> int:
     """Clear streak state for a season and reprocess all games (admin/backfill)."""
     conn = aggregator.conn
     conn.execute("DELETE FROM player_streak_state WHERE season = ?", (season,))
@@ -741,7 +784,11 @@ def rebuild_season_streaks(aggregator: Aggregator, season: int) -> int:
         (season,),
     ).fetchall()
     game_ids = [int(row["game_id"]) for row in rows]
-    tracker = StreakTracker(aggregator)
+    tracker = StreakTracker(
+        aggregator,
+        tracked_teams=tracked_teams,
+        custom_teams=custom_teams,
+    )
     events = tracker.process_new_games(game_ids, season)
     conn.commit()
     return len(events)
