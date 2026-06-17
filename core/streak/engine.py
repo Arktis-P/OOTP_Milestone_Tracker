@@ -1,4 +1,4 @@
-"""Streak state machine and milestone event generation."""
+"""Streak state machine — track runs incrementally, record only when a run ends."""
 
 from __future__ import annotations
 
@@ -7,14 +7,12 @@ from typing import Any, Literal
 
 from core.streak.game_log import BattingGameLog, PitchingGameLog
 from core.streak.policies import (
-    ended_label,
-    is_milestone_value,
-    ongoing_label,
-    should_record_ended_event,
+    should_record_streak_on_break,
+    streak_record_label,
 )
 
 StreakOutcome = Literal["skip", "continue", "break"]
-EventType = Literal["ongoing_milestone", "streak_ended"]
+EventType = Literal["streak_ended"]
 
 
 @dataclass
@@ -48,6 +46,47 @@ def _counter_outcome(success: bool | None) -> StreakOutcome:
     if success is None:
         return "skip"
     return "continue" if success else "break"
+
+
+def _append_ended_event(
+    events: list[StreakEvent],
+    *,
+    state: StreakState,
+    season: int,
+    player_id: int,
+    team: str,
+    streak_type: str,
+    ended_value: int,
+    policy: dict[str, Any],
+    policies_root: dict[str, Any],
+) -> None:
+    if ended_value <= 0 or not should_record_streak_on_break(ended_value, policy):
+        return
+    events.append(
+        StreakEvent(
+            event_type="streak_ended",
+            player_id=player_id,
+            team=team,
+            streak_type=streak_type,
+            streak_run_id=state.run_id(season, player_id, streak_type),
+            streak_value=0,
+            milestone_value=ended_value,
+            milestone_label=streak_record_label(
+                streak_type, ended_value, policies_root
+            ),
+            last_success_game_id=state.last_success_game_id,
+            last_success_game_date=state.last_success_game_date,
+        )
+    )
+
+
+def _reset_streak_state(state: StreakState) -> None:
+    state.run_index += 1
+    state.current = 0
+    state.ip_outs_accum = 0
+    state.last_success_game_id = None
+    state.last_success_game_date = None
+    state.recorded_milestones.clear()
 
 
 def _eval_batting(streak_type: str, log: BattingGameLog) -> bool | None:
@@ -115,7 +154,14 @@ def _eval_pitching(streak_type: str, log: PitchingGameLog) -> bool | None:
             return None
         return log.qs_game
 
-    if streak_type == "scoreless_appearance_streak":
+    if streak_type == "scoreless_streak_starter":
+        if not log.is_starter:
+            return None
+        return log.scoreless_appearance
+
+    if streak_type == "scoreless_streak_reliever":
+        if log.is_starter:
+            return None
         return log.scoreless_appearance
 
     return None
@@ -143,48 +189,21 @@ def update_counter_streak(
         state.current += 1
         state.last_success_game_id = game_id
         state.last_success_game_date = game_date
-        value = state.current
-        if is_milestone_value(value, policy) and value not in state.recorded_milestones:
-            state.recorded_milestones.add(value)
-            events.append(
-                StreakEvent(
-                    event_type="ongoing_milestone",
-                    player_id=player_id,
-                    team=team,
-                    streak_type=streak_type,
-                    streak_run_id=state.run_id(season, player_id, streak_type),
-                    streak_value=value,
-                    milestone_value=value,
-                    milestone_label=ongoing_label(streak_type, value, policies_root),
-                    last_success_game_id=state.last_success_game_id,
-                    last_success_game_date=state.last_success_game_date,
-                )
-            )
         return events
 
     ended_value = state.current
-    if ended_value > 0 and should_record_ended_event(ended_value, policy):
-        events.append(
-            StreakEvent(
-                event_type="streak_ended",
-                player_id=player_id,
-                team=team,
-                streak_type=streak_type,
-                streak_run_id=state.run_id(season, player_id, streak_type),
-                streak_value=0,
-                milestone_value=ended_value,
-                milestone_label=ended_label(streak_type, ended_value, policies_root),
-                last_success_game_id=state.last_success_game_id,
-                last_success_game_date=state.last_success_game_date,
-            )
-        )
-
-    state.run_index += 1
-    state.current = 0
-    state.ip_outs_accum = 0
-    state.last_success_game_id = None
-    state.last_success_game_date = None
-    state.recorded_milestones.clear()
+    _append_ended_event(
+        events,
+        state=state,
+        season=season,
+        player_id=player_id,
+        team=team,
+        streak_type=streak_type,
+        ended_value=ended_value,
+        policy=policy,
+        policies_root=policies_root,
+    )
+    _reset_streak_state(state)
     return events
 
 
@@ -202,50 +221,23 @@ def update_ip_outs_streak(
     events: list[StreakEvent] = []
     if log.r_allowed > 0:
         ended_value = state.ip_outs_accum
-        if ended_value > 0 and should_record_ended_event(ended_value, policy):
-            events.append(
-                StreakEvent(
-                    event_type="streak_ended",
-                    player_id=player_id,
-                    team=team,
-                    streak_type=streak_type,
-                    streak_run_id=state.run_id(season, player_id, streak_type),
-                    streak_value=0,
-                    milestone_value=ended_value,
-                    milestone_label=ended_label(
-                        streak_type, ended_value, policies_root
-                    ),
-                    last_success_game_id=state.last_success_game_id,
-                    last_success_game_date=state.last_success_game_date,
-                )
-            )
-        state.run_index += 1
-        state.ip_outs_accum = 0
-        state.last_success_game_id = None
-        state.last_success_game_date = None
-        state.recorded_milestones.clear()
+        _append_ended_event(
+            events,
+            state=state,
+            season=season,
+            player_id=player_id,
+            team=team,
+            streak_type=streak_type,
+            ended_value=ended_value,
+            policy=policy,
+            policies_root=policies_root,
+        )
+        _reset_streak_state(state)
         return events
 
     state.ip_outs_accum += log.ip_outs
     state.last_success_game_id = log.game_id
     state.last_success_game_date = log.game_date
-    value = state.ip_outs_accum
-    if is_milestone_value(value, policy) and value not in state.recorded_milestones:
-        state.recorded_milestones.add(value)
-        events.append(
-            StreakEvent(
-                event_type="ongoing_milestone",
-                player_id=player_id,
-                team=team,
-                streak_type=streak_type,
-                streak_run_id=state.run_id(season, player_id, streak_type),
-                streak_value=value,
-                milestone_value=value,
-                milestone_label=ongoing_label(streak_type, value, policies_root),
-                last_success_game_id=state.last_success_game_id,
-                last_success_game_date=state.last_success_game_date,
-            )
-        )
     return events
 
 
@@ -285,7 +277,7 @@ def process_pitching_log(
     events: list[StreakEvent] = []
     for streak_type, policy in policies.items():
         state = state_map.setdefault(streak_type, StreakState())
-        if streak_type == "scoreless_appearance_ip_outs_streak":
+        if streak_type == "scoreless_innings_streak":
             events.extend(
                 update_ip_outs_streak(
                     state,

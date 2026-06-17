@@ -50,9 +50,17 @@ def _seed_hit_streak_game(aggregator: Aggregator, *, game_id: int, day: int) -> 
 def test_export_streak_csv_bundle(aggregator: Aggregator, tmp_path: Path) -> None:
     for i in range(1, 11):
         _seed_hit_streak_game(aggregator, game_id=i, day=i)
+    _seed_hit_streak_game(aggregator, game_id=11, day=11)
+    aggregator.conn.execute(
+        """
+        UPDATE batting_logs SET h = 0
+        WHERE game_id = 11 AND player_id = 42
+        """
+    )
+    aggregator.conn.commit()
 
     tracker = StreakTracker(aggregator)
-    tracker.process_new_games(list(range(1, 11)), 2026)
+    tracker.process_new_games(list(range(1, 12)), 2026)
 
     out_dir = tmp_path / "streak_out"
     result = export_streak_csvs(aggregator, out_dir, 2026)

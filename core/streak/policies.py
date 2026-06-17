@@ -20,22 +20,15 @@ def load_streak_policies(path: str | Path | None = None) -> dict[str, Any]:
         return json.load(handle)
 
 
-def is_milestone_value(value: int, policy: dict[str, Any]) -> bool:
-    fixed = set(policy.get("fixed_milestones") or [])
-    repeat_after = policy.get("repeat_after")
-    repeat_step = int(policy.get("repeat_step") or 1)
-
-    if value in fixed:
-        return True
-
-    if repeat_after is not None and value > int(repeat_after):
-        return (value - int(repeat_after)) % repeat_step == 0
-
-    return False
+def policy_min_value(policy: dict[str, Any]) -> int:
+    """Minimum streak length (or outs for IP streak) required to record on break."""
+    if "min_value" in policy:
+        return int(policy["min_value"])
+    return int(policy.get("ended_event_min_value", 999999))
 
 
-def should_record_ended_event(ended_value: int, policy: dict[str, Any]) -> bool:
-    return ended_value >= int(policy.get("ended_event_min_value", 999999))
+def should_record_streak_on_break(ended_value: int, policy: dict[str, Any]) -> bool:
+    return ended_value >= policy_min_value(policy)
 
 
 def format_streak_value(value: int, policy: dict[str, Any]) -> str:
@@ -44,22 +37,14 @@ def format_streak_value(value: int, policy: dict[str, Any]) -> str:
     return str(value)
 
 
-def ongoing_label(streak_type: str, value: int, policies: dict[str, Any]) -> str:
+def streak_record_label(streak_type: str, value: int, policies: dict[str, Any]) -> str:
+    """Label for a completed streak recorded when the run ends."""
     labels = policies.get("labels") or {}
     name = labels.get(streak_type, streak_type)
     policy = _policy_for_type(streak_type, policies)
     if policy and policy.get("unit") == "outs":
-        return f"{format_streak_value(value, policy)}이닝 {name}"
+        return f"{format_streak_value(value, policy)} {name}"
     return f"{value}경기 {name}"
-
-
-def ended_label(streak_type: str, value: int, policies: dict[str, Any]) -> str:
-    labels = policies.get("labels") or {}
-    name = labels.get(streak_type, streak_type)
-    policy = _policy_for_type(streak_type, policies)
-    if policy and policy.get("unit") == "outs":
-        return f"{format_streak_value(value, policy)} {name} 기록 종료"
-    return f"{value}경기 {name} 기록 종료"
 
 
 def _policy_for_type(streak_type: str, policies: dict[str, Any]) -> dict[str, Any] | None:
@@ -76,3 +61,16 @@ def batting_policies(policies: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 def pitching_policies(policies: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return dict(policies.get("pitching") or {})
+
+
+# Backward-compatible aliases for export / older callers
+def should_record_ended_event(ended_value: int, policy: dict[str, Any]) -> bool:
+    return should_record_streak_on_break(ended_value, policy)
+
+
+def ongoing_label(streak_type: str, value: int, policies: dict[str, Any]) -> str:
+    return streak_record_label(streak_type, value, policies)
+
+
+def ended_label(streak_type: str, value: int, policies: dict[str, Any]) -> str:
+    return streak_record_label(streak_type, value, policies)

@@ -11,89 +11,54 @@
     "win_streak": "연속 승리",
     "save_streak": "연속 세이브",
     "qs_streak": "연속 QS",
-    "scoreless_appearance_streak": "연속 무실점 등판",
-    "scoreless_appearance_ip_outs_streak": "무실점 등판 누적 이닝"
+    "scoreless_streak_starter": "연속 무실점 등판 (선발)",
+    "scoreless_streak_reliever": "연속 무실점 등판 (구원)",
+    "scoreless_innings_streak": "연속 무실점 이닝"
   },
   "batting": {
     "appearance_streak_team_games": {
-      "fixed_milestones": [50, 100, 150, 200, 250, 300, 500, 1000],
-      "repeat_after": 1000,
-      "repeat_step": 50,
-      "ended_event_min_value": 50
+      "min_value": 50
     },
     "hit_streak": {
-      "fixed_milestones": [10, 15, 20],
-      "repeat_after": 20,
-      "repeat_step": 1,
-      "ended_event_min_value": 10
+      "min_value": 10
     },
     "home_run_streak": {
-      "fixed_milestones": [3],
-      "repeat_after": 3,
-      "repeat_step": 1,
-      "ended_event_min_value": 3
+      "min_value": 5
     },
     "rbi_streak": {
-      "fixed_milestones": [],
-      "repeat_after": 10,
-      "repeat_step": 1,
-      "ended_event_min_value": 10
+      "min_value": 5
     },
     "run_streak": {
-      "fixed_milestones": [],
-      "repeat_after": 10,
-      "repeat_step": 1,
-      "ended_event_min_value": 10
+      "min_value": 5
     },
     "stolen_base_streak": {
-      "fixed_milestones": [3],
-      "repeat_after": 3,
-      "repeat_step": 1,
-      "ended_event_min_value": 3
+      "min_value": 5
     },
     "walk_streak": {
-      "fixed_milestones": [5, 7, 10],
-      "repeat_after": 10,
-      "repeat_step": 1,
-      "ended_event_min_value": 5
+      "min_value": 5
     },
     "on_base_streak": {
-      "fixed_milestones": [20, 30, 40],
-      "repeat_after": 40,
-      "repeat_step": 1,
-      "ended_event_min_value": 20
+      "min_value": 10
     }
   },
   "pitching": {
     "win_streak": {
-      "fixed_milestones": [5, 7, 10],
-      "repeat_after": 10,
-      "repeat_step": 1,
-      "ended_event_min_value": 5
+      "min_value": 5
     },
     "save_streak": {
-      "fixed_milestones": [5, 10, 15, 20],
-      "repeat_after": 20,
-      "repeat_step": 1,
-      "ended_event_min_value": 5
+      "min_value": 5
     },
     "qs_streak": {
-      "fixed_milestones": [5, 7, 10, 15],
-      "repeat_after": 15,
-      "repeat_step": 1,
-      "ended_event_min_value": 5
+      "min_value": 5
     },
-    "scoreless_appearance_streak": {
-      "fixed_milestones": [10, 15, 20, 25, 30],
-      "repeat_after": 30,
-      "repeat_step": 1,
-      "ended_event_min_value": 10
+    "scoreless_streak_starter": {
+      "min_value": 3
     },
-    "scoreless_appearance_ip_outs_streak": {
-      "fixed_milestones": [30, 45, 60, 75, 90],
-      "repeat_after": 90,
-      "repeat_step": 3,
-      "ended_event_min_value": 30,
+    "scoreless_streak_reliever": {
+      "min_value": 5
+    },
+    "scoreless_innings_streak": {
+      "min_value": 90,
       "unit": "outs",
       "display_unit": "IP"
     }
