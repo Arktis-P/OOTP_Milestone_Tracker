@@ -6,11 +6,11 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QTableWidgetItem
 
 GRADE_COLORS: dict[str, dict[str, str | None]] = {
-    "common": {"bg": None, "fg": "#94a3b8"},
-    "uncommon": {"bg": "#052e16", "fg": "#4ade80"},
-    "rare": {"bg": "#172554", "fg": "#60a5fa"},
-    "epic": {"bg": "#3b0764", "fg": "#c084fc"},
-    "legendary": {"bg": "#451a03", "fg": "#fbbf24"},
+    "common": {"bg": None, "fg": "#9d9d9d"},
+    "uncommon": {"bg": "#1a3a24", "fg": "#4ec9b0"},
+    "rare": {"bg": "#1a2d4a", "fg": "#75beff"},
+    "epic": {"bg": "#2d1f4a", "fg": "#c586c0"},
+    "legendary": {"bg": "#3a2a10", "fg": "#dcdcaa"},
 }
 
 _PLAYER_NAME_SQL = """

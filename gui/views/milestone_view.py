@@ -40,8 +40,8 @@ from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.table_widgets import TablePanel
 from gui.widgets.edit_milestone_record_dialog import EditMilestoneRecordDialog
 from gui.widgets.manual_milestone_dialog import ManualMilestoneDialog
-from gui.ui_compact import hint_style
-from gui.theme import AMBER_300
+from gui.widgets.card_panel import CardPanel, section_label
+from gui.theme import AMBER_TEXT, meta_panel_style
 
 _TABLE_COLUMNS = [
     "날짜",
@@ -112,8 +112,8 @@ class MilestoneView(QWidget):
 
         self.meta_label = QLabel("")
         self.meta_label.setWordWrap(True)
-        self.meta_label.setStyleSheet(f"padding: 6px; {hint_style()}")
-        self.game_log_button = QPushButton("게임 로그 열기")
+        self.meta_label.setStyleSheet(meta_panel_style())
+        self.game_log_button = QPushButton("🌐 게임 로그 열기")
         self.game_log_button.setEnabled(False)
         self.game_log_button.clicked.connect(self._open_selected_game_log)
 
@@ -126,7 +126,8 @@ class MilestoneView(QWidget):
         self.refresh_button = QPushButton("새로고침")
         self.export_button = QPushButton("CSV로 보내기")
         self.export_streak_button = QPushButton("연속기록 내보내기")
-        self.manual_button = QPushButton("수동 입력")
+        self.manual_button = QPushButton("➕ 수동 입력")
+        self.manual_button.setObjectName("primaryButton")
         self.season_ratio_button = QPushButton("시즌 비율 마일스톤 기록")
         self.edit_button = QPushButton("수정")
         self.delete_button = QPushButton("삭제")
@@ -143,39 +144,55 @@ class MilestoneView(QWidget):
         self._edit_shortcut.activated.connect(self._edit_selected_record)
 
         filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel("대상:"))
+        filter_row.setSpacing(10)
+        filter_row.addWidget(section_label("대상"))
         filter_row.addWidget(self.subject_combo)
-        filter_row.addWidget(QLabel("팀:"))
+        filter_row.addWidget(section_label("팀"))
         filter_row.addWidget(self.team_filter)
-        filter_row.addWidget(QLabel("scope:"))
+        filter_row.addWidget(section_label("SCOPE"))
         filter_row.addWidget(self.scope_combo)
-        filter_row.addWidget(QLabel("시즌:"))
+        filter_row.addWidget(section_label("시즌"))
         filter_row.addWidget(self.season_spin)
         filter_row.addStretch()
 
         action_row = QHBoxLayout()
+        action_row.setSpacing(6)
+        action_row.addWidget(self.manual_button)
+        action_row.addWidget(self.season_ratio_button)
+        action_row.addStretch()
         action_row.addWidget(self.refresh_button)
         action_row.addWidget(self.export_button)
         action_row.addWidget(self.export_streak_button)
-        action_row.addWidget(self.manual_button)
-        action_row.addWidget(self.season_ratio_button)
         action_row.addWidget(self.edit_button)
         action_row.addWidget(self.delete_button)
-        action_row.addStretch()
-        action_row.addWidget(QLabel("F2: 수정 · 더블클릭: 게임 로그"))
+
+        hint = QLabel("F2: 수정 · 더블클릭: 게임 로그")
+        hint.setObjectName("mutedLabel")
+
+        filter_card = CardPanel()
+        filter_card.content_layout.addLayout(filter_row)
+        filter_card.content_layout.addWidget(self.table_panel.filter_bar)
+        filter_card.content_layout.addLayout(action_row)
+        filter_card.content_layout.addWidget(hint)
+
+        table_card = CardPanel("마일스톤 이력")
+        table_card.add_widget(self.table_panel.table)
 
         meta_row = QHBoxLayout()
         meta_row.addWidget(self.meta_label, stretch=1)
         meta_row.addWidget(self.game_log_button)
+        self.meta_card = CardPanel()
+        self.meta_card.content_layout.addLayout(meta_row)
+        self.meta_card.setVisible(False)
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(4)
+        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.banner)
-        layout.addLayout(filter_row)
-        layout.addLayout(action_row)
-        layout.addWidget(self.table_panel, stretch=1)
+        layout.addWidget(filter_card)
+        layout.addWidget(table_card, stretch=1)
         layout.addWidget(self.log_hint_panel)
-        layout.addLayout(meta_row)
+        layout.addWidget(self.meta_card)
 
         self._selected_record_id: int | None = None
         self.refresh()
@@ -271,9 +288,9 @@ class MilestoneView(QWidget):
                 if record_id is not None:
                     item.setData(Qt.ItemDataRole.UserRole, int(record_id))
                 if bool(record.get("is_manual")) and col_idx == 4:
-                    item.setForeground(QColor(AMBER_300))
+                    item.setForeground(QColor(AMBER_TEXT))
                 if self._highlight_id is not None and record.get("id") == self._highlight_id:
-                    item.setBackground(QColor("#422006"))
+                    item.setBackground(QColor("#3a2f00"))
                 self.table_panel.table.setItem(row_idx, col_idx, item)
         self.table_panel.table.setSortingEnabled(True)
         if self._highlight_id is not None:
@@ -503,7 +520,9 @@ class MilestoneView(QWidget):
             self.meta_label.setText("")
             self.game_log_button.setEnabled(False)
             self.log_hint_panel.hide()
+            self.meta_card.setVisible(False)
             return
+        self.meta_card.setVisible(True)
         self._selected_record_id = int(record["id"])
         parts: list[str] = []
         if record.get("scope"):

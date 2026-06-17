@@ -10,20 +10,20 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from gui.theme import AMBER_300, AMBER_800, AMBER_950, BLUE_300, BLUE_800, BLUE_950, RED_200, RED_400, RED_800, RED_950
+from gui.theme import AMBER_BG, AMBER_BORDER, AMBER_TEXT, BLUE_BG, BLUE_BORDER, BLUE_TEXT, RED_BG, RED_BORDER, RED_TEXT
 
 _BANNER_STYLES = {
     "error": (
-        f"background:{RED_950};color:{RED_200};"
-        f"border:1px solid {RED_800};border-radius:8px;"
+        f"background:{RED_BG};color:{RED_TEXT};"
+        f"border:1px solid {RED_BORDER};border-radius:8px;"
     ),
     "warning": (
-        f"background:{AMBER_950};color:{AMBER_300};"
-        f"border:1px solid {AMBER_800};border-radius:8px;"
+        f"background:{AMBER_BG};color:{AMBER_TEXT};"
+        f"border:1px solid {AMBER_BORDER};border-radius:8px;"
     ),
     "info": (
-        f"background:{BLUE_950};color:{BLUE_300};"
-        f"border:1px solid {BLUE_800};border-radius:8px;"
+        f"background:{BLUE_BG};color:{BLUE_TEXT};"
+        f"border:1px solid {BLUE_BORDER};border-radius:8px;"
     ),
 }
 
@@ -41,7 +41,7 @@ class ErrorBanner(QWidget):
         self._close = QPushButton("×")
         self._close.setFixedWidth(28)
         self._close.setFlat(True)
-        self._close.setStyleSheet(f"color: {RED_400}; font-weight: bold; border: none;")
+        self._close.setStyleSheet(f"color: {RED_TEXT}; font-weight: bold; border: none;")
         self._close.clicked.connect(self.hide)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 8, 10, 8)

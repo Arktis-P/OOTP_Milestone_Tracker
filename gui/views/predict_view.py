@@ -25,10 +25,11 @@ from core.roster.korean_names import (
     load_roster_player_names,
 )
 from core.stats.aggregator import Aggregator
+from gui.theme import RED_BG, RED_TEXT
+from gui.widgets.card_panel import CardPanel, section_label
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.grade_styles import apply_grade_style
 from gui.widgets.table_widgets import SortableTable
-from gui.theme import RED_200, RED_950
 
 
 class PredictView(QWidget):
@@ -46,7 +47,7 @@ class PredictView(QWidget):
         self._initial_load_done = False
 
         self.banner = ErrorBanner(self)
-        self.refresh_button = QPushButton("목록 재생성")
+        self.refresh_button = QPushButton("🔄 목록 재생성")
         self.refresh_button.setToolTip(
             "추적 대상 통산 마일스톤 목록을 처음부터 다시 만듭니다.\n"
             "평소에는 박스스코어 가져오기 시 자동으로 갱신됩니다."
@@ -62,18 +63,25 @@ class PredictView(QWidget):
         self.player_filter.currentIndexChanged.connect(self.refresh)
         self.grade_filter.currentIndexChanged.connect(self.refresh)
 
-        self.near_only_checkbox = QCheckBox("임박만 보기")
+        self.near_only_checkbox = QCheckBox("🔥 임박만 보기")
         self.near_only_checkbox.toggled.connect(self.refresh)
 
+        title = QLabel("마일스톤 예측 (통산)")
+        title.setObjectName("pageTitle")
+
         controls = QHBoxLayout()
-        controls.addWidget(QLabel("마일스톤 예측 (통산)"))
+        controls.setSpacing(10)
+        controls.addWidget(title)
         controls.addStretch()
-        controls.addWidget(QLabel("선수:"))
+        controls.addWidget(section_label("선수"))
         controls.addWidget(self.player_filter)
-        controls.addWidget(QLabel("등급:"))
+        controls.addWidget(section_label("등급"))
         controls.addWidget(self.grade_filter)
         controls.addWidget(self.near_only_checkbox)
         controls.addWidget(self.refresh_button)
+
+        filter_card = CardPanel()
+        filter_card.content_layout.addLayout(controls)
 
         self.table = SortableTable(
             [
@@ -89,11 +97,15 @@ class PredictView(QWidget):
                 "이번 시즌",
             ]
         )
+        table_card = CardPanel("통산 마일스톤 예측 목록")
+        table_card.add_widget(self.table)
 
         layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.banner)
-        layout.addLayout(controls)
-        layout.addWidget(self.table)
+        layout.addWidget(filter_card)
+        layout.addWidget(table_card, stretch=1)
 
         self._reload_player_filter()
 
@@ -167,8 +179,8 @@ class PredictView(QWidget):
             self.settings.import_export_dir or self.settings.initial_stats_dir
         )
 
-        near_row_bg = QColor(RED_950)
-        near_row_fg = QColor(RED_200)
+        near_row_bg = QColor(RED_BG)
+        near_row_fg = QColor(RED_TEXT)
 
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(predictions))

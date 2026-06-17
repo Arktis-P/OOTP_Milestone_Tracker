@@ -34,6 +34,7 @@ from core.roster.row_access import row_get
 from gui.widgets.bulk_rating_dialog import BulkRatingDialog
 from gui.widgets.player_rating_dialog import PlayerRatingDialog
 from gui.widgets.table_widgets import NumericSortItem, TablePanel
+from gui.widgets.card_panel import CardPanel, section_label
 
 _LEAGUE_ITEMS: list[tuple[str, RosterLeague]] = [
     ("MLB", "mlb"),
@@ -79,6 +80,7 @@ class RosterView(QWidget):
 
         self.backup_button = QPushButton("원본 복사본 저장")
         self.save_button = QPushButton("저장")
+        self.save_button.setObjectName("primaryButton")
         self.save_button.setEnabled(False)
         self.backup_button.clicked.connect(self.save_backup)
         self.save_button.clicked.connect(self.save_file)
@@ -86,8 +88,21 @@ class RosterView(QWidget):
         filter_button = QPushButton("필터 적용")
         filter_button.clicked.connect(self.apply_filter)
 
+        self.table_panel = TablePanel(
+            _TABLE_COLUMNS,
+            placeholder="선수 검색...",
+        )
+        self.table_panel.table.cellDoubleClicked.connect(self._on_row_double_clicked)
+        self.info_label = QLabel(
+            "세이브의 import_export 폴더에서 로스터를 불러옵니다. "
+            "선수 더블클릭으로 레이팅을 편집하세요."
+        )
+        self.info_label.setObjectName("mutedLabel")
+        self.info_label.setWordWrap(True)
+
         source_row = QHBoxLayout()
-        source_row.addWidget(QLabel("리그"))
+        source_row.setSpacing(10)
+        source_row.addWidget(section_label("리그"))
         source_row.addWidget(self.league_combo)
         source_row.addWidget(self.path_label, stretch=1)
         source_row.addWidget(self.reload_button)
@@ -104,22 +119,20 @@ class RosterView(QWidget):
         action_row.addWidget(self.backup_button)
         action_row.addWidget(self.save_button)
 
-        self.table_panel = TablePanel(
-            _TABLE_COLUMNS,
-            placeholder="선수 검색...",
-        )
-        self.table_panel.table.cellDoubleClicked.connect(self._on_row_double_clicked)
-        self.info_label = QLabel(
-            "세이브의 import_export 폴더에서 로스터를 불러옵니다. "
-            "선수 더블클릭으로 레이팅을 편집하세요."
-        )
+        toolbar_card = CardPanel("레이팅 편집")
+        toolbar_card.content_layout.addLayout(source_row)
+        toolbar_card.content_layout.addLayout(filter_form)
+        toolbar_card.content_layout.addLayout(action_row)
+        toolbar_card.content_layout.addWidget(self.info_label)
+
+        table_card = CardPanel("로스터 목록")
+        table_card.add_widget(self.table_panel)
 
         layout = QVBoxLayout(self)
-        layout.addLayout(source_row)
-        layout.addLayout(filter_form)
-        layout.addLayout(action_row)
-        layout.addWidget(self.info_label)
-        layout.addWidget(self.table_panel)
+        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(toolbar_card)
+        layout.addWidget(table_card, stretch=1)
 
         self._reload_file(show_warning=False)
 

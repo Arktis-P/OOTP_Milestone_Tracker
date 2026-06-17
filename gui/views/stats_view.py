@@ -45,7 +45,8 @@ from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.widgets.player_game_log_dialog import PlayerGameLogDialog
 from gui.widgets.player_milestone_timeline import PlayerMilestoneTimeline
 from gui.widgets.table_widgets import SortableTable
-from gui.theme import header_panel_style
+from gui.theme import TEXT_SECONDARY, header_panel_style, hint_style
+from gui.widgets.card_panel import CardPanel, section_label
 from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
 
 
@@ -78,7 +79,7 @@ class StatsView(QWidget):
         self._career_mode = False
 
         self.banner = ErrorBanner(self)
-        self.import_button = QPushButton("박스스코어 가져오기")
+        self.import_button = QPushButton("📥  박스스코어 가져오기")
         self.import_button.setObjectName("primaryButton")
         self.import_button.clicked.connect(self.start_import)
         self.mlb_only_checkbox = QCheckBox("MLB만")
@@ -89,12 +90,30 @@ class StatsView(QWidget):
         self.mlb_only_checkbox.toggled.connect(self._on_mlb_only_toggled)
         self.progress_label = QLabel("")
         self.progress_label.setVisible(False)
+        self.progress_label.setStyleSheet(hint_style(TEXT_SECONDARY))
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
 
         self.career_toggle = QPushButton("통산 기록 보기")
         self.career_toggle.setCheckable(True)
         self.career_toggle.toggled.connect(self._on_career_toggled)
+
+        mode_wrap = QWidget()
+        mode_layout = QHBoxLayout(mode_wrap)
+        mode_layout.setContentsMargins(0, 0, 0, 0)
+        mode_layout.setSpacing(0)
+        self.mode_season_btn = QPushButton("시즌")
+        self.mode_career_btn = QPushButton("통산")
+        for btn in (self.mode_season_btn, self.mode_career_btn):
+            btn.setCheckable(True)
+            btn.setFlat(True)
+            btn.setObjectName("modeBtn")
+        self.mode_season_btn.setChecked(True)
+        self.mode_season_btn.clicked.connect(lambda: self._set_mode_buttons("season"))
+        self.mode_career_btn.clicked.connect(lambda: self._set_mode_buttons("career"))
+        mode_layout.addWidget(self.mode_season_btn)
+        mode_layout.addWidget(self.mode_career_btn)
+        self.career_toggle.hide()
 
         self.season_combo = QComboBox()
         self.season_combo.currentIndexChanged.connect(self._on_season_changed)
@@ -116,7 +135,6 @@ class StatsView(QWidget):
         self._search_timer.timeout.connect(self._apply_player_filter)
 
         self.player_list = QListWidget()
-        self.player_list.setMaximumWidth(220)
         self.player_list.currentRowChanged.connect(self._on_list_selection)
 
         self.player_header = QLabel()
@@ -155,48 +173,63 @@ class StatsView(QWidget):
         import_row.addWidget(self.progress_label)
         import_row.addWidget(self.progress_bar, stretch=1)
         import_row.addStretch()
-        import_row.addWidget(self.career_toggle)
+        import_row.addWidget(mode_wrap)
 
         filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel("시즌:"))
+        filter_row.setSpacing(10)
+        filter_row.addWidget(section_label("시즌"))
         filter_row.addWidget(self.season_combo)
-        filter_row.addWidget(QLabel("포지션:"))
+        filter_row.addWidget(section_label("포지션"))
         filter_row.addWidget(self.position_combo)
         filter_row.addWidget(self.player_search, stretch=1)
 
-        right_panel = QVBoxLayout()
-        right_panel.setSpacing(4)
-        right_panel.addWidget(self.player_header)
-        right_panel.addWidget(self.info_label)
-        right_panel.addWidget(self.stats_tabs, stretch=1)
+        toolbar_card = CardPanel()
+        toolbar_card.content_layout.addLayout(import_row)
+        toolbar_card.content_layout.addLayout(filter_row)
 
-        right_widget = QWidget()
-        right_widget.setLayout(right_panel)
+        list_card = CardPanel("추적 대상 선수")
+        list_card.add_widget(self.player_list)
+
+        detail_card = CardPanel()
+        detail_card.content_layout.addWidget(self.player_header)
+        detail_card.content_layout.addWidget(self.info_label)
+        detail_card.content_layout.addWidget(self.stats_tabs, stretch=1)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(self.player_list)
-        splitter.addWidget(right_widget)
+        splitter.addWidget(list_card)
+        splitter.addWidget(detail_card)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([220, 540])
+        splitter.setSizes([240, 560])
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(4)
+        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.banner)
-        layout.addLayout(import_row)
-        layout.addLayout(filter_row)
+        layout.addWidget(toolbar_card)
         layout.addWidget(splitter, stretch=1)
 
         self.player_search.textChanged.connect(self._on_search_text_changed)
         self._reload_seasons()
         self.reload_players()
 
+    def _set_mode_buttons(self, mode: str) -> None:
+        career = mode == "career"
+        self.mode_season_btn.setChecked(not career)
+        self.mode_career_btn.setChecked(career)
+        if self.career_toggle.isChecked() != career:
+            self.career_toggle.blockSignals(True)
+            self.career_toggle.setChecked(career)
+            self.career_toggle.blockSignals(False)
+        self._on_career_toggled(career)
+
     def _on_search_text_changed(self, _text: str) -> None:
         self._search_timer.start()
 
     def _on_career_toggled(self, checked: bool) -> None:
         self._career_mode = checked
-        self.career_toggle.setText("시즌 기록 보기" if checked else "통산 기록 보기")
+        self.mode_season_btn.setChecked(not checked)
+        self.mode_career_btn.setChecked(checked)
         self.season_combo.setEnabled(not checked)
         self._refresh_player_stats()
 

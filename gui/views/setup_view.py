@@ -67,7 +67,7 @@ class SetupView(QWidget):
         self._selected_version: int | None = None
 
         title = QLabel("OOTP Milestone Tracker")
-        title.setStyleSheet("font-size: 18px; font-weight: bold;")
+        title.setObjectName("pageTitle")
 
         self.save_root_input = QLineEdit()
         self.save_root_input.setPlaceholderText("OOTP saved_games 폴더 경로")

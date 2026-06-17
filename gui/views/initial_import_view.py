@@ -25,6 +25,7 @@ from core.stats.aggregator import Aggregator
 from core.stats.initial_import import ImportMode, InitialImporter, InitImportResult
 from gui.widgets.init_compare_dialog import InitCompareDialog
 from gui.widgets.mlb_team_discovery import prompt_unknown_mlb_teams
+from gui.widgets.card_panel import CardPanel
 from gui.workers.initial_import_worker import InitialImportWorker
 
 
@@ -71,7 +72,8 @@ class InitialImportView(QWidget):
 
         batting_button = QPushButton("타격")
         pitching_button = QPushButton("투구")
-        all_button = QPushButton("전체 임포트")
+        all_button = QPushButton("📥  데이터베이스 적재")
+        all_button.setObjectName("primaryButton")
         self._import_buttons = (batting_button, pitching_button, all_button)
         batting_button.clicked.connect(lambda: self._run_import("batting"))
         pitching_button.clicked.connect(lambda: self._run_import("pitching"))
@@ -98,15 +100,30 @@ class InitialImportView(QWidget):
         mode_layout.addWidget(self.mode_refresh)
         mode_layout.addWidget(self.mode_mid)
 
+        title = QLabel("과거 통산 및 시즌 Baseline 초기값 등록")
+        title.setObjectName("pageTitle")
+        subtitle = QLabel(
+            "OOTP에서 export한 player_batting_stats.txt · player_pitching_stats.txt "
+            "파일로 통산 베이스라인을 적재합니다."
+        )
+        subtitle.setObjectName("mutedLabel")
+        subtitle.setWordWrap(True)
+        self.status_label.setObjectName("mutedLabel")
+
+        main_card = CardPanel()
+        main_card.content_layout.addWidget(title)
+        main_card.content_layout.addWidget(subtitle)
+        main_card.content_layout.addWidget(self.status_label)
+        main_card.content_layout.addWidget(files_group)
+        main_card.content_layout.addWidget(mode_group_box)
+        main_card.content_layout.addLayout(button_row)
+        main_card.content_layout.addWidget(self.progress_label)
+        main_card.content_layout.addWidget(self.progress_bar)
+
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("프로그램 도입 이전 통산 기록 (OOTP MLB export)"))
-        layout.addWidget(self.status_label)
-        layout.addWidget(files_group)
-        layout.addWidget(mode_group_box)
-        layout.addLayout(button_row)
-        layout.addWidget(self.progress_label)
-        layout.addWidget(self.progress_bar)
-        layout.addStretch()
+        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(main_card, stretch=1)
 
         self._prefill_paths()
 

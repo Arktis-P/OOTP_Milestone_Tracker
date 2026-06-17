@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from gui.theme import EMERALD_400, EMERALD_500, EMERALD_950, SLATE_400, SLATE_500, SLATE_800, SLATE_950
+from gui.theme import ACCENT_TEXT, BG_PANEL, BORDER, TEXT_MUTED, TEXT_SECONDARY
 
 _NAV_SECTIONS: list[tuple[str | None, list[tuple[int, str, str]]]] = [
     (
@@ -34,34 +34,6 @@ _NAV_SECTIONS: list[tuple[str | None, list[tuple[int, str, str]]]] = [
     ),
 ]
 
-_BTN_ACTIVE = (
-    f"QPushButton#navBtnActive {{"
-    f"  background-color: {EMERALD_950};"
-    f"  color: {EMERALD_400};"
-    f"  border: none;"
-    f"  border-left: 4px solid {EMERALD_500};"
-    f"  border-radius: 8px;"
-    f"  text-align: left;"
-    f"  padding: 8px 10px;"
-    f"  font-weight: 600;"
-    f"}}"
-)
-_BTN_IDLE = (
-    f"QPushButton#navBtnIdle {{"
-    f"  background-color: transparent;"
-    f"  color: {SLATE_400};"
-    f"  border: none;"
-    f"  border-left: 4px solid transparent;"
-    f"  border-radius: 8px;"
-    f"  text-align: left;"
-    f"  padding: 8px 10px;"
-    f"}}"
-    f"QPushButton#navBtnIdle:hover {{"
-    f"  background-color: {SLATE_950};"
-    f"  color: #e2e8f0;"
-    f"}}"
-)
-
 
 class SidebarNav(QWidget):
     """Vertical nav with section headers and page index signals."""
@@ -74,12 +46,6 @@ class SidebarNav(QWidget):
         super().__init__(parent)
         self.setObjectName("sidebarNav")
         self.setFixedWidth(200)
-        self.setStyleSheet(
-            f"QWidget#sidebarNav {{"
-            f"  background-color: {SLATE_950};"
-            f"  border-right: 1px solid {SLATE_800};"
-            f"}}"
-        )
 
         self._buttons: dict[int, QPushButton] = {}
         self._setup_badge: QLabel | None = None
@@ -94,12 +60,12 @@ class SidebarNav(QWidget):
                 if root.count() > 0:
                     line = QFrame()
                     line.setFrameShape(QFrame.Shape.HLine)
-                    line.setStyleSheet(f"color: {SLATE_800};")
+                    line.setStyleSheet(f"color: {BORDER};")
                     root.addWidget(line)
                     root.addSpacing(4)
                 header = QLabel(section_title.upper())
                 header.setStyleSheet(
-                    f"color: {SLATE_500}; font-size: 10px; font-weight: 700;"
+                    f"color: {TEXT_MUTED}; font-size: 10px; font-weight: 700;"
                     "letter-spacing: 0.05em; padding: 4px 8px;"
                 )
                 root.addWidget(header)
@@ -118,7 +84,7 @@ class SidebarNav(QWidget):
                     row_layout.setSpacing(4)
                     row_layout.addWidget(btn, stretch=1)
                     self._setup_badge = QLabel("●")
-                    self._setup_badge.setStyleSheet("color: #ef4444; font-size: 10px;")
+                    self._setup_badge.setStyleSheet("color: #f14c4c; font-size: 10px;")
                     self._setup_badge.setVisible(False)
                     self._setup_badge.setToolTip("받을 수 있는 기준 파일 업데이트")
                     row_layout.addWidget(self._setup_badge)
@@ -129,28 +95,24 @@ class SidebarNav(QWidget):
         root.addStretch()
 
         footer = QFrame()
-        footer.setStyleSheet(
-            f"background-color: #0f172a99; border: 1px solid {SLATE_800};"
-            "border-radius: 8px; padding: 6px;"
-        )
+        footer.setObjectName("sidebarFooter")
         footer_layout = QVBoxLayout(footer)
         footer_layout.setContentsMargins(8, 8, 8, 8)
         footer_layout.setSpacing(2)
         cap = QLabel("배포 정보")
-        cap.setStyleSheet(f"color: {SLATE_500}; font-size: 10px;")
+        cap.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
         cap.setAlignment(Qt.AlignmentFlag.AlignCenter)
         store = QLabel("%APPDATA% 저장")
-        store.setStyleSheet(f"color: {EMERALD_400}; font-size: 11px; font-weight: 700;")
+        store.setStyleSheet(f"color: {ACCENT_TEXT}; font-size: 11px; font-weight: 700;")
         store.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sub = QLabel("SQLite DB 연동")
-        sub.setStyleSheet(f"color: {SLATE_400}; font-size: 9px;")
+        sub.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9px;")
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         footer_layout.addWidget(cap)
         footer_layout.addWidget(store)
         footer_layout.addWidget(sub)
         root.addWidget(footer)
 
-        self.setStyleSheet(self.styleSheet() + _BTN_ACTIVE + _BTN_IDLE)
         self.set_current_index(0, emit=False)
 
     def set_current_index(self, index: int, *, emit: bool = True) -> None:
