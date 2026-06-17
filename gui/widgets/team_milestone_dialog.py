@@ -19,6 +19,7 @@ from core.milestone.checker import MilestoneChecker
 from core.milestone.definitions import MilestoneDefinitions
 from core.stats.aggregator import Aggregator
 from core.stats.team_filter import expand_tracked_teams, sorted_team_items
+from gui.ui_compact import scale_size
 
 
 class TeamMilestoneDialog(QDialog):
@@ -34,7 +35,7 @@ class TeamMilestoneDialog(QDialog):
         self.milestones = milestones
         self.settings = settings
         self.setWindowTitle("팀 마일스톤 수동 입력")
-        self.resize(420, 280)
+        self.resize(*scale_size(420, 280))
 
         self.team_combo = QComboBox()
         team_map = {

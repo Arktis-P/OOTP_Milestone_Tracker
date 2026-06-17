@@ -51,6 +51,7 @@ from core.stats.team_filter import (
     expand_tracked_teams,
     merge_team_maps,
 )
+from gui.ui_compact import hint_style, scale_size
 
 _TAB_MILESTONE = 0
 _TAB_AWARD = 1
@@ -71,7 +72,7 @@ class ManualMilestoneDialog(QDialog):
         self.milestones = milestones
         self.settings = settings
         self.setWindowTitle("수동 입력")
-        self.resize(540, 560)
+        self.resize(*scale_size(540, 560))
 
         self.tabs = QTabWidget()
         self.tabs.addTab(QWidget(), "마일스톤")
@@ -152,7 +153,7 @@ class ManualMilestoneDialog(QDialog):
 
         self.manual_hint = QLabel("")
         self.manual_hint.setWordWrap(True)
-        self.manual_hint.setStyleSheet("color: #64748b; font-size: 12px;")
+        self.manual_hint.setStyleSheet(hint_style())
         self.manual_hint.setText(
             "추적 팀 선수는 목록에서 고르고, 아직 DB에 없는 선수는 풀 네임을 "
             "직접 입력하거나 '+ 선수 추가'로 등록할 수 있습니다."
@@ -214,7 +215,7 @@ class ManualMilestoneDialog(QDialog):
             "합류·이탈 선수는 쉼표로 구분하세요."
         )
         self.transfer_hint.setWordWrap(True)
-        self.transfer_hint.setStyleSheet("color: #64748b; font-size: 12px;")
+        self.transfer_hint.setStyleSheet(hint_style())
 
         self.transfer_date_edit = QLineEdit()
         self.transfer_date_edit.setPlaceholderText("2026-03-01")
@@ -277,7 +278,7 @@ class ManualMilestoneDialog(QDialog):
 
         self.injury_hint = QLabel("선수 부상 발생·복귀 등 부상 관련 내역을 기록합니다.")
         self.injury_hint.setWordWrap(True)
-        self.injury_hint.setStyleSheet("color: #64748b; font-size: 12px;")
+        self.injury_hint.setStyleSheet(hint_style())
 
         self.injury_date_edit = QLineEdit()
         self.injury_date_edit.setPlaceholderText("2026-03-01")

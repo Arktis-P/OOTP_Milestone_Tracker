@@ -78,7 +78,7 @@ class TrackedTeamsWidget(QWidget):
         combo_row.addWidget(self.custom_button)
 
         self.selected_list = QListWidget()
-        self.selected_list.setMaximumHeight(120)
+        self.selected_list.setMaximumHeight(90)
         self.remove_button = QPushButton("선택 제거")
         self.remove_button.clicked.connect(self._remove_selected)
 

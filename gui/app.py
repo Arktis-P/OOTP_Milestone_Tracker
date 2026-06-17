@@ -26,6 +26,7 @@ from gui.views.predict_view import PredictView
 from gui.views.roster_view import RosterView
 from gui.views.setup_view import SetupView
 from gui.views.stats_view import StatsView
+from gui.ui_compact import MAIN_WINDOW_SIZE, SETUP_WINDOW_SIZE, compact_widget
 
 
 class MainWindow(QMainWindow):
@@ -42,7 +43,7 @@ class MainWindow(QMainWindow):
         self.settings = self.settings_manager.ensure_derived_paths(self.settings)
 
         self.setWindowTitle("OOTP Milestone Tracker")
-        self.resize(1100, 720)
+        self.resize(*MAIN_WINDOW_SIZE)
 
         self._aggregator = Aggregator(resolve_data_path(self.settings.db_path))
         self._milestones = load_milestones(
@@ -119,6 +120,8 @@ class MainWindow(QMainWindow):
         self._tabs.addTab(setup_tab, "설정")
 
         self._connect_tab_signals()
+        for index in range(self._tabs.count()):
+            compact_widget(self._tabs.widget(index))
 
     def _connect_tab_signals(self) -> None:
         if self._milestone_view:
@@ -276,9 +279,10 @@ class MainWindow(QMainWindow):
     def open_setup_dialog(self) -> None:
         dialog = QDialog(self)
         dialog.setWindowTitle("리그 설정")
-        dialog.resize(640, 520)
+        dialog.resize(*SETUP_WINDOW_SIZE)
 
         setup = SetupView(self.settings_manager, self.settings, dialog)
+        compact_widget(setup, margin=6, spacing=4)
         setup.setup_completed.connect(
             lambda updated: self._apply_settings(dialog, updated)
         )
@@ -304,11 +308,12 @@ class _SetupWindow(QMainWindow):
         self._confirmed = False
 
         self.setWindowTitle("OOTP Milestone Tracker — 설정")
-        self.resize(640, 520)
+        self.resize(*SETUP_WINDOW_SIZE)
 
         setup = SetupView(settings_manager, parent=self)
         setup.setup_completed.connect(self._on_completed)
         self.setCentralWidget(setup)
+        compact_widget(setup, margin=6, spacing=4)
 
     def _on_completed(self, settings: AppSettings) -> None:
         self._confirmed = True

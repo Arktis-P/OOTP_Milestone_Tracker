@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSplitter,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -113,13 +114,14 @@ class StatsView(QWidget):
         self._search_timer.timeout.connect(self._apply_player_filter)
 
         self.player_list = QListWidget()
+        self.player_list.setMaximumWidth(220)
         self.player_list.currentRowChanged.connect(self._on_list_selection)
 
         self.player_header = QLabel()
         self.player_header.setWordWrap(True)
         self.player_header.setTextFormat(Qt.TextFormat.RichText)
         self.player_header.setStyleSheet(
-            "padding: 8px; background: #2a2a2a; border-radius: 4px;"
+            "padding: 6px; background: #2a2a2a; border-radius: 4px;"
         )
 
         self.info_label = QLabel()
@@ -130,34 +132,43 @@ class StatsView(QWidget):
         self.batting_table.cellDoubleClicked.connect(self._open_game_logs)
         self.pitching_table.cellDoubleClicked.connect(self._open_game_logs)
 
-        top = QHBoxLayout()
-        top.addWidget(QLabel("선수 기록"))
-        top.addStretch()
-        top.addWidget(self.career_toggle)
-
-        controls = QHBoxLayout()
-        controls.addWidget(self.import_button)
-        controls.addWidget(self.mlb_only_checkbox)
-        controls.addWidget(self.progress_label)
-        controls.addWidget(self.progress_bar, stretch=1)
-        controls.addWidget(QLabel("시즌:"))
-        controls.addWidget(self.season_combo)
-        controls.addWidget(QLabel("포지션:"))
-        controls.addWidget(self.position_combo)
-        controls.addWidget(QLabel("검색:"))
-        controls.addWidget(self.player_search, stretch=1)
-
-        right_panel = QVBoxLayout()
-        right_panel.addWidget(self.player_header)
-        right_panel.addWidget(self.info_label)
-        right_panel.addWidget(QLabel("타격"))
-        right_panel.addWidget(self.batting_table)
-        right_panel.addWidget(QLabel("투구"))
-        right_panel.addWidget(self.pitching_table)
         self.milestone_timeline = PlayerMilestoneTimeline(
             self.aggregator, self.milestones, self.settings
         )
-        right_panel.addWidget(self.milestone_timeline)
+
+        self.stats_tabs = QTabWidget()
+        batting_page = QWidget()
+        batting_layout = QVBoxLayout(batting_page)
+        batting_layout.setContentsMargins(4, 4, 4, 4)
+        batting_layout.addWidget(self.batting_table)
+        pitching_page = QWidget()
+        pitching_layout = QVBoxLayout(pitching_page)
+        pitching_layout.setContentsMargins(4, 4, 4, 4)
+        pitching_layout.addWidget(self.pitching_table)
+        self.stats_tabs.addTab(batting_page, "타격")
+        self.stats_tabs.addTab(pitching_page, "투구")
+        self.stats_tabs.addTab(self.milestone_timeline, "마일스톤")
+
+        import_row = QHBoxLayout()
+        import_row.addWidget(self.import_button)
+        import_row.addWidget(self.mlb_only_checkbox)
+        import_row.addWidget(self.progress_label)
+        import_row.addWidget(self.progress_bar, stretch=1)
+        import_row.addStretch()
+        import_row.addWidget(self.career_toggle)
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("시즌:"))
+        filter_row.addWidget(self.season_combo)
+        filter_row.addWidget(QLabel("포지션:"))
+        filter_row.addWidget(self.position_combo)
+        filter_row.addWidget(self.player_search, stretch=1)
+
+        right_panel = QVBoxLayout()
+        right_panel.setSpacing(4)
+        right_panel.addWidget(self.player_header)
+        right_panel.addWidget(self.info_label)
+        right_panel.addWidget(self.stats_tabs, stretch=1)
 
         right_widget = QWidget()
         right_widget.setLayout(right_panel)
@@ -165,14 +176,16 @@ class StatsView(QWidget):
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self.player_list)
         splitter.addWidget(right_widget)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 3)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
+        splitter.setSizes([220, 540])
 
         layout = QVBoxLayout(self)
+        layout.setSpacing(4)
         layout.addWidget(self.banner)
-        layout.addLayout(top)
-        layout.addLayout(controls)
-        layout.addWidget(splitter)
+        layout.addLayout(import_row)
+        layout.addLayout(filter_row)
+        layout.addWidget(splitter, stretch=1)
 
         self.player_search.textChanged.connect(self._on_search_text_changed)
         self._reload_seasons()

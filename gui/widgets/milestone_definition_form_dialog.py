@@ -23,6 +23,7 @@ from core.milestone.definitions import (
     VALID_SCOPES,
     validate_milestone_definition,
 )
+from gui.ui_compact import scale_size
 
 
 class MilestoneDefinitionFormDialog(QDialog):
@@ -39,7 +40,7 @@ class MilestoneDefinitionFormDialog(QDialog):
         self._result: MilestoneDefinition | None = None
 
         self.setWindowTitle("마일스톤 기준 수정" if item else "마일스톤 기준 추가")
-        self.resize(460, 420)
+        self.resize(*scale_size(460, 420))
 
         self.category_combo = QComboBox()
         for value in sorted(VALID_CATEGORIES):

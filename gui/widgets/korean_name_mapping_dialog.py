@@ -18,13 +18,14 @@ from PyQt6.QtWidgets import (
 )
 
 from core.roster.korean_names import KoreanNameStore, PendingName, pending_full_name_label
+from gui.ui_compact import scale_size
 
 
 class KoreanNameMappingDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("한글 이름 매핑")
-        self.resize(720, 520)
+        self.resize(*scale_size(720, 520))
         self._store = KoreanNameStore.load()
 
         intro = QLabel(

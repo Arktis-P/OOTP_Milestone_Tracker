@@ -25,6 +25,7 @@ from core.milestone.definitions import (
     save_milestones_csv,
 )
 from gui.widgets.milestone_definition_form_dialog import MilestoneDefinitionFormDialog
+from gui.ui_compact import scale_size
 from gui.widgets.table_widgets import FilterBar
 
 
@@ -38,7 +39,7 @@ class MilestoneDefinitionsDialog(QDialog):
         self._items: list[MilestoneDefinition] = list(self._definitions.all_milestones)
 
         self.setWindowTitle("마일스톤 기준 관리")
-        self.resize(980, 560)
+        self.resize(*scale_size(980, 560))
 
         intro = QLabel(
             f"마일스톤 달성 판정에 사용되는 기준 목록입니다.\n"

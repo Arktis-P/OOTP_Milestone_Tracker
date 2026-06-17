@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.milestone.checker import MilestoneAchievement
+from gui.ui_compact import scale_size
 
 
 class MilestoneAchievedDialog(QDialog):
@@ -21,7 +22,7 @@ class MilestoneAchievedDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("새로 달성된 마일스톤")
-        self.resize(520, 360)
+        self.resize(*scale_size(520, 360))
 
         table = QTableWidget(len(achievements), 4)
         table.setHorizontalHeaderLabels(["선수", "마일스톤", "등급", "달성일"])

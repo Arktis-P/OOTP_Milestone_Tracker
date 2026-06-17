@@ -38,6 +38,7 @@ from core.roster.ootp_format import player_display_name
 from core.roster.position_filter import POSITION_GROUP_OPTIONS, matches_position_group
 from core.roster.row_access import row_get
 from core.stats.aggregator import Aggregator
+from gui.ui_compact import scale_size
 from gui.widgets.bulk_rating_table import (
     COL_BASE,
     COL_EN,
@@ -62,7 +63,7 @@ class BulkRatingDialog(QDialog):
         self.aggregator = aggregator
         self.settings = settings
         self.setWindowTitle("레이팅 일괄 편집")
-        self.resize(1100, 700)
+        self.resize(*scale_size(1100, 700))
 
         mlb_path, kbo_path = resolve_combined_paths(import_export_dir)
         if not mlb_path and not kbo_path:

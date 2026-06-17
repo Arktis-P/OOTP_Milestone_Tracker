@@ -35,19 +35,15 @@ class PlayerMilestoneTimeline(QWidget):
         self.settings = settings
         self._records: list[dict] = []
 
-        self.title = QLabel("커리어 마일스톤")
-        self.title.setStyleSheet("font-weight: bold; padding-top: 8px;")
         self.empty_label = QLabel("아직 달성한 마일스톤이 없습니다.")
-        self.empty_label.setStyleSheet("color: #9CA3AF; padding: 8px;")
+        self.empty_label.setStyleSheet("color: #9CA3AF; padding: 6px;")
         self.empty_label.setVisible(False)
 
         self.list_widget = QListWidget()
-        self.list_widget.setMaximumHeight(180)
         self.list_widget.itemClicked.connect(self._on_item_clicked)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.title)
+        layout.setContentsMargins(4, 4, 4, 4)
         layout.addWidget(self.list_widget)
         layout.addWidget(self.empty_label)
 

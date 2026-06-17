@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
 
 from core.config import AppSettings
 from core.stats.aggregator import Aggregator
+from gui.ui_compact import scale_size
 from gui.widgets.table_widgets import SortableTable
 
 
@@ -38,7 +39,7 @@ class PlayerGameLogDialog(QDialog):
         self.season = season
 
         self.setWindowTitle(f"{player_name} — {season}시즌 경기별 기록")
-        self.resize(900, 520)
+        self.resize(*scale_size(900, 520))
 
         tabs = QTabWidget()
         self._batting_table = SortableTable(

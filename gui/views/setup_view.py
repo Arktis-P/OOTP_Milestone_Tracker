@@ -125,6 +125,8 @@ class SetupView(QWidget):
 
         self.tracked_teams_widget = TrackedTeamsWidget(self)
         self.tracked_teams_widget.load_from_settings(self.settings)
+        if embedded:
+            self.tracked_teams_widget.selected_list.setMaximumHeight(90)
 
         self.season_games_spin = QSpinBox()
         self.season_games_spin.setRange(1, 200)
@@ -134,65 +136,101 @@ class SetupView(QWidget):
         tracking_layout = QFormLayout(tracking_group)
         tracking_layout.addRow("추적 팀:", self.tracked_teams_widget)
         tracking_layout.addRow("시즌 총 경기:", self.season_games_spin)
-        tracking_layout.addRow(
-            "",
-            QLabel(
-                "MLB 30개 팀 중 선택하거나 수동으로 추가하세요. "
-                "게임에 확장 팀 등 신규 MLB 구단이 추가된 경우에만 "
-                "초기값 임포트 시 추가 여부를 묻습니다."
-            ),
+        tracking_hint = QLabel(
+            "MLB 30개 팀 중 선택하거나 수동으로 추가하세요. "
+            "게임에 확장 팀 등 신규 MLB 구단이 추가된 경우에만 "
+            "초기값 임포트 시 추가 여부를 묻습니다."
         )
+        if not embedded:
+            tracking_layout.addRow("", tracking_hint)
+        else:
+            tracking_hint.hide()
+            tracking_group.setToolTip(tracking_hint.text())
 
         self.korean_names_button = QPushButton("한글 이름 매핑...")
         self.korean_names_button.clicked.connect(self._open_korean_name_mapping)
         self._refresh_korean_names_button()
 
+        names_desc = QLabel(
+            "성·이름 로마자 표기의 한글 매핑을 관리합니다. "
+            "스탯·박스스코어 불러오기 후 미등록 항목이 있으면 여기서 입력하세요."
+        )
         names_group = QGroupBox("한글 이름")
         names_layout = QVBoxLayout(names_group)
+        if not embedded:
+            names_layout.addWidget(names_desc)
+        else:
+            names_desc.hide()
+            self.korean_names_button.setToolTip(names_desc.text())
         names_layout.addWidget(
-            QLabel(
-                "성·이름 로마자 표기의 한글 매핑을 관리합니다. "
-                "스탯·박스스코어 불러오기 후 미등록 항목이 있으면 여기서 입력하세요."
-            )
+            self.korean_names_button, alignment=Qt.AlignmentFlag.AlignLeft
         )
-        names_layout.addWidget(self.korean_names_button, alignment=Qt.AlignmentFlag.AlignLeft)
 
         self.milestones_button = QPushButton("마일스톤 기준 관리...")
         self.milestones_button.clicked.connect(self._open_milestone_definitions)
 
+        milestones_desc = QLabel(
+            "달성 판정에 사용되는 마일스톤 목록을 확인·추가·수정·삭제합니다. "
+            "변경 사항은 milestones.csv에 저장됩니다."
+        )
         milestones_group = QGroupBox("마일스톤 기준")
         milestones_layout = QVBoxLayout(milestones_group)
-        milestones_layout.addWidget(
-            QLabel(
-                "달성 판정에 사용되는 마일스톤 목록을 확인·추가·수정·삭제합니다. "
-                "변경 사항은 milestones.csv에 저장됩니다."
-            )
-        )
+        if not embedded:
+            milestones_layout.addWidget(milestones_desc)
+        else:
+            milestones_desc.hide()
+            self.milestones_button.setToolTip(milestones_desc.text())
         milestones_layout.addWidget(
             self.milestones_button, alignment=Qt.AlignmentFlag.AlignLeft
         )
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(title)
-        layout.addSpacing(12)
-        layout.addWidget(save_root_group)
-        layout.addWidget(league_group)
-        layout.addWidget(season_group)
-        layout.addWidget(tracking_group)
-        layout.addWidget(names_group)
-        layout.addWidget(milestones_group)
-        if embedded:
-            layout.addWidget(self._build_database_reset_group())
-        layout.addWidget(QLabel("선택된 경로:"))
         self.selected_path_label = QLabel("")
         self.selected_path_label.setWordWrap(True)
         self.selected_path_label.setStyleSheet("color: #555;")
-        layout.addWidget(self.selected_path_label)
-        layout.addStretch()
+
         self.confirm_button = QPushButton("확인 및 시작")
         self.confirm_button.clicked.connect(self._confirm)
         self.confirm_button.setDefault(True)
-        layout.addWidget(self.confirm_button, alignment=Qt.AlignmentFlag.AlignRight)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(6)
+        if not embedded:
+            layout.addWidget(title)
+            layout.addSpacing(8)
+            layout.addWidget(save_root_group)
+            layout.addWidget(league_group)
+            layout.addWidget(season_group)
+            layout.addWidget(tracking_group)
+            layout.addWidget(names_group)
+            layout.addWidget(milestones_group)
+            layout.addWidget(QLabel("선택된 경로:"))
+            layout.addWidget(self.selected_path_label)
+            layout.addStretch()
+            layout.addWidget(self.confirm_button, alignment=Qt.AlignmentFlag.AlignRight)
+        else:
+            left_column = QVBoxLayout()
+            left_column.setSpacing(6)
+            left_column.addWidget(save_root_group)
+            left_column.addWidget(league_group)
+            left_column.addWidget(season_group)
+            left_column.addWidget(QLabel("선택된 경로:"))
+            left_column.addWidget(self.selected_path_label)
+
+            right_column = QVBoxLayout()
+            right_column.setSpacing(6)
+            right_column.addWidget(tracking_group)
+            right_column.addWidget(names_group)
+            right_column.addWidget(milestones_group)
+            right_column.addWidget(self._build_database_reset_group())
+            right_column.addStretch()
+
+            columns = QHBoxLayout()
+            columns.addLayout(left_column, stretch=1)
+            columns.addLayout(right_column, stretch=1)
+            layout.addLayout(columns)
+            layout.addWidget(
+                self.confirm_button, alignment=Qt.AlignmentFlag.AlignRight
+            )
 
         self.save_root_input.textChanged.connect(self._on_save_root_changed)
         self.league_combo.currentIndexChanged.connect(self._update_selected_path_label)

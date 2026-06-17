@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.stats.initial_import import StatDiff
+from gui.ui_compact import scale_size
 
 
 class InitCompareDialog(QDialog):
@@ -26,7 +27,7 @@ class InitCompareDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
-        self.resize(640, 420)
+        self.resize(*scale_size(640, 420))
         self._save_confirmed = False
 
         if diffs:

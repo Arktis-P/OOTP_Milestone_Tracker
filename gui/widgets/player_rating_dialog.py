@@ -19,6 +19,7 @@ from core.roster.ootp_format import PlayerRow, player_display_name
 from core.roster.position_filter import position_label
 from core.roster.rating_fields import RATING_SECTIONS, RatingSection
 from core.roster.row_access import RowField, row_get_field, row_set_field
+from gui.ui_compact import scale_size
 
 
 class PlayerRatingDialog(QDialog):
@@ -37,13 +38,13 @@ class PlayerRatingDialog(QDialog):
 
         name = player_display_name(row, fieldnames)
         self.setWindowTitle(f"레이팅 편집 — {name}")
-        self.resize(960, 620)
+        self.resize(*scale_size(960, 620))
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         body = QWidget()
         body_layout = QVBoxLayout(body)
-        body_layout.setSpacing(10)
+        body_layout.setSpacing(8)
 
         for section in RATING_SECTIONS:
             group = QGroupBox(section.title)

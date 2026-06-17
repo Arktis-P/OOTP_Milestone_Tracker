@@ -40,6 +40,7 @@ from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.table_widgets import TablePanel
 from gui.widgets.edit_milestone_record_dialog import EditMilestoneRecordDialog
 from gui.widgets.manual_milestone_dialog import ManualMilestoneDialog
+from gui.ui_compact import hint_style
 
 _TABLE_COLUMNS = [
     "날짜",
@@ -110,9 +111,7 @@ class MilestoneView(QWidget):
 
         self.meta_label = QLabel("")
         self.meta_label.setWordWrap(True)
-        self.meta_label.setStyleSheet(
-            "padding: 6px; color: #64748b; font-size: 12px;"
-        )
+        self.meta_label.setStyleSheet(f"padding: 6px; {hint_style()}")
         self.game_log_button = QPushButton("게임 로그 열기")
         self.game_log_button.setEnabled(False)
         self.game_log_button.clicked.connect(self._open_selected_game_log)
@@ -120,7 +119,7 @@ class MilestoneView(QWidget):
         self.log_hint_panel = QTextEdit()
         self.log_hint_panel.setReadOnly(True)
         self.log_hint_panel.setPlaceholderText("")
-        self.log_hint_panel.setMaximumHeight(140)
+        self.log_hint_panel.setMaximumHeight(100)
         self.log_hint_panel.hide()
 
         self.refresh_button = QPushButton("새로고침")
@@ -142,33 +141,38 @@ class MilestoneView(QWidget):
         self._edit_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F2), self.table_panel.table)
         self._edit_shortcut.activated.connect(self._edit_selected_record)
 
-        button_row = QHBoxLayout()
-        button_row.addWidget(QLabel("대상:"))
-        button_row.addWidget(self.subject_combo)
-        button_row.addWidget(QLabel("팀:"))
-        button_row.addWidget(self.team_filter)
-        button_row.addWidget(QLabel("scope:"))
-        button_row.addWidget(self.scope_combo)
-        button_row.addWidget(QLabel("시즌:"))
-        button_row.addWidget(self.season_spin)
-        button_row.addWidget(self.refresh_button)
-        button_row.addWidget(self.export_button)
-        button_row.addWidget(self.export_streak_button)
-        button_row.addWidget(self.manual_button)
-        button_row.addWidget(self.season_ratio_button)
-        button_row.addWidget(self.edit_button)
-        button_row.addWidget(self.delete_button)
-        button_row.addStretch()
-        button_row.addWidget(QLabel("F2: 수정 · 더블클릭: 게임 로그"))
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("대상:"))
+        filter_row.addWidget(self.subject_combo)
+        filter_row.addWidget(QLabel("팀:"))
+        filter_row.addWidget(self.team_filter)
+        filter_row.addWidget(QLabel("scope:"))
+        filter_row.addWidget(self.scope_combo)
+        filter_row.addWidget(QLabel("시즌:"))
+        filter_row.addWidget(self.season_spin)
+        filter_row.addStretch()
+
+        action_row = QHBoxLayout()
+        action_row.addWidget(self.refresh_button)
+        action_row.addWidget(self.export_button)
+        action_row.addWidget(self.export_streak_button)
+        action_row.addWidget(self.manual_button)
+        action_row.addWidget(self.season_ratio_button)
+        action_row.addWidget(self.edit_button)
+        action_row.addWidget(self.delete_button)
+        action_row.addStretch()
+        action_row.addWidget(QLabel("F2: 수정 · 더블클릭: 게임 로그"))
 
         meta_row = QHBoxLayout()
         meta_row.addWidget(self.meta_label, stretch=1)
         meta_row.addWidget(self.game_log_button)
 
         layout = QVBoxLayout(self)
+        layout.setSpacing(4)
         layout.addWidget(self.banner)
-        layout.addLayout(button_row)
-        layout.addWidget(self.table_panel)
+        layout.addLayout(filter_row)
+        layout.addLayout(action_row)
+        layout.addWidget(self.table_panel, stretch=1)
         layout.addWidget(self.log_hint_panel)
         layout.addLayout(meta_row)
 

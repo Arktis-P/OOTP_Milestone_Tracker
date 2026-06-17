@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
+from PyQt6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QWidget,
+)
 
 _BANNER_STYLES = {
     "error": "background:#FEE2E2;color:#991B1B;border:1px solid #FCA5A5;",

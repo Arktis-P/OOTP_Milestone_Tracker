@@ -19,6 +19,7 @@ from core.milestone.record_edit import (
     validate_record_update,
 )
 from core.stats.aggregator import Aggregator
+from gui.ui_compact import scale_size
 
 
 class EditMilestoneRecordDialog(QDialog):
@@ -38,7 +39,7 @@ class EditMilestoneRecordDialog(QDialog):
             raise ValueError(f"milestone record not found: {record_id}")
 
         self.setWindowTitle("마일스톤 기록 수정")
-        self.resize(480, 420)
+        self.resize(*scale_size(480, 420))
 
         milestone = milestones.get_by_key(str(self._record["milestone_key"]))
         label = (

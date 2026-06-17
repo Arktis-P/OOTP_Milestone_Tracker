@@ -15,7 +15,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-
 class FilterBar(QWidget):
     """Search/filter input bar placed above tables."""
 

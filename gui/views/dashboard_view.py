@@ -70,12 +70,13 @@ class DashboardView(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
 
-        action_row = QHBoxLayout()
-        action_row.addWidget(self.import_button)
-        action_row.addWidget(self.mlb_only_checkbox)
-        action_row.addWidget(self.init_tab_button)
-        action_row.addWidget(self.progress_label)
-        action_row.addWidget(self.progress_bar, stretch=1)
+        header_row = QHBoxLayout()
+        header_row.addWidget(self.status_label, stretch=1)
+        header_row.addWidget(self.import_button)
+        header_row.addWidget(self.mlb_only_checkbox)
+        header_row.addWidget(self.init_tab_button)
+        header_row.addWidget(self.progress_label)
+        header_row.addWidget(self.progress_bar, stretch=1)
 
         self.recent_list = QListWidget()
         self.recent_list.itemClicked.connect(self._on_recent_clicked)
@@ -102,10 +103,9 @@ class DashboardView(QWidget):
         splitter.setStretchFactor(1, 1)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("대시보드"))
-        layout.addWidget(self.status_label)
+        layout.setSpacing(4)
         layout.addWidget(self.banner)
-        layout.addLayout(action_row)
+        layout.addLayout(header_row)
         layout.addWidget(splitter, stretch=1)
 
         self.update_status_summary()
