@@ -28,6 +28,7 @@ from core.stats.aggregator import Aggregator
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.grade_styles import apply_grade_style
 from gui.widgets.table_widgets import SortableTable
+from gui.theme import RED_200, RED_950
 
 
 class PredictView(QWidget):
@@ -166,8 +167,8 @@ class PredictView(QWidget):
             self.settings.import_export_dir or self.settings.initial_stats_dir
         )
 
-        near_row_bg = QColor("#FEE2E2")
-        near_row_fg = QColor("#991B1B")
+        near_row_bg = QColor(RED_950)
+        near_row_fg = QColor(RED_200)
 
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(predictions))

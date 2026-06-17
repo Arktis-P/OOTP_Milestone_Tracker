@@ -41,6 +41,7 @@ from gui.widgets.table_widgets import TablePanel
 from gui.widgets.edit_milestone_record_dialog import EditMilestoneRecordDialog
 from gui.widgets.manual_milestone_dialog import ManualMilestoneDialog
 from gui.ui_compact import hint_style
+from gui.theme import AMBER_300
 
 _TABLE_COLUMNS = [
     "날짜",
@@ -270,9 +271,9 @@ class MilestoneView(QWidget):
                 if record_id is not None:
                     item.setData(Qt.ItemDataRole.UserRole, int(record_id))
                 if bool(record.get("is_manual")) and col_idx == 4:
-                    item.setForeground(QColor("#b45309"))
+                    item.setForeground(QColor(AMBER_300))
                 if self._highlight_id is not None and record.get("id") == self._highlight_id:
-                    item.setBackground(QColor("#FDE68A"))
+                    item.setBackground(QColor("#422006"))
                 self.table_panel.table.setItem(row_idx, col_idx, item)
         self.table_panel.table.setSortingEnabled(True)
         if self._highlight_id is not None:

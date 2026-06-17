@@ -1,4 +1,4 @@
-"""Milestone grade badge colors."""
+"""Milestone grade badge colors (dark-theme friendly)."""
 
 from __future__ import annotations
 
@@ -6,11 +6,11 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QTableWidgetItem
 
 GRADE_COLORS: dict[str, dict[str, str | None]] = {
-    "common": {"bg": None, "fg": None},
-    "uncommon": {"bg": None, "fg": None},
-    "rare": {"bg": "#BAE6FD", "fg": "#0C4A6E"},
-    "epic": {"bg": "#DDD6FE", "fg": "#4C1D95"},
-    "legendary": {"bg": "#B45309", "fg": "#FFFBEB"},
+    "common": {"bg": None, "fg": "#94a3b8"},
+    "uncommon": {"bg": "#052e16", "fg": "#4ade80"},
+    "rare": {"bg": "#172554", "fg": "#60a5fa"},
+    "epic": {"bg": "#3b0764", "fg": "#c084fc"},
+    "legendary": {"bg": "#451a03", "fg": "#fbbf24"},
 }
 
 _PLAYER_NAME_SQL = """

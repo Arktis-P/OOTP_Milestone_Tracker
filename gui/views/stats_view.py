@@ -45,6 +45,7 @@ from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.widgets.player_game_log_dialog import PlayerGameLogDialog
 from gui.widgets.player_milestone_timeline import PlayerMilestoneTimeline
 from gui.widgets.table_widgets import SortableTable
+from gui.theme import header_panel_style
 from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
 
 
@@ -78,6 +79,7 @@ class StatsView(QWidget):
 
         self.banner = ErrorBanner(self)
         self.import_button = QPushButton("박스스코어 가져오기")
+        self.import_button.setObjectName("primaryButton")
         self.import_button.clicked.connect(self.start_import)
         self.mlb_only_checkbox = QCheckBox("MLB만")
         self.mlb_only_checkbox.setChecked(self.settings.import_mlb_only)
@@ -120,9 +122,7 @@ class StatsView(QWidget):
         self.player_header = QLabel()
         self.player_header.setWordWrap(True)
         self.player_header.setTextFormat(Qt.TextFormat.RichText)
-        self.player_header.setStyleSheet(
-            "padding: 6px; background: #2a2a2a; border-radius: 4px;"
-        )
+        self.player_header.setStyleSheet(header_panel_style())
 
         self.info_label = QLabel()
         self.info_label.setWordWrap(True)

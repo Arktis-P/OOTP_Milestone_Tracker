@@ -38,6 +38,7 @@ from core.db.reset import (
     summarize_save_database,
 )
 from gui.widgets.tracked_teams_widget import TrackedTeamsWidget
+from gui.theme import SLATE_400, SLATE_500
 
 
 class SetupView(QWidget):
@@ -209,7 +210,7 @@ class SetupView(QWidget):
 
         self.selected_path_label = QLabel("")
         self.selected_path_label.setWordWrap(True)
-        self.selected_path_label.setStyleSheet("color: #555;")
+        self.selected_path_label.setStyleSheet(f"color: {SLATE_500};")
 
         self.confirm_button = QPushButton("확인 및 시작")
         self.confirm_button.clicked.connect(self._confirm)
@@ -287,7 +288,7 @@ class SetupView(QWidget):
             )
         else:
             self.bundle_updates_status.setText("모든 기준 파일이 최신입니다.")
-            self.bundle_updates_status.setStyleSheet("color: #555;")
+            self.bundle_updates_status.setStyleSheet(f"color: {SLATE_500};")
             self.bundle_updates_button.setEnabled(False)
             self.bundle_updates_button.setText("기준 파일 업데이트...")
 
@@ -500,12 +501,12 @@ class SetupView(QWidget):
 
         self.db_summary_label = QLabel()
         self.db_summary_label.setWordWrap(True)
-        self.db_summary_label.setStyleSheet("color: #444;")
+        self.db_summary_label.setStyleSheet(f"color: {SLATE_400};")
         layout.addWidget(self.db_summary_label)
 
         self.db_path_label = QLabel()
         self.db_path_label.setWordWrap(True)
-        self.db_path_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.db_path_label.setStyleSheet(f"color: {SLATE_500}; font-size: 11px;")
         layout.addWidget(self.db_path_label)
 
         button_row = QHBoxLayout()

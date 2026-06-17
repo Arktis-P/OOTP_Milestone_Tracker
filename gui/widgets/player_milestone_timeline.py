@@ -36,7 +36,7 @@ class PlayerMilestoneTimeline(QWidget):
         self._records: list[dict] = []
 
         self.empty_label = QLabel("아직 달성한 마일스톤이 없습니다.")
-        self.empty_label.setStyleSheet("color: #9CA3AF; padding: 6px;")
+        self.empty_label.setStyleSheet("color: #94a3b8; padding: 6px;")
         self.empty_label.setVisible(False)
 
         self.list_widget = QListWidget()

@@ -9,16 +9,20 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
+    QHBoxLayout,
     QMainWindow,
+    QStackedWidget,
     QStatusBar,
-    QTabWidget,
     QVBoxLayout,
+    QWidget,
 )
 
 from core.config import AppSettings, SettingsManager, get_bundle_root, resolve_data_path
 from core.db.validation import format_overlap_warning, validate_no_overlap
 from core.milestone.definitions import load_milestones
 from core.stats.aggregator import Aggregator
+from gui.sidebar_nav import SidebarNav
+from gui.theme import apply_app_theme
 from gui.views.dashboard_view import DashboardView
 from gui.views.initial_import_view import InitialImportView
 from gui.views.milestone_view import MilestoneView
@@ -56,12 +60,30 @@ class MainWindow(QMainWindow):
         self._predict_view: PredictView | None = None
         self._initial_import_view: InitialImportView | None = None
         self._setup_tab: SetupView | None = None
-        self._setup_tab_index: int | None = None
+        self._setup_tab_index: int = SidebarNav.SETUP_PAGE_INDEX
 
-        self._tabs = QTabWidget()
+        self._sidebar = SidebarNav()
+        self._stack = QStackedWidget()
+        self._stack.setObjectName("mainStack")
+
+        shell = QWidget()
+        shell_layout = QHBoxLayout(shell)
+        shell_layout.setContentsMargins(0, 0, 0, 0)
+        shell_layout.setSpacing(0)
+        shell_layout.addWidget(self._sidebar)
+
+        content_wrap = QWidget()
+        content_layout = QVBoxLayout(content_wrap)
+        content_layout.setContentsMargins(12, 12, 12, 12)
+        content_layout.setSpacing(0)
+        content_layout.addWidget(self._stack, stretch=1)
+        shell_layout.addWidget(content_wrap, stretch=1)
+
         self.data_refreshed.connect(self._route_data_refreshed)
-        self._build_tabs()
-        self.setCentralWidget(self._tabs)
+        self._build_pages()
+        self.setCentralWidget(shell)
+
+        self._sidebar.page_changed.connect(self._on_main_page_changed)
 
         self._status = QStatusBar()
         self._update_status_message()
@@ -70,8 +92,13 @@ class MainWindow(QMainWindow):
 
         self._check_overlap_warning()
 
-    def _build_tabs(self) -> None:
-        self._tabs.clear()
+    def _build_pages(self) -> None:
+        while self._stack.count():
+            widget = self._stack.widget(0)
+            self._stack.removeWidget(widget)
+            if widget is not None:
+                widget.deleteLater()
+
         self._dashboard_view = DashboardView(
             self._aggregator,
             self._milestones,
@@ -84,12 +111,12 @@ class MainWindow(QMainWindow):
         self._dashboard_view.navigate_to_initial_import.connect(
             self._navigate_to_initial_import
         )
-        self._tabs.addTab(self._dashboard_view, "대시보드")
+        self._stack.addWidget(self._dashboard_view)
 
         self._milestone_view = MilestoneView(
             self._aggregator, self._milestones, self.settings
         )
-        self._tabs.addTab(self._milestone_view, "마일스톤 기록")
+        self._stack.addWidget(self._milestone_view)
 
         self._stats_view = StatsView(
             self._aggregator,
@@ -98,20 +125,20 @@ class MainWindow(QMainWindow):
             self.settings_manager,
         )
         self._stats_view.import_finished.connect(self._on_boxscore_import_finished)
-        self._tabs.addTab(self._stats_view, "선수 기록")
+        self._stack.addWidget(self._stats_view)
 
         self._predict_view = PredictView(
             self._aggregator, self._milestones, self.settings
         )
-        self._tabs.addTab(self._predict_view, "마일스톤 예측")
+        self._stack.addWidget(self._predict_view)
 
         self._initial_import_view = InitialImportView(
             self._aggregator, self.settings, self.settings_manager
         )
         self._initial_import_view.import_finished.connect(self._on_init_import_finished)
-        self._tabs.addTab(self._initial_import_view, "초기값 설정")
+        self._stack.addWidget(self._initial_import_view)
 
-        self._tabs.addTab(RosterView(self.settings), "레이팅 편집")
+        self._stack.addWidget(RosterView(self.settings))
 
         setup_tab = SetupView(self.settings_manager, self.settings, embedded=True)
         setup_tab.setup_completed.connect(self._on_setup_tab_saved)
@@ -121,16 +148,27 @@ class MainWindow(QMainWindow):
         setup_tab.save_database_reset.connect(self._on_save_database_reset)
         setup_tab.boxscore_reimported.connect(self._on_boxscore_reimported)
         setup_tab.confirm_button.setText("설정 저장")
+        setup_tab.confirm_button.setObjectName("primaryButton")
         self._setup_tab = setup_tab
-        self._setup_tab_index = self._tabs.count()
-        self._tabs.addTab(setup_tab, "설정")
+        self._stack.addWidget(setup_tab)
 
         self._connect_tab_signals()
-        for index in range(self._tabs.count()):
-            compact_widget(self._tabs.widget(index))
+        for index in range(self._stack.count()):
+            widget = self._stack.widget(index)
+            if widget is not None:
+                compact_widget(widget)
 
-        self._tabs.currentChanged.connect(self._on_main_tab_changed)
+        previous = self._sidebar.current_index()
+        self._sidebar.set_current_index(min(previous, self._stack.count() - 1), emit=False)
+        self._stack.setCurrentIndex(self._sidebar.current_index())
         self._refresh_settings_tab_badge()
+
+    def _set_current_page(self, widget: QWidget) -> None:
+        index = self._stack.indexOf(widget)
+        if index < 0:
+            return
+        self._sidebar.set_current_index(index)
+        self._stack.setCurrentIndex(index)
 
     def _connect_tab_signals(self) -> None:
         if self._milestone_view:
@@ -165,17 +203,17 @@ class MainWindow(QMainWindow):
             record_id = record.get("id") if record else None
             if record_id:
                 self._milestone_view.highlight_record(int(record_id))
-            self._tabs.setCurrentWidget(self._milestone_view)
+            self._set_current_page(self._milestone_view)
 
     def _navigate_to_predict(self, player_id: int, _milestone_key: str) -> None:
         if self._predict_view:
-            self._tabs.setCurrentWidget(self._predict_view)
+            self._set_current_page(self._predict_view)
             pid = player_id if player_id >= 0 else None
             self._predict_view.focus_player(pid, near_only=True)
 
     def _navigate_to_initial_import(self) -> None:
         if self._initial_import_view:
-            self._tabs.setCurrentWidget(self._initial_import_view)
+            self._set_current_page(self._initial_import_view)
 
     def _reload_aggregator(self) -> None:
         target = resolve_data_path(self.settings.db_path)
@@ -235,7 +273,7 @@ class MainWindow(QMainWindow):
         self.settings = settings
         self._reopen_aggregator_if_needed()
         self._update_status_message()
-        self._build_tabs()
+        self._build_pages()
         self.data_refreshed.emit("all")
 
     def _on_setup_tab_saved(self, settings: AppSettings) -> None:
@@ -256,27 +294,22 @@ class MainWindow(QMainWindow):
         self.data_refreshed.emit("all")
         self._refresh_settings_tab_badge()
 
-    def _on_main_tab_changed(self, index: int) -> None:
+    def _on_main_page_changed(self, index: int) -> None:
+        self._stack.setCurrentIndex(index)
         if self._setup_tab is not None and index == self._setup_tab_index:
             self._setup_tab.refresh_bundle_updates_status()
 
     def _refresh_settings_tab_badge(self) -> None:
-        if self._setup_tab_index is None:
-            return
         from core.config.bundle_updates import pending_update_count
-        from gui.badge import red_dot_icon
 
         pending = pending_update_count()
-        tab_bar = self._tabs.tabBar()
         if pending > 0:
-            tab_bar.setTabIcon(self._setup_tab_index, red_dot_icon())
-            self._tabs.setTabToolTip(
-                self._setup_tab_index,
+            self._sidebar.set_setup_badge_visible(
+                True,
                 f"받을 수 있는 기준 파일 업데이트 {pending}건",
             )
         else:
-            tab_bar.setTabIcon(self._setup_tab_index, QIcon())
-            self._tabs.setTabToolTip(self._setup_tab_index, "")
+            self._sidebar.set_setup_badge_visible(False)
 
     def _on_boxscore_import_finished(self, _message: str) -> None:
         self._update_status_message()
@@ -350,6 +383,7 @@ class _SetupWindow(QMainWindow):
 
         setup = SetupView(settings_manager, parent=self)
         setup.setup_completed.connect(self._on_completed)
+        setup.confirm_button.setObjectName("primaryButton")
         self.setCentralWidget(setup)
         compact_widget(setup, margin=6, spacing=4)
 
@@ -378,6 +412,7 @@ def run_app() -> None:
 
     ensure_user_data_dir()
     app = QApplication(sys.argv)
+    apply_app_theme(app)
     icon = _load_app_icon()
     if icon is not None:
         app.setWindowIcon(icon)

@@ -27,6 +27,7 @@ from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.grade_styles import apply_grade_to_list_item
 from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
+from gui.theme import SLATE_400, hint_style
 
 
 class DashboardView(QWidget):
@@ -55,9 +56,10 @@ class DashboardView(QWidget):
         self.banner = ErrorBanner(self)
 
         self.status_label = QLabel()
-        self.status_label.setStyleSheet("color: #9CA3AF; padding: 4px 0;")
+        self.status_label.setStyleSheet(hint_style(SLATE_400))
 
         self.import_button = QPushButton("박스스코어 가져오기")
+        self.import_button.setObjectName("primaryButton")
         self.import_button.clicked.connect(self.start_import)
         self.mlb_only_checkbox = QCheckBox("MLB만")
         self.mlb_only_checkbox.setChecked(self.settings.import_mlb_only)
