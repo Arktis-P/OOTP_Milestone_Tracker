@@ -55,6 +55,8 @@ class MainWindow(QMainWindow):
         self._stats_view: StatsView | None = None
         self._predict_view: PredictView | None = None
         self._initial_import_view: InitialImportView | None = None
+        self._setup_tab: SetupView | None = None
+        self._setup_tab_index: int | None = None
 
         self._tabs = QTabWidget()
         self.data_refreshed.connect(self._route_data_refreshed)
@@ -114,14 +116,20 @@ class MainWindow(QMainWindow):
         setup_tab = SetupView(self.settings_manager, self.settings, embedded=True)
         setup_tab.setup_completed.connect(self._on_setup_tab_saved)
         setup_tab.milestones_changed.connect(self._reload_milestones)
+        setup_tab.bundle_updates_changed.connect(self._refresh_settings_tab_badge)
         setup_tab.save_database_reset_prepare.connect(self._prepare_save_database_reset)
         setup_tab.save_database_reset.connect(self._on_save_database_reset)
         setup_tab.confirm_button.setText("설정 저장")
+        self._setup_tab = setup_tab
+        self._setup_tab_index = self._tabs.count()
         self._tabs.addTab(setup_tab, "설정")
 
         self._connect_tab_signals()
         for index in range(self._tabs.count()):
             compact_widget(self._tabs.widget(index))
+
+        self._tabs.currentChanged.connect(self._on_main_tab_changed)
+        self._refresh_settings_tab_badge()
 
     def _connect_tab_signals(self) -> None:
         if self._milestone_view:
@@ -239,6 +247,29 @@ class MainWindow(QMainWindow):
             if view is not None:
                 view.milestones = self._milestones
         self.data_refreshed.emit("all")
+        self._refresh_settings_tab_badge()
+
+    def _on_main_tab_changed(self, index: int) -> None:
+        if self._setup_tab is not None and index == self._setup_tab_index:
+            self._setup_tab.refresh_bundle_updates_status()
+
+    def _refresh_settings_tab_badge(self) -> None:
+        if self._setup_tab_index is None:
+            return
+        from core.config.bundle_updates import pending_update_count
+        from gui.badge import red_dot_icon
+
+        pending = pending_update_count()
+        tab_bar = self._tabs.tabBar()
+        if pending > 0:
+            tab_bar.setTabIcon(self._setup_tab_index, red_dot_icon())
+            self._tabs.setTabToolTip(
+                self._setup_tab_index,
+                f"받을 수 있는 기준 파일 업데이트 {pending}건",
+            )
+        else:
+            tab_bar.setTabIcon(self._setup_tab_index, QIcon())
+            self._tabs.setTabToolTip(self._setup_tab_index, "")
 
     def _on_boxscore_import_finished(self, _message: str) -> None:
         self._update_status_message()

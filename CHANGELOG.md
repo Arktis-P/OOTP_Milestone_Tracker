@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.9] - 2026-06-16
+
+### Added
+- 통산 첫 기록 마일스톤 9건 (타자 5·투수 4, MLB 통산 0→1 crossing)
+- 앱 업데이트 후 기준 파일 신규 항목 병합 (`bundle_updates.json` 매니페스트, 설정 탭 레드닷·업데이트 버튼)
+
+### Fixed
+- 동일 약칭 선수(H. Kim 등) BATTING 노트 중복 적용 버그 (`player_id` 기준 배분)
+- PyInstaller 빌드에 `streak_policies.json` 누락
+- 마일스톤 CSV 라벨 문체 통일 (`통산 1500 안타` 등)
+
+### Changed
+- 오류 배너 텍스트 선택·복사 가능
+
 ## [0.1.8] - 2026-06-16
 
 ### Changed

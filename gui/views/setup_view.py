@@ -45,6 +45,7 @@ class SetupView(QWidget):
 
     setup_completed = pyqtSignal(object)  # AppSettings
     milestones_changed = pyqtSignal()
+    bundle_updates_changed = pyqtSignal()
     save_database_reset_prepare = pyqtSignal()
     save_database_reset = pyqtSignal()
 
@@ -166,6 +167,27 @@ class SetupView(QWidget):
             self.korean_names_button, alignment=Qt.AlignmentFlag.AlignLeft
         )
 
+        self.bundle_updates_status = QLabel()
+        self.bundle_updates_status.setWordWrap(True)
+        self.bundle_updates_button = QPushButton("기준 파일 업데이트...")
+        self.bundle_updates_button.clicked.connect(self._open_bundle_updates)
+
+        bundle_updates_desc = QLabel(
+            "앱 업데이트 후 추가된 마일스톤·연속기록·한글 매핑 항목을 "
+            "로컬 파일에 병합합니다. 기존 항목은 유지됩니다."
+        )
+        bundle_updates_group = QGroupBox("기준 파일 업데이트")
+        bundle_updates_layout = QVBoxLayout(bundle_updates_group)
+        if not embedded:
+            bundle_updates_layout.addWidget(bundle_updates_desc)
+        else:
+            bundle_updates_desc.hide()
+            self.bundle_updates_button.setToolTip(bundle_updates_desc.text())
+        bundle_updates_layout.addWidget(self.bundle_updates_status)
+        bundle_updates_layout.addWidget(
+            self.bundle_updates_button, alignment=Qt.AlignmentFlag.AlignLeft
+        )
+
         self.milestones_button = QPushButton("마일스톤 기준 관리...")
         self.milestones_button.clicked.connect(self._open_milestone_definitions)
 
@@ -202,6 +224,7 @@ class SetupView(QWidget):
             layout.addWidget(season_group)
             layout.addWidget(tracking_group)
             layout.addWidget(names_group)
+            layout.addWidget(bundle_updates_group)
             layout.addWidget(milestones_group)
             layout.addWidget(QLabel("선택된 경로:"))
             layout.addWidget(self.selected_path_label)
@@ -220,6 +243,7 @@ class SetupView(QWidget):
             right_column.setSpacing(6)
             right_column.addWidget(tracking_group)
             right_column.addWidget(names_group)
+            right_column.addWidget(bundle_updates_group)
             right_column.addWidget(milestones_group)
             right_column.addWidget(self._build_database_reset_group())
             right_column.addStretch()
@@ -242,6 +266,28 @@ class SetupView(QWidget):
         else:
             self._run_auto_detection()
             self._restore_saved_values()
+
+        self.refresh_bundle_updates_status()
+
+    def refresh_bundle_updates_status(self) -> None:
+        from core.config.bundle_updates import scan_pending_updates
+
+        report = scan_pending_updates()
+        if report.total:
+            self.bundle_updates_status.setText(
+                f"받을 수 있는 새 항목 {report.total}건 "
+                f"(앱 v{report.app_version})"
+            )
+            self.bundle_updates_status.setStyleSheet("color: #c0392b;")
+            self.bundle_updates_button.setEnabled(True)
+            self.bundle_updates_button.setText(
+                f"기준 파일 업데이트... ({report.total})"
+            )
+        else:
+            self.bundle_updates_status.setText("모든 기준 파일이 최신입니다.")
+            self.bundle_updates_status.setStyleSheet("color: #555;")
+            self.bundle_updates_button.setEnabled(False)
+            self.bundle_updates_button.setText("기준 파일 업데이트...")
 
     def _run_auto_detection(self) -> None:
         self._detected_roots = detect_save_roots()
@@ -523,6 +569,17 @@ class SetupView(QWidget):
         dialog = KoreanNameMappingDialog(self)
         dialog.exec()
         self._refresh_korean_names_button()
+
+    def _open_bundle_updates(self) -> None:
+        from core.config.bundle_updates import apply_bundle_updates_with_message
+
+        if apply_bundle_updates_with_message(self):
+            self._on_bundle_updates_applied()
+
+    def _on_bundle_updates_applied(self) -> None:
+        self.refresh_bundle_updates_status()
+        self.milestones_changed.emit()
+        self.bundle_updates_changed.emit()
 
     def _open_milestone_definitions(self) -> None:
         from gui.widgets.milestone_definitions_dialog import MilestoneDefinitionsDialog

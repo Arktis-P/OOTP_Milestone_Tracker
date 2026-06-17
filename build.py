@@ -93,6 +93,14 @@ def build() -> None:
         if not path.is_file():
             raise FileNotFoundError(f"Build requires data file: {path}")
         cmd.extend(["--add-data", _pyinstaller_add_data(f"data/{name}")])
+    manifest = data_dir / "bundle_updates.json"
+    if not manifest.is_file():
+        raise FileNotFoundError(f"Build requires data file: {manifest}")
+    cmd.extend(["--add-data", _pyinstaller_add_data("data/bundle_updates.json")])
+    version_file = ROOT / "version.txt"
+    if not version_file.is_file():
+        raise FileNotFoundError(f"Build requires version file: {version_file}")
+    cmd.extend(["--add-data", _pyinstaller_add_data("version.txt", dest_dir=".")])
     for asset_name in ("icon.ico", "icon.png"):
         asset_path = ASSETS_DIR / asset_name
         if asset_path.is_file():

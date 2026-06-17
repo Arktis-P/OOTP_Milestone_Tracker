@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "releases": [
+    {
+      "app_version": "0.1.8",
+      "notes": "통산 첫 기록 마일스톤 추가",
+      "files": {
+        "milestones.csv": {
+          "added_keys": [
+            "bat_career_first_games",
+            "bat_career_first_hit",
+            "bat_career_first_rbi",
+            "bat_career_first_hr",
+            "bat_career_first_sb",
+            "pit_career_first_game",
+            "pit_career_first_k",
+            "pit_career_first_win",
+            "pit_career_first_hold",
+            "pit_career_first_save"
+          ]
+        },
+        "streak_policies.json": {
+          "added_paths": []
+        },
+        "korean_last_names.csv": {
+          "added_names": []
+        },
+        "korean_first_names.csv": {
+          "added_names": []
+        }
+      }
+    }
+  ]
+}
