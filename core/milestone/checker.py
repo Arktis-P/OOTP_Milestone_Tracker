@@ -362,11 +362,16 @@ class MilestoneChecker:
             ManualTransferFormData,
             build_transfer_records,
         )
+        from core.roster.player_registry import PlayerRegistry
 
         if not isinstance(form, ManualTransferFormData):
             raise TypeError("expected ManualTransferFormData")
 
-        records, errors = build_transfer_records(self.aggregator.conn, form)
+        records, errors = build_transfer_records(
+            self.aggregator.conn,
+            form,
+            registry=PlayerRegistry(self.aggregator),
+        )
         if errors:
             raise ValueError("\n".join(errors))
         if not records:
@@ -410,8 +415,8 @@ class MilestoneChecker:
             ManualInjuryFormData,
             build_injury_description,
             parse_player_name_list,
-            resolve_player_id,
         )
+        from core.roster.player_registry import PlayerRegistry
 
         if not isinstance(form, ManualInjuryFormData):
             raise TypeError("expected ManualInjuryFormData")
@@ -419,9 +424,7 @@ class MilestoneChecker:
         names = parse_player_name_list(form.player_name)
         if not names:
             raise ValueError("선수를 입력하세요.")
-        player_id = resolve_player_id(self.aggregator.conn, names[0])
-        if player_id is None:
-            raise ValueError(f"선수를 찾을 수 없습니다: {names[0]}")
+        player_id = PlayerRegistry(self.aggregator).ensure_player(names[0])
 
         description = form.description.strip() or build_injury_description(
             form.injury_label, form.duration

@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -44,7 +45,7 @@ from core.milestone.manual_entry import (
 )
 from core.roster.player_registry import PlayerRegistry
 from core.stats.aggregator import Aggregator
-from core.stats.player_display import format_player_list_label
+from core.stats.player_display import format_manual_entry_label, format_player_list_label
 from core.stats.team_filter import (
     CANONICAL_MLB_TEAMS,
     expand_tracked_teams,
@@ -125,6 +126,9 @@ class ManualMilestoneDialog(QDialog):
         self.player_combo.setEditable(True)
         self.player_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._fill_players()
+        line = self.player_combo.lineEdit()
+        if line is not None:
+            line.setPlaceholderText("풀 네임 입력 또는 목록 선택 (예: Dong-ju Moon)")
         self.add_player_button = QPushButton("+ 선수 추가")
         self.add_player_button.clicked.connect(self._on_add_player)
 
@@ -149,6 +153,10 @@ class ManualMilestoneDialog(QDialog):
         self.manual_hint = QLabel("")
         self.manual_hint.setWordWrap(True)
         self.manual_hint.setStyleSheet("color: #64748b; font-size: 12px;")
+        self.manual_hint.setText(
+            "추적 팀 선수는 목록에서 고르고, 아직 DB에 없는 선수는 풀 네임을 "
+            "직접 입력하거나 '+ 선수 추가'로 등록할 수 있습니다."
+        )
 
         self.season_edit = QLineEdit(str(self.settings.current_season))
         self.season_label = QLabel("시즌:")
@@ -325,20 +333,37 @@ class ManualMilestoneDialog(QDialog):
         elif index == _TAB_INJURY:
             self.stack.setCurrentIndex(2)
 
+    def _player_registry(self) -> PlayerRegistry:
+        return PlayerRegistry(self.aggregator)
+
     def _fill_players(self) -> None:
         self._fill_player_combo(self.player_combo)
 
     def _fill_player_combo(self, combo: QComboBox) -> None:
+        current = combo.currentText()
+        combo.blockSignals(True)
         combo.clear()
+        seen_ids: set[int] = set()
         players = self.aggregator.get_tracked_players(
             self.settings.tracked_teams,
             custom_teams=self.settings.custom_mlb_teams,
         )
         for player in players:
+            player_id = int(player["player_id"])
+            seen_ids.add(player_id)
             combo.addItem(
                 format_player_list_label(player),
-                int(player["player_id"]),
+                player_id,
             )
+        for player in self._player_registry().list_manual_players():
+            player_id = int(player["player_id"])
+            if player_id in seen_ids:
+                continue
+            player["is_manual"] = True
+            combo.addItem(format_manual_entry_label(player), player_id)
+        combo.blockSignals(False)
+        if current:
+            combo.setEditText(current)
 
     def _mlb_team_names(self) -> list[str]:
         team_map = merge_team_maps(
@@ -389,7 +414,7 @@ class ManualMilestoneDialog(QDialog):
         self._fill_player_combo(combo)
         line = combo.lineEdit()
         if line is not None:
-            line.setPlaceholderText("예: A. Judge, M. Trout")
+            line.setPlaceholderText("예: Dong-ju Moon, A. Judge (쉼표 구분)")
         snapshot = {"text": ""}
 
         original_show_popup = combo.showPopup
@@ -544,14 +569,51 @@ class ManualMilestoneDialog(QDialog):
             error_label.hide()
 
     def _on_add_player(self) -> None:
+        name, ok = QInputDialog.getText(
+            self,
+            "선수 추가",
+            "풀 네임을 입력하세요 (예: Dong-ju Moon):",
+        )
+        if not ok:
+            return
         try:
-            PlayerRegistry(self.aggregator).add_player_stub("")
-        except NotImplementedError:
-            QMessageBox.information(
-                self,
-                "선수 추가",
-                "이 기능은 추후 지원됩니다.",
-            )
+            player_id = self._player_registry().add_manual_player(name)
+        except ValueError as exc:
+            QMessageBox.warning(self, "입력 오류", str(exc))
+            return
+        for combo in (
+            self.player_combo,
+            self.injury_player_combo,
+            self.transfer_joining_combo,
+            self.transfer_leaving_combo,
+        ):
+            self._fill_player_combo(combo)
+            index = combo.findData(player_id)
+            if index >= 0 and combo is self.player_combo:
+                combo.setCurrentIndex(index)
+
+    def _resolve_player_id_from_combo(self, combo: QComboBox) -> int | None:
+        text = combo.currentText().strip()
+        if not text:
+            return None
+        for index in range(combo.count()):
+            if combo.itemText(index).strip() == text:
+                data = combo.itemData(index)
+                if data is not None:
+                    return int(data)
+        return self._player_registry().resolve_player(text)
+
+    def _ensure_player_id_from_combo(self, combo: QComboBox) -> int | None:
+        player_id = self._resolve_player_id_from_combo(combo)
+        if player_id is not None:
+            return player_id
+        text = combo.currentText().strip()
+        if not text:
+            return None
+        try:
+            return self._player_registry().ensure_player(text)
+        except ValueError:
+            return None
 
     def _build_milestone_form(self) -> ManualMilestoneFormData | None:
         parsed = parse_flexible_date(self.date_edit.text())
@@ -588,13 +650,22 @@ class ManualMilestoneDialog(QDialog):
                 return None
 
         is_player = self.player_radio.isChecked()
-        player_id = self.player_combo.currentData() if is_player else None
+        player_id: int | None = None
+        if is_player:
+            player_id = self._ensure_player_id_from_combo(self.player_combo)
+            if player_id is None:
+                QMessageBox.warning(
+                    self,
+                    "입력 필요",
+                    "선수를 선택하거나 풀 네임을 입력하세요.",
+                )
+                return None
         team = self.team_combo.currentData() if not is_player else None
 
         form = ManualMilestoneFormData(
             target="player" if is_player else "team",
             achieved_date=parsed,
-            player_id=int(player_id) if player_id is not None else None,
+            player_id=player_id,
             team=str(team) if team else None,
             milestone_key=milestone.key,
             season=season,

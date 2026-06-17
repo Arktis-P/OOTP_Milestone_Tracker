@@ -105,6 +105,13 @@ class Aggregator:
             """,
             (player_id, new_full, new_short),
         )
+        from core.roster.player_registry import PlayerRegistry
+
+        PlayerRegistry(self).try_merge_on_import(
+            player_id,
+            short_name=new_short,
+            full_name=new_full,
+        )
 
     @staticmethod
     def _merge_player_full_name(

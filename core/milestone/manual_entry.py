@@ -201,6 +201,7 @@ def parse_player_name_list(text: str) -> list[str]:
         if not raw:
             continue
         raw = re.sub(r"^\[[^\]]+\]\s*", "", raw).strip()
+        raw = re.sub(r"^\[수동\]\s*", "", raw).strip()
         raw = re.sub(r"\s*\(#\d+\)\s*$", "", raw).strip()
         if raw:
             names.append(raw)
@@ -213,6 +214,7 @@ def resolve_player_id(conn: Any, name: str) -> int | None:
         return int(id_match.group(1))
 
     cleaned = re.sub(r"^\[[^\]]+\]\s*", "", name.strip())
+    cleaned = re.sub(r"^\[수동\]\s*", "", cleaned).strip()
     cleaned = re.sub(r"\s*\(#\d+\)\s*$", "", cleaned).strip()
     if not cleaned:
         return None
@@ -228,6 +230,25 @@ def resolve_player_id(conn: Any, name: str) -> int | None:
     if row:
         return int(row["player_id"])
 
+    from core.roster.player_registry import derive_short_name, normalize_player_name
+
+    probe = normalize_player_name(cleaned)
+    derived = normalize_player_name(derive_short_name(cleaned))
+    rows = conn.execute(
+        """
+        SELECT player_id, full_name, short_name FROM players
+        """
+    ).fetchall()
+    for row in rows:
+        keys = {
+            normalize_player_name(str(row["full_name"] or "")),
+            normalize_player_name(str(row["short_name"] or "")),
+            normalize_player_name(derive_short_name(str(row["full_name"] or ""))),
+        }
+        keys.discard("")
+        if probe in keys or derived in keys:
+            return int(row["player_id"])
+
     row = conn.execute(
         """
         SELECT player_id FROM players
@@ -240,11 +261,17 @@ def resolve_player_id(conn: Any, name: str) -> int | None:
 
 
 def resolve_transfer_players(
-    conn: Any, names: list[str]
+    conn: Any, names: list[str], *, registry: Any | None = None
 ) -> tuple[list[int], list[str]]:
     ids: list[int] = []
     errors: list[str] = []
     for name in names:
+        if registry is not None:
+            try:
+                ids.append(int(registry.ensure_player(name)))
+            except ValueError as exc:
+                errors.append(str(exc))
+            continue
         player_id = resolve_player_id(conn, name)
         if player_id is None:
             errors.append(f"선수를 찾을 수 없습니다: {name}")
@@ -288,6 +315,8 @@ def build_injury_description(injury_label: str, duration: str) -> str:
 def build_transfer_records(
     conn: Any,
     form: ManualTransferFormData,
+    *,
+    registry: Any | None = None,
 ) -> tuple[list[TransferPlayerRecord], list[str]]:
     joining_names = parse_player_name_list(form.joining_players)
     leaving_names = parse_player_name_list(form.leaving_players)
@@ -296,8 +325,12 @@ def build_transfer_records(
     description = form.description.strip()
     errors: list[str] = []
 
-    joining_ids, join_errors = resolve_transfer_players(conn, joining_names)
-    leaving_ids, leave_errors = resolve_transfer_players(conn, leaving_names)
+    joining_ids, join_errors = resolve_transfer_players(
+        conn, joining_names, registry=registry
+    )
+    leaving_ids, leave_errors = resolve_transfer_players(
+        conn, leaving_names, registry=registry
+    )
     errors.extend(join_errors)
     errors.extend(leave_errors)
     if errors:

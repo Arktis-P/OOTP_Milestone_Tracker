@@ -31,6 +31,8 @@ def best_display_name(full_name: str | None, short_name: str | None) -> str:
 
 def format_player_list_label(player: dict) -> str:
     """List row label with role tags; include ID when name is ambiguous."""
+    if player.get("is_manual"):
+        return format_manual_entry_label(player)
     full = str(player.get("full_name") or "").strip()
     short = str(player.get("short_name") or "").strip()
     display = best_display_name(full, short)
@@ -44,6 +46,15 @@ def format_player_list_label(player: dict) -> str:
     if looks_abbreviated(display) or (full and short and full != short and looks_abbreviated(full)):
         return f"{prefix}{display} (#{player_id})"
     return f"{prefix}{display}"
+
+
+def format_manual_entry_label(player: dict) -> str:
+    """Manual-entry combo label: show short form while full name is stored."""
+    from core.roster.player_registry import derive_short_name
+
+    full = str(player.get("full_name") or "").strip()
+    short = str(player.get("short_name") or "").strip() or derive_short_name(full)
+    return f"[수동] {short}"
 
 
 def format_player_header(player: dict, *, korean_name: str = "") -> str:

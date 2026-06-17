@@ -212,6 +212,7 @@ def _migrate_post_schema(conn: sqlite3.Connection) -> None:
     _migrate_milestone_records(conn)
     _ensure_player_roster(conn)
     _ensure_player_team_affiliations(conn)
+    _ensure_players_manual_column(conn)
     _ensure_milestone_predictions(conn)
     _ensure_games_is_mlb(conn)
     _ensure_position_columns(conn)
@@ -444,6 +445,14 @@ def _ensure_player_team_affiliations(conn: sqlite3.Connection) -> None:
         )
         """
     )
+
+
+def _ensure_players_manual_column(conn: sqlite3.Connection) -> None:
+    columns = _table_columns(conn, "players")
+    if columns and "is_manual" not in columns:
+        conn.execute(
+            "ALTER TABLE players ADD COLUMN is_manual INTEGER NOT NULL DEFAULT 0"
+        )
 
 
 def _ensure_team_registry(conn: sqlite3.Connection) -> None:
