@@ -179,9 +179,51 @@ QLabel#mutedLabel {{
     font-size: 12px;
 }}
 
+QLabel#errorLabel {{
+    color: {RED_TEXT};
+    font-size: 12px;
+}}
+
 QLabel#accentLabel {{
     color: {ACCENT_TEXT};
     font-weight: 600;
+}}
+
+QFrame#toolRow {{
+    background-color: {BG_ELEVATED};
+    border: 1px solid {BORDER_SUBTLE};
+    border-radius: 8px;
+}}
+
+QLabel#toolRowTitle {{
+    color: {TEXT_PRIMARY};
+    font-size: 12px;
+    font-weight: 600;
+}}
+
+QLabel#badgeLabel {{
+    background-color: #c42b1c;
+    color: #ffffff;
+    border-radius: 8px;
+    padding: 2px 7px;
+    font-size: 10px;
+    font-weight: 700;
+    min-width: 18px;
+}}
+
+QPushButton#dangerButton {{
+    background-color: {RED_BG};
+    color: {RED_TEXT};
+    border: 1px solid {RED_BORDER};
+    font-weight: 600;
+}}
+QPushButton#dangerButton:hover {{
+    background-color: #4a1a22;
+}}
+QPushButton#dangerButton:disabled {{
+    color: {TEXT_MUTED};
+    background-color: {BG_ELEVATED};
+    border-color: {BORDER_SUBTLE};
 }}
 
 QGroupBox {{
@@ -303,6 +345,22 @@ QComboBox QAbstractItemView {{
     border: 1px solid {BORDER};
     selection-background-color: {ACCENT_SUBTLE};
     selection-color: {ACCENT_TEXT};
+}}
+
+QDialogButtonBox QPushButton {{
+    min-width: 80px;
+}}
+
+QFormLayout {{
+    spacing: 8px;
+}}
+
+QScrollArea {{
+    background-color: transparent;
+    border: none;
+}}
+QScrollArea > QWidget > QWidget {{
+    background-color: transparent;
 }}
 
 QTableWidget, QTableView {{

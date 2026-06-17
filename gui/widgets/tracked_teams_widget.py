@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
-    QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
     QLabel,
@@ -16,12 +15,15 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
 from core.config import AppSettings
 from core.stats.team_filter import CANONICAL_MLB_TEAMS, sorted_team_items
+from gui.widgets.app_dialog import add_dialog_footer, init_dialog_layout, make_button_box
+from gui.widgets.card_panel import CardPanel
 
 
 class _AddCustomTeamDialog(QDialog):
@@ -36,14 +38,16 @@ class _AddCustomTeamDialog(QDialog):
         form = QFormLayout()
         form.addRow("약칭:", self.abbr_input)
         form.addRow("팀 이름:", self.name_input)
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        buttons = make_button_box(ok=True, ok_text="추가")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(buttons)
+
+        form_card = CardPanel("팀 정보")
+        form_card.add_layout(form)
+
+        layout = init_dialog_layout(self)
+        layout.addWidget(form_card)
+        add_dialog_footer(layout, buttons)
 
     def values(self) -> tuple[str, str] | None:
         abbr = self.abbr_input.text().strip().upper()
@@ -54,18 +58,31 @@ class _AddCustomTeamDialog(QDialog):
 
 
 class TrackedTeamsWidget(QWidget):
-    """Dropdown + list UI for selecting tracked MLB teams."""
+    """Dropdown + list UI, or checkbox list for compact settings layout."""
 
     teams_changed = pyqtSignal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        checkbox_mode: bool = False,
+    ) -> None:
         super().__init__(parent)
+        self._checkbox_mode = checkbox_mode
         self._custom_teams: dict[str, str] = {}
         self._selected: list[str] = []
+        self._team_checkboxes: dict[str, QCheckBox] = {}
 
         self.track_all_checkbox = QCheckBox("전체 선수 (팀 필터 없음)")
         self.track_all_checkbox.toggled.connect(self._on_track_all_toggled)
 
+        if checkbox_mode:
+            self._build_checkbox_ui()
+        else:
+            self._build_combo_ui()
+
+    def _build_combo_ui(self) -> None:
         self.team_combo = QComboBox()
         self.add_button = QPushButton("추가")
         self.add_button.clicked.connect(self._add_from_combo)
@@ -92,18 +109,47 @@ class TrackedTeamsWidget(QWidget):
 
         self._refresh_combo()
 
+    def _build_checkbox_ui(self) -> None:
+        self._checkbox_host = QWidget()
+        self._checkbox_layout = QVBoxLayout(self._checkbox_host)
+        self._checkbox_layout.setContentsMargins(4, 4, 4, 4)
+        self._checkbox_layout.setSpacing(4)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setMaximumHeight(150)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setWidget(self._checkbox_host)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.addWidget(self.track_all_checkbox)
+        layout.addWidget(scroll)
+
     def load_from_settings(self, settings: AppSettings) -> None:
         self._custom_teams = dict(settings.custom_mlb_teams)
         self._selected = [abbr.upper() for abbr in settings.tracked_teams]
+        self.track_all_checkbox.blockSignals(True)
         self.track_all_checkbox.setChecked(not settings.tracked_teams)
-        self._refresh_combo()
-        self._refresh_selected_list()
+        self.track_all_checkbox.blockSignals(False)
+        if self._checkbox_mode:
+            self._rebuild_checkboxes()
+        else:
+            self._refresh_combo()
+            self._refresh_selected_list()
         self._update_enabled_state()
 
     def apply_to_settings(self, settings: AppSettings) -> None:
         settings.custom_mlb_teams = dict(self._custom_teams)
         if self.track_all_checkbox.isChecked():
             settings.tracked_teams = []
+        elif self._checkbox_mode:
+            settings.tracked_teams = [
+                abbr
+                for abbr, checkbox in self._team_checkboxes.items()
+                if checkbox.isChecked()
+            ]
         else:
             settings.tracked_teams = list(self._selected)
 
@@ -115,7 +161,12 @@ class TrackedTeamsWidget(QWidget):
         if not key or not name.strip():
             return False
         self._custom_teams[key] = name.strip()
-        self._refresh_combo()
+        if key not in self._selected:
+            self._selected.append(key)
+        if self._checkbox_mode:
+            self._rebuild_checkboxes()
+        else:
+            self._refresh_combo()
         self.teams_changed.emit()
         return True
 
@@ -127,7 +178,31 @@ class TrackedTeamsWidget(QWidget):
     def _all_selectable_teams(self) -> dict[str, str]:
         return self.team_name_map()
 
+    def _rebuild_checkboxes(self) -> None:
+        while self._checkbox_layout.count():
+            item = self._checkbox_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._team_checkboxes.clear()
+
+        for abbr, name in sorted_team_items(self._all_selectable_teams()):
+            label = f"[{abbr}] {name}"
+            checkbox = QCheckBox(label)
+            checkbox.setChecked(abbr in self._selected)
+            checkbox.toggled.connect(self._on_checkbox_toggled)
+            self._team_checkboxes[abbr] = checkbox
+            self._checkbox_layout.addWidget(checkbox)
+        self._checkbox_layout.addStretch()
+
+    def _on_checkbox_toggled(self, _checked: bool) -> None:
+        self._selected = [
+            abbr for abbr, cb in self._team_checkboxes.items() if cb.isChecked()
+        ]
+        self.teams_changed.emit()
+
     def _refresh_combo(self) -> None:
+        if self._checkbox_mode:
+            return
         current = self.team_combo.currentData()
         self.team_combo.blockSignals(True)
         self.team_combo.clear()
@@ -140,6 +215,8 @@ class TrackedTeamsWidget(QWidget):
         self.team_combo.blockSignals(False)
 
     def _refresh_selected_list(self) -> None:
+        if self._checkbox_mode:
+            return
         self.selected_list.clear()
         name_map = self._all_selectable_teams()
         for abbr in self._selected:
@@ -154,6 +231,10 @@ class TrackedTeamsWidget(QWidget):
 
     def _update_enabled_state(self) -> None:
         enabled = not self.track_all_checkbox.isChecked()
+        if self._checkbox_mode:
+            for checkbox in self._team_checkboxes.values():
+                checkbox.setEnabled(enabled)
+            return
         for widget in (
             self.team_combo,
             self.add_button,
@@ -173,6 +254,9 @@ class TrackedTeamsWidget(QWidget):
         self._selected.append(abbr)
         self._refresh_selected_list()
         self.teams_changed.emit()
+
+    def add_custom_team_dialog(self) -> None:
+        self._add_custom_team()
 
     def _add_custom_team(self) -> None:
         dialog = _AddCustomTeamDialog(self)

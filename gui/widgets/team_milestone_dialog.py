@@ -20,6 +20,13 @@ from core.milestone.definitions import MilestoneDefinitions
 from core.stats.aggregator import Aggregator
 from core.stats.team_filter import expand_tracked_teams, sorted_team_items
 from gui.ui_compact import scale_size
+from gui.widgets.app_dialog import (
+    add_dialog_footer,
+    init_dialog_layout,
+    make_button_box,
+    muted_label,
+)
+from gui.widgets.card_panel import CardPanel
 
 
 class TeamMilestoneDialog(QDialog):
@@ -72,16 +79,19 @@ class TeamMilestoneDialog(QDialog):
         form.addRow("날짜", self.date_edit)
         form.addRow("메모", self.notes_edit)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        buttons = make_button_box(ok=True, ok_text="기록 추가")
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("포스트시즌·우승 등 수동 기록 항목만 표시됩니다."))
-        layout.addLayout(form)
-        layout.addWidget(buttons)
+        form_card = CardPanel("팀 마일스톤")
+        form_card.add_layout(form)
+
+        layout = init_dialog_layout(self)
+        layout.addWidget(
+            muted_label("포스트시즌·우승 등 수동 기록 항목만 표시됩니다.")
+        )
+        layout.addWidget(form_card, stretch=1)
+        add_dialog_footer(layout, buttons)
 
     def _on_accept(self) -> None:
         team = str(self.team_combo.currentData() or "")

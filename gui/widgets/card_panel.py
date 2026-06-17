@@ -20,8 +20,8 @@ class CardPanel(QFrame):
         self.setObjectName("cardPanel")
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 10, 12, 12)
-        root.setSpacing(8)
+        root.setContentsMargins(14, 12, 14, 14)
+        root.setSpacing(10)
 
         if title or trailing is not None:
             header = QHBoxLayout()
@@ -37,7 +37,7 @@ class CardPanel(QFrame):
 
         self.content_layout = QVBoxLayout()
         self.content_layout.setContentsMargins(0, 0, 0, 0)
-        self.content_layout.setSpacing(8)
+        self.content_layout.setSpacing(10)
         root.addLayout(self.content_layout)
 
     def add_widget(self, widget: QWidget) -> None:
@@ -55,3 +55,35 @@ def section_label(text: str) -> QLabel:
     label = QLabel(text)
     label.setObjectName("sectionLabel")
     return label
+
+
+def tool_row(
+    title: str,
+    description: str,
+    button: QWidget,
+    *,
+    badge: QLabel | None = None,
+) -> QWidget:
+    """Settings-style row: title + description on the left, action on the right."""
+    row = QFrame()
+    row.setObjectName("toolRow")
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(10, 8, 10, 8)
+    layout.setSpacing(12)
+
+    text_col = QVBoxLayout()
+    text_col.setSpacing(2)
+    title_label = QLabel(title)
+    title_label.setObjectName("toolRowTitle")
+    desc_label = QLabel(description)
+    desc_label.setObjectName("mutedLabel")
+    desc_label.setWordWrap(True)
+    text_col.addWidget(title_label)
+    text_col.addWidget(desc_label)
+    layout.addLayout(text_col, stretch=1)
+
+    if badge is not None:
+        layout.addWidget(badge, alignment=Qt.AlignmentFlag.AlignTop)
+
+    layout.addWidget(button, alignment=Qt.AlignmentFlag.AlignVCenter)
+    return row

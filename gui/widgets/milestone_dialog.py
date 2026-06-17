@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
 
 from core.milestone.checker import MilestoneAchievement
 from gui.ui_compact import scale_size
+from gui.widgets.app_dialog import add_dialog_footer, init_dialog_layout, make_button_box, table_card
 
 
 class MilestoneAchievedDialog(QDialog):
@@ -34,9 +35,9 @@ class MilestoneAchievedDialog(QDialog):
             table.setItem(row_idx, 3, QTableWidgetItem(item.achieved_date or ""))
         table.resizeColumnsToContents()
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        buttons = make_button_box(ok=True, ok_text="확인")
         buttons.accepted.connect(self.accept)
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(table)
-        layout.addWidget(buttons)
+        layout = init_dialog_layout(self)
+        layout.addWidget(table_card("달성 목록", table), stretch=1)
+        add_dialog_footer(layout, buttons)

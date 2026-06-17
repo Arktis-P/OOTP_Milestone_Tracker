@@ -19,6 +19,8 @@ from PyQt6.QtWidgets import (
 from core.config import AppSettings
 from core.stats.aggregator import Aggregator
 from gui.ui_compact import scale_size
+from gui.widgets.app_dialog import add_dialog_footer, init_dialog_layout, make_button_box, muted_label
+from gui.widgets.card_panel import CardPanel
 from gui.widgets.table_widgets import SortableTable
 
 
@@ -60,23 +62,16 @@ class PlayerGameLogDialog(QDialog):
         self._batting_table.cellDoubleClicked.connect(self._open_log)
         self._pitching_table.cellDoubleClicked.connect(self._open_log)
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("날짜 더블클릭: 게임 로그 HTML 열기"))
-        layout.addWidget(tabs)
+        log_card = CardPanel("경기별 기록")
+        log_card.add_widget(tabs)
 
-        buttons = QHBoxLayout()
-        close_btn = QLabel("")
-        buttons.addStretch()
-        layout.addLayout(buttons)
+        buttons = make_button_box(close=True, cancel=False)
+        buttons.rejected.connect(self.accept)
 
-        close_row = QHBoxLayout()
-        from PyQt6.QtWidgets import QPushButton
-
-        close_button = QPushButton("닫기")
-        close_button.clicked.connect(self.accept)
-        close_row.addStretch()
-        close_row.addWidget(close_button)
-        layout.addLayout(close_row)
+        layout = init_dialog_layout(self)
+        layout.addWidget(muted_label("날짜 더블클릭: 게임 로그 HTML 열기", wrap=False))
+        layout.addWidget(log_card, stretch=1)
+        add_dialog_footer(layout, buttons)
 
     def _populate_batting(self) -> None:
         self._batting_rows = self.aggregator.get_player_batting_game_logs(

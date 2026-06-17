@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QFrame,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -38,7 +39,8 @@ from core.db.reset import (
     summarize_save_database,
 )
 from gui.widgets.tracked_teams_widget import TrackedTeamsWidget
-from gui.theme import SLATE_400, SLATE_500
+from gui.widgets.card_panel import CardPanel, section_label, tool_row
+from gui.theme import SLATE_500, TEXT_MUTED
 
 
 class SetupView(QWidget):
@@ -62,6 +64,7 @@ class SetupView(QWidget):
         super().__init__(parent)
         self.settings_manager = settings_manager
         self.settings = settings or settings_manager.load()
+        self._embedded = embedded
         self._detected_roots: list[DetectedSaveRoot] = []
         self._save_entries: list[SaveEntry] = []
         self._selected_version: int | None = None
@@ -71,18 +74,93 @@ class SetupView(QWidget):
 
         self.save_root_input = QLineEdit()
         self.save_root_input.setPlaceholderText("OOTP saved_games 폴더 경로")
-        self.browse_button = QPushButton("찾아보기")
+        self.browse_button = QPushButton("경로 확인" if embedded else "찾아보기")
         self.browse_button.clicked.connect(self._browse_save_root)
 
         self.auto_radio = QRadioButton("자동 탐지됨")
         self.manual_radio = QRadioButton("수동 설정")
         self.detection_status = QLabel("")
         self.detection_status.setWordWrap(True)
+        self.detection_status.setObjectName("mutedLabel")
 
         self.detected_roots_combo = QComboBox()
         self.detected_roots_combo.setVisible(False)
         self.detected_roots_combo.currentIndexChanged.connect(self._on_detected_root_changed)
 
+        self.league_combo = QComboBox()
+        self.refresh_button = QPushButton("새로고침")
+        self.refresh_button.clicked.connect(self._refresh_leagues)
+
+        self.season_spin = QSpinBox()
+        self.season_spin.setRange(1900, 2100)
+        self.season_spin.setValue(self.settings.current_season)
+        self.season_spin.setToolTip(
+            "OOTP에서 진행 중인 시즌 연도입니다.\n"
+            "박스스코어 임포트·초기값 임포트 필터·마일스톤 판정에 사용됩니다."
+        )
+
+        self.tracked_teams_widget = TrackedTeamsWidget(
+            self, checkbox_mode=embedded
+        )
+        self.tracked_teams_widget.load_from_settings(self.settings)
+
+        self.season_games_spin = QSpinBox()
+        self.season_games_spin.setRange(1, 200)
+        self.season_games_spin.setValue(self.settings.season_games_total)
+
+        self.korean_names_button = QPushButton("매핑 대기 열기")
+        self.korean_names_button.clicked.connect(self._open_korean_name_mapping)
+        self.korean_badge = QLabel("0")
+        self.korean_badge.setObjectName("badgeLabel")
+        self.korean_badge.setVisible(False)
+        self._refresh_korean_names_button()
+
+        self.bundle_updates_status = QLabel()
+        self.bundle_updates_status.setWordWrap(True)
+        self.bundle_updates_status.setObjectName("mutedLabel")
+        self.bundle_updates_button = QPushButton("병합 업데이트 실행")
+        self.bundle_updates_button.clicked.connect(self._open_bundle_updates)
+
+        self.milestones_button = QPushButton("기준 테이블 편집")
+        self.milestones_button.clicked.connect(self._open_milestone_definitions)
+
+        self.selected_path_label = QLabel("")
+        self.selected_path_label.setWordWrap(True)
+        self.selected_path_label.setObjectName("mutedLabel")
+
+        self.confirm_button = QPushButton(
+            "설정 일괄 저장 & 데이터 리프레시" if embedded else "확인 및 시작"
+        )
+        self.confirm_button.clicked.connect(self._confirm)
+        self.confirm_button.setDefault(True)
+        if embedded:
+            self.confirm_button.setObjectName("primaryButton")
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        if not embedded:
+            layout.addWidget(title)
+            layout.addSpacing(4)
+            self._build_first_run_layout(layout)
+        else:
+            self._build_embedded_layout(layout)
+
+        self.save_root_input.textChanged.connect(self._on_save_root_changed)
+        self.league_combo.currentIndexChanged.connect(self._update_selected_path_label)
+        self.manual_radio.toggled.connect(self._on_mode_changed)
+
+        if embedded and self.settings.active_save_path:
+            self.manual_radio.setChecked(True)
+            self._restore_saved_values()
+        else:
+            self._run_auto_detection()
+            self._restore_saved_values()
+
+        self.refresh_bundle_updates_status()
+
+    def _build_first_run_layout(self, layout: QVBoxLayout) -> None:
         save_root_row = QHBoxLayout()
         save_root_row.addWidget(self.save_root_input, stretch=1)
         save_root_row.addWidget(self.browse_button)
@@ -98,25 +176,12 @@ class SetupView(QWidget):
         save_root_layout.addLayout(mode_row)
         save_root_layout.addWidget(self.detection_status)
 
-        self.league_combo = QComboBox()
-        self.refresh_button = QPushButton("새로고침")
-        self.refresh_button.clicked.connect(self._refresh_leagues)
-
         league_row = QHBoxLayout()
         league_row.addWidget(self.league_combo, stretch=1)
         league_row.addWidget(self.refresh_button)
-
         league_group = QGroupBox("리그 선택")
         league_layout = QVBoxLayout(league_group)
         league_layout.addLayout(league_row)
-
-        self.season_spin = QSpinBox()
-        self.season_spin.setRange(1900, 2100)
-        self.season_spin.setValue(self.settings.current_season)
-        self.season_spin.setToolTip(
-            "OOTP에서 진행 중인 시즌 연도입니다.\n"
-            "박스스코어 임포트·초기값 임포트 필터·마일스톤 판정에 사용됩니다."
-        )
 
         season_group = QGroupBox("현재 시즌")
         season_layout = QFormLayout(season_group)
@@ -126,151 +191,187 @@ class SetupView(QWidget):
             QLabel("진행 중인 OOTP 시즌과 일치시키세요. (예: 2026 시즌 진행 중 → 2026)"),
         )
 
-        self.tracked_teams_widget = TrackedTeamsWidget(self)
-        self.tracked_teams_widget.load_from_settings(self.settings)
-        if embedded:
-            self.tracked_teams_widget.selected_list.setMaximumHeight(90)
-
-        self.season_games_spin = QSpinBox()
-        self.season_games_spin.setRange(1, 200)
-        self.season_games_spin.setValue(self.settings.season_games_total)
-
         tracking_group = QGroupBox("추적 설정")
         tracking_layout = QFormLayout(tracking_group)
         tracking_layout.addRow("추적 팀:", self.tracked_teams_widget)
         tracking_layout.addRow("시즌 총 경기:", self.season_games_spin)
-        tracking_hint = QLabel(
-            "MLB 30개 팀 중 선택하거나 수동으로 추가하세요. "
-            "게임에 확장 팀 등 신규 MLB 구단이 추가된 경우에만 "
-            "초기값 임포트 시 추가 여부를 묻습니다."
+        tracking_layout.addRow(
+            "",
+            QLabel(
+                "MLB 30개 팀 중 선택하거나 수동으로 추가하세요. "
+                "게임에 확장 팀 등 신규 MLB 구단이 추가된 경우에만 "
+                "초기값 임포트 시 추가 여부를 묻습니다."
+            ),
         )
-        if not embedded:
-            tracking_layout.addRow("", tracking_hint)
-        else:
-            tracking_hint.hide()
-            tracking_group.setToolTip(tracking_hint.text())
 
-        self.korean_names_button = QPushButton("한글 이름 매핑...")
-        self.korean_names_button.clicked.connect(self._open_korean_name_mapping)
-        self._refresh_korean_names_button()
-
-        names_desc = QLabel(
-            "성·이름 로마자 표기의 한글 매핑을 관리합니다. "
-            "스탯·박스스코어 불러오기 후 미등록 항목이 있으면 여기서 입력하세요."
-        )
         names_group = QGroupBox("한글 이름")
         names_layout = QVBoxLayout(names_group)
-        if not embedded:
-            names_layout.addWidget(names_desc)
-        else:
-            names_desc.hide()
-            self.korean_names_button.setToolTip(names_desc.text())
         names_layout.addWidget(
-            self.korean_names_button, alignment=Qt.AlignmentFlag.AlignLeft
+            QLabel(
+                "성·이름 로마자 표기의 한글 매핑을 관리합니다. "
+                "스탯·박스스코어 불러오기 후 미등록 항목이 있으면 여기서 입력하세요."
+            )
         )
+        names_layout.addWidget(self.korean_names_button)
 
-        self.bundle_updates_status = QLabel()
-        self.bundle_updates_status.setWordWrap(True)
-        self.bundle_updates_button = QPushButton("기준 파일 업데이트...")
-        self.bundle_updates_button.clicked.connect(self._open_bundle_updates)
-
-        bundle_updates_desc = QLabel(
-            "앱 업데이트 후 추가된 마일스톤·연속기록·한글 매핑 항목을 "
-            "로컬 파일에 병합합니다. 기존 항목은 유지됩니다."
+        bundle_group = QGroupBox("기준 파일 업데이트")
+        bundle_layout = QVBoxLayout(bundle_group)
+        bundle_layout.addWidget(
+            QLabel(
+                "앱 업데이트 후 추가된 마일스톤·연속기록·한글 매핑 항목을 "
+                "로컬 파일에 병합합니다."
+            )
         )
-        bundle_updates_group = QGroupBox("기준 파일 업데이트")
-        bundle_updates_layout = QVBoxLayout(bundle_updates_group)
-        if not embedded:
-            bundle_updates_layout.addWidget(bundle_updates_desc)
-        else:
-            bundle_updates_desc.hide()
-            self.bundle_updates_button.setToolTip(bundle_updates_desc.text())
-        bundle_updates_layout.addWidget(self.bundle_updates_status)
-        bundle_updates_layout.addWidget(
-            self.bundle_updates_button, alignment=Qt.AlignmentFlag.AlignLeft
-        )
+        bundle_layout.addWidget(self.bundle_updates_status)
+        bundle_layout.addWidget(self.bundle_updates_button)
 
-        self.milestones_button = QPushButton("마일스톤 기준 관리...")
-        self.milestones_button.clicked.connect(self._open_milestone_definitions)
-
-        milestones_desc = QLabel(
-            "달성 판정에 사용되는 마일스톤 목록을 확인·추가·수정·삭제합니다. "
-            "변경 사항은 milestones.csv에 저장됩니다."
-        )
         milestones_group = QGroupBox("마일스톤 기준")
         milestones_layout = QVBoxLayout(milestones_group)
-        if not embedded:
-            milestones_layout.addWidget(milestones_desc)
-        else:
-            milestones_desc.hide()
-            self.milestones_button.setToolTip(milestones_desc.text())
         milestones_layout.addWidget(
-            self.milestones_button, alignment=Qt.AlignmentFlag.AlignLeft
+            QLabel("달성 판정에 사용되는 마일스톤 목록을 milestones.csv에서 관리합니다.")
         )
+        milestones_layout.addWidget(self.milestones_button)
 
-        self.selected_path_label = QLabel("")
-        self.selected_path_label.setWordWrap(True)
-        self.selected_path_label.setStyleSheet(f"color: {SLATE_500};")
+        layout.addWidget(save_root_group)
+        layout.addWidget(league_group)
+        layout.addWidget(season_group)
+        layout.addWidget(tracking_group)
+        layout.addWidget(names_group)
+        layout.addWidget(bundle_group)
+        layout.addWidget(milestones_group)
+        layout.addWidget(QLabel("선택된 경로:"))
+        layout.addWidget(self.selected_path_label)
+        layout.addStretch()
+        layout.addWidget(self.confirm_button, alignment=Qt.AlignmentFlag.AlignRight)
 
-        self.confirm_button = QPushButton("확인 및 시작")
-        self.confirm_button.clicked.connect(self._confirm)
-        self.confirm_button.setDefault(True)
+    def _build_embedded_layout(self, layout: QVBoxLayout) -> None:
+        path_row = QHBoxLayout()
+        path_row.setSpacing(8)
+        path_row.addWidget(section_label("OOTP SAVED_GAMES 기본 루트"), stretch=0)
+        path_row.addWidget(self.save_root_input, stretch=1)
+        path_row.addWidget(self.browse_button)
 
-        layout = QVBoxLayout(self)
-        layout.setSpacing(6)
-        if not embedded:
-            layout.addWidget(title)
-            layout.addSpacing(8)
-            layout.addWidget(save_root_group)
-            layout.addWidget(league_group)
-            layout.addWidget(season_group)
-            layout.addWidget(tracking_group)
-            layout.addWidget(names_group)
-            layout.addWidget(bundle_updates_group)
-            layout.addWidget(milestones_group)
-            layout.addWidget(QLabel("선택된 경로:"))
-            layout.addWidget(self.selected_path_label)
-            layout.addStretch()
-            layout.addWidget(self.confirm_button, alignment=Qt.AlignmentFlag.AlignRight)
-        else:
-            left_column = QVBoxLayout()
-            left_column.setSpacing(6)
-            left_column.addWidget(save_root_group)
-            left_column.addWidget(league_group)
-            left_column.addWidget(season_group)
-            left_column.addWidget(QLabel("선택된 경로:"))
-            left_column.addWidget(self.selected_path_label)
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(self.auto_radio)
+        mode_row.addWidget(self.manual_radio)
+        mode_row.addStretch()
 
-            right_column = QVBoxLayout()
-            right_column.setSpacing(6)
-            right_column.addWidget(tracking_group)
-            right_column.addWidget(names_group)
-            right_column.addWidget(bundle_updates_group)
-            right_column.addWidget(milestones_group)
-            right_column.addWidget(self._build_dev_tools_group())
-            right_column.addWidget(self._build_database_reset_group())
-            right_column.addStretch()
+        league_season_row = QHBoxLayout()
+        league_season_row.setSpacing(12)
+        league_col = QVBoxLayout()
+        league_col.setSpacing(4)
+        league_col.addWidget(section_label("스캔된 세이브 리그"))
+        league_btns = QHBoxLayout()
+        league_btns.addWidget(self.league_combo, stretch=1)
+        league_btns.addWidget(self.refresh_button)
+        league_col.addLayout(league_btns)
+        season_col = QVBoxLayout()
+        season_col.setSpacing(4)
+        season_col.addWidget(section_label("현재 활성 시즌"))
+        season_col.addWidget(self.season_spin)
+        league_season_row.addLayout(league_col, stretch=1)
+        league_season_row.addLayout(season_col, stretch=0)
 
-            columns = QHBoxLayout()
-            columns.addLayout(left_column, stretch=1)
-            columns.addLayout(right_column, stretch=1)
-            layout.addLayout(columns)
-            layout.addWidget(
-                self.confirm_button, alignment=Qt.AlignmentFlag.AlignRight
+        teams_header = QHBoxLayout()
+        teams_header.addWidget(section_label("추적 대상 구단 리스트"))
+        teams_header.addStretch()
+        add_team_link = QPushButton("+ 팀 수동 추가")
+        add_team_link.setObjectName("linkButton")
+        add_team_link.clicked.connect(self.tracked_teams_widget.add_custom_team_dialog)
+        teams_header.addWidget(add_team_link)
+
+        season_games_row = QHBoxLayout()
+        season_games_row.setSpacing(8)
+        season_games_row.addWidget(section_label("시즌 총 경기수"))
+        season_games_row.addWidget(self.season_games_spin)
+        season_games_row.addStretch()
+
+        ootp_card = CardPanel("📁  OOTP 연동 설정")
+        ootp_card.content_layout.addLayout(path_row)
+        ootp_card.content_layout.addWidget(self.detected_roots_combo)
+        ootp_card.content_layout.addLayout(mode_row)
+        ootp_card.content_layout.addWidget(self.detection_status)
+        ootp_card.content_layout.addLayout(league_season_row)
+        ootp_card.content_layout.addLayout(teams_header)
+        ootp_card.content_layout.addWidget(self.tracked_teams_widget)
+        ootp_card.content_layout.addLayout(season_games_row)
+        ootp_card.content_layout.addWidget(self.selected_path_label)
+
+        self._init_db_reset_widgets()
+
+        tools_card = CardPanel("🛠️  고급 모듈 및 데이터 도구")
+        tools_card.add_widget(
+            tool_row(
+                "한글 이름 자동 매핑",
+                "로마자 성·이름 한글 변환 대기 중인 항목을 처리합니다.",
+                self.korean_names_button,
+                badge=self.korean_badge,
             )
+        )
+        tools_card.add_widget(
+            tool_row(
+                "마일스톤 기준 조건 수정",
+                "milestones.csv 마일스톤 종류 및 등급 판단 수치를 정의합니다.",
+                self.milestones_button,
+            )
+        )
+        tools_card.add_widget(
+            tool_row(
+                "앱 기준 파일 업데이트",
+                "로컬 마일스톤 룰셋과 한글 매핑 패치를 병합합니다.",
+                self.bundle_updates_button,
+            )
+        )
+        tools_card.add_widget(self._build_dev_tools_panel())
 
-        self.save_root_input.textChanged.connect(self._on_save_root_changed)
-        self.league_combo.currentIndexChanged.connect(self._update_selected_path_label)
-        self.manual_radio.toggled.connect(self._on_mode_changed)
+        columns = QHBoxLayout()
+        columns.setSpacing(12)
+        columns.addWidget(ootp_card, stretch=1)
+        columns.addWidget(tools_card, stretch=1)
+        layout.addLayout(columns, stretch=1)
+        layout.addWidget(self.confirm_button, alignment=Qt.AlignmentFlag.AlignRight)
 
-        if embedded and self.settings.active_save_path:
-            self.manual_radio.setChecked(True)
-            self._restore_saved_values()
-        else:
-            self._run_auto_detection()
-            self._restore_saved_values()
+    def _init_db_reset_widgets(self) -> None:
+        self.db_summary_label = QLabel()
+        self.db_summary_label.setWordWrap(True)
+        self.db_summary_label.setObjectName("mutedLabel")
+        self.db_path_label = QLabel()
+        self.db_path_label.setWordWrap(True)
+        self.db_path_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        self.refresh_db_summary_button = QPushButton("현황 새로고침")
+        self.refresh_db_summary_button.clicked.connect(self._refresh_database_summary)
+        self.reset_db_button = QPushButton("🚨 DB 완전 초기화")
+        self.reset_db_button.setObjectName("dangerButton")
+        self.reset_db_button.clicked.connect(self._reset_save_database)
+        self.dev_reimport_button = QPushButton("🔄 박스스코어 개별 재임포트")
+        self.dev_reimport_button.clicked.connect(self._open_dev_boxscore_reimport)
+        self._refresh_database_summary()
 
-        self.refresh_bundle_updates_status()
+    def _build_dev_tools_panel(self) -> QWidget:
+        panel = QFrame()
+        panel.setObjectName("toolRow")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        dev_title = QLabel("개발 도구 (Developer Menu)")
+        dev_title.setObjectName("toolRowTitle")
+        layout.addWidget(dev_title)
+
+        dev_buttons = QHBoxLayout()
+        dev_buttons.setSpacing(8)
+        dev_buttons.addWidget(self.dev_reimport_button, stretch=1)
+        dev_buttons.addWidget(self.reset_db_button)
+        layout.addLayout(dev_buttons)
+
+        layout.addWidget(self.db_summary_label)
+        layout.addWidget(self.db_path_label)
+
+        refresh_row = QHBoxLayout()
+        refresh_row.addStretch()
+        refresh_row.addWidget(self.refresh_db_summary_button)
+        layout.addLayout(refresh_row)
+        return panel
 
     def refresh_bundle_updates_status(self) -> None:
         from core.config.bundle_updates import scan_pending_updates
@@ -283,14 +384,25 @@ class SetupView(QWidget):
             )
             self.bundle_updates_status.setStyleSheet("color: #c0392b;")
             self.bundle_updates_button.setEnabled(True)
-            self.bundle_updates_button.setText(
-                f"기준 파일 업데이트... ({report.total})"
-            )
+            if self._embedded:
+                self.bundle_updates_button.setText("병합 업데이트 실행")
+                self.bundle_updates_button.setObjectName("dangerButton")
+            else:
+                self.bundle_updates_button.setText(
+                    f"기준 파일 업데이트... ({report.total})"
+                )
+                self.bundle_updates_button.setObjectName("")
         else:
             self.bundle_updates_status.setText("모든 기준 파일이 최신입니다.")
             self.bundle_updates_status.setStyleSheet(f"color: {SLATE_500};")
             self.bundle_updates_button.setEnabled(False)
-            self.bundle_updates_button.setText("기준 파일 업데이트...")
+            if self._embedded:
+                self.bundle_updates_button.setText("병합 업데이트 실행")
+            else:
+                self.bundle_updates_button.setText("기준 파일 업데이트...")
+            self.bundle_updates_button.setObjectName("")
+        self.bundle_updates_button.style().unpolish(self.bundle_updates_button)
+        self.bundle_updates_button.style().polish(self.bundle_updates_button)
 
     def _run_auto_detection(self) -> None:
         self._detected_roots = detect_save_roots()
@@ -457,23 +569,6 @@ class SetupView(QWidget):
         if hasattr(self, "db_summary_label"):
             self._refresh_database_summary()
 
-    def _build_dev_tools_group(self) -> QGroupBox:
-        group = QGroupBox("개발 도구")
-        layout = QVBoxLayout(group)
-
-        self.dev_reimport_button = QPushButton("박스스코어 다시 불러오기...")
-        self.dev_reimport_button.clicked.connect(self._open_dev_boxscore_reimport)
-        layout.addWidget(
-            self.dev_reimport_button, alignment=Qt.AlignmentFlag.AlignLeft
-        )
-        layout.addWidget(
-            QLabel(
-                "특정 박스스코어 HTML만 다시 파싱·마일스톤 기록합니다. "
-                "이미 불러온 경기도 덮어씁니다."
-            )
-        )
-        return group
-
     def _open_dev_boxscore_reimport(self) -> None:
         settings = self.settings_manager.ensure_derived_paths(self.settings)
         if not settings.active_save_path:
@@ -494,39 +589,6 @@ class SetupView(QWidget):
         dialog.exec()
         if dialog.result_message:
             self.boxscore_reimported.emit(dialog.result_message)
-
-    def _build_database_reset_group(self) -> QGroupBox:
-        group = QGroupBox("현재 세이브 데이터")
-        layout = QVBoxLayout(group)
-
-        self.db_summary_label = QLabel()
-        self.db_summary_label.setWordWrap(True)
-        self.db_summary_label.setStyleSheet(f"color: {SLATE_400};")
-        layout.addWidget(self.db_summary_label)
-
-        self.db_path_label = QLabel()
-        self.db_path_label.setWordWrap(True)
-        self.db_path_label.setStyleSheet(f"color: {SLATE_500}; font-size: 11px;")
-        layout.addWidget(self.db_path_label)
-
-        button_row = QHBoxLayout()
-        self.refresh_db_summary_button = QPushButton("현황 새로고침")
-        self.refresh_db_summary_button.clicked.connect(self._refresh_database_summary)
-        self.reset_db_button = QPushButton("현재 세이브 데이터 초기화...")
-        self.reset_db_button.clicked.connect(self._reset_save_database)
-        button_row.addWidget(self.refresh_db_summary_button)
-        button_row.addWidget(self.reset_db_button)
-        button_row.addStretch()
-        layout.addLayout(button_row)
-
-        layout.addWidget(
-            QLabel(
-                "현재 선택된 리그 세이브의 DB만 삭제합니다. "
-                "마일스톤 기록, 박스스코어, 통산 초기값, 예측 목록이 모두 지워집니다."
-            )
-        )
-        self._refresh_database_summary()
-        return group
 
     def _current_db_path(self) -> Path | None:
         settings = self.settings_manager.ensure_derived_paths(self.settings)
@@ -634,10 +696,15 @@ class SetupView(QWidget):
         from core.roster.korean_names import KoreanNameStore
 
         count = KoreanNameStore.load().pending_count()
-        text = "한글 이름 매핑..."
-        if count:
-            text += f" ({count})"
-        self.korean_names_button.setText(text)
+        if self._embedded:
+            self.korean_badge.setText(str(count) if count else "0")
+            self.korean_badge.setVisible(bool(count))
+            self.korean_names_button.setText("매핑 대기 열기")
+        else:
+            text = "한글 이름 매핑..."
+            if count:
+                text += f" ({count})"
+            self.korean_names_button.setText(text)
 
     def _confirm(self) -> None:
         save_root = self.save_root_input.text().strip()

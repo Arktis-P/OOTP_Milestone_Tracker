@@ -39,6 +39,17 @@ from core.roster.position_filter import POSITION_GROUP_OPTIONS, matches_position
 from core.roster.row_access import row_get
 from core.stats.aggregator import Aggregator
 from gui.ui_compact import scale_size
+from gui.widgets.app_dialog import (
+    add_dialog_footer,
+    init_dialog_layout,
+    make_button_box,
+    muted_label,
+    style_primary_button,
+    summary_label,
+    table_card,
+    toolbar_row,
+)
+from gui.widgets.card_panel import CardPanel, section_label
 from gui.widgets.bulk_rating_table import (
     COL_BASE,
     COL_EN,
@@ -63,7 +74,7 @@ class BulkRatingDialog(QDialog):
         self.aggregator = aggregator
         self.settings = settings
         self.setWindowTitle("레이팅 일괄 편집")
-        self.resize(*scale_size(1100, 700))
+        self.resize(*scale_size(2200, 1400))
 
         mlb_path, kbo_path = resolve_combined_paths(import_export_dir)
         if not mlb_path and not kbo_path:
@@ -117,11 +128,11 @@ class BulkRatingDialog(QDialog):
         self.prospect_boost = QCheckBox("유망주 레이팅 증가 적용 (국가 필터 선택 시 해당 국가만)")
         self.prospect_boost.setChecked(True)
 
-        self.ref_label = QLabel(
+        self.ref_label = muted_label(
             f"기준일: {self.reference_date.isoformat()} "
             f"(마지막 가져오기 날짜 우선)"
         )
-        self.count_label = QLabel()
+        self.count_label = summary_label()
 
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("이름 검색...")
@@ -155,13 +166,14 @@ class BulkRatingDialog(QDialog):
         self.prospect_only.toggled.connect(self._apply_filters)
 
         filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel("검색:"))
+        filter_row.setSpacing(10)
+        filter_row.addWidget(section_label("검색"))
         filter_row.addWidget(self.search_input, stretch=1)
-        filter_row.addWidget(QLabel("리그:"))
+        filter_row.addWidget(section_label("리그"))
         filter_row.addWidget(self.league_filter)
-        filter_row.addWidget(QLabel("국가:"))
+        filter_row.addWidget(section_label("국가"))
         filter_row.addWidget(self.nation_filter)
-        filter_row.addWidget(QLabel("포지션:"))
+        filter_row.addWidget(section_label("포지션"))
         filter_row.addWidget(self.position_filter)
         filter_row.addWidget(self.prospect_only)
 
@@ -202,22 +214,27 @@ class BulkRatingDialog(QDialog):
         self.progress_label = QLabel("")
         self.progress_label.setVisible(False)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Save
-        )
-        buttons.button(QDialogButtonBox.StandardButton.Save).setText("적용 후 저장")
+        buttons = make_button_box(save=True, save_text="적용 후 저장")
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.prospect_boost)
-        layout.addWidget(self.ref_label)
-        layout.addLayout(filter_row)
-        layout.addWidget(self.count_label)
-        layout.addWidget(self.table, stretch=1)
+        options_card = CardPanel("옵션")
+        options_card.add_widget(self.prospect_boost)
+        options_card.add_widget(self.ref_label)
+
+        filter_card = CardPanel("필터")
+        filter_card.add_layout(filter_row)
+
+        table_panel = table_card("선수 목록", self.table)
+        table_panel.content_layout.insertWidget(0, self.count_label)
+
+        layout = init_dialog_layout(self)
+        layout.addWidget(options_card)
+        layout.addWidget(filter_card)
+        layout.addWidget(table_panel, stretch=1)
         layout.addWidget(self.progress_label)
         layout.addWidget(self.progress)
-        layout.addWidget(buttons)
+        add_dialog_footer(layout, buttons)
 
         self._apply_filters()
 

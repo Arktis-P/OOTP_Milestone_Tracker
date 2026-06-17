@@ -352,14 +352,14 @@ class MainWindow(QMainWindow):
         dialog.setWindowTitle("리그 설정")
         dialog.resize(*SETUP_WINDOW_SIZE)
 
-        setup = SetupView(self.settings_manager, self.settings, dialog)
-        compact_widget(setup, margin=6, spacing=4)
+        setup = SetupView(self.settings_manager, self.settings, dialog, embedded=True)
         setup.setup_completed.connect(
             lambda updated: self._apply_settings(dialog, updated)
         )
         setup.milestones_changed.connect(self._reload_milestones)
 
         layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(setup)
         dialog.exec()
 

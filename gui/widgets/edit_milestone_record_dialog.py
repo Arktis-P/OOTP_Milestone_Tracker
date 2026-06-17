@@ -20,6 +20,13 @@ from core.milestone.record_edit import (
 )
 from core.stats.aggregator import Aggregator
 from gui.ui_compact import scale_size
+from gui.widgets.app_dialog import (
+    add_dialog_footer,
+    init_dialog_layout,
+    make_button_box,
+    muted_label,
+)
+from gui.widgets.card_panel import CardPanel
 
 
 class EditMilestoneRecordDialog(QDialog):
@@ -50,8 +57,8 @@ class EditMilestoneRecordDialog(QDialog):
         is_team = bool(self._record.get("team"))
         target = str(self._record["team"]) if is_team else str(self._record["player_name"])
         scope = self._record.get("scope") or (milestone.scope if milestone else "")
-        self.summary_label = QLabel(f"{target} · {label} · scope={scope}")
-        self.summary_label.setWordWrap(True)
+        self.summary_label = muted_label(f"{target} · {label} · scope={scope}")
+        self.summary_label.setObjectName("accentLabel")
 
         self.date_edit = QLineEdit(str(self._record.get("achieved_date") or ""))
         self.value_edit = QLineEdit(str(self._record.get("achieved_value") or ""))
@@ -74,17 +81,17 @@ class EditMilestoneRecordDialog(QDialog):
         form.addRow("설명:", self.description_edit)
         form.addRow("비고:", self.notes_edit)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Save
-        )
-        buttons.button(QDialogButtonBox.StandardButton.Save).setText("저장")
+        buttons = make_button_box(save=True, save_text="저장")
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
 
-        layout = QVBoxLayout(self)
+        form_card = CardPanel("기록 정보")
+        form_card.add_layout(form)
+
+        layout = init_dialog_layout(self)
         layout.addWidget(self.summary_label)
-        layout.addLayout(form)
-        layout.addWidget(buttons)
+        layout.addWidget(form_card, stretch=1)
+        add_dialog_footer(layout, buttons)
 
     def _on_accept(self) -> None:
         try:

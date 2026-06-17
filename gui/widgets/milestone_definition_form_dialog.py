@@ -24,6 +24,8 @@ from core.milestone.definitions import (
     validate_milestone_definition,
 )
 from gui.ui_compact import scale_size
+from gui.widgets.app_dialog import add_dialog_footer, init_dialog_layout, make_button_box
+from gui.widgets.card_panel import CardPanel
 
 
 class MilestoneDefinitionFormDialog(QDialog):
@@ -116,16 +118,16 @@ class MilestoneDefinitionFormDialog(QDialog):
         form.addRow("설명 템플릿:", self.template_combo)
         form.addRow("", self.active_check)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Save
-        )
-        buttons.button(QDialogButtonBox.StandardButton.Save).setText("확인")
+        buttons = make_button_box(save=True, save_text="확인")
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
 
-        layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addWidget(buttons)
+        form_card = CardPanel("기준 정보")
+        form_card.add_layout(form)
+
+        layout = init_dialog_layout(self)
+        layout.addWidget(form_card, stretch=1)
+        add_dialog_footer(layout, buttons)
 
         self.scope_combo.currentTextChanged.connect(self._sync_scope_fields)
         self._sync_scope_fields()

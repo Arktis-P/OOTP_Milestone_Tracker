@@ -52,6 +52,8 @@ from core.stats.team_filter import (
     merge_team_maps,
 )
 from gui.ui_compact import hint_style, scale_size
+from gui.widgets.app_dialog import add_dialog_footer, error_label, init_dialog_layout, make_button_box
+from gui.widgets.card_panel import CardPanel
 
 _TAB_MILESTONE = 0
 _TAB_AWARD = 1
@@ -86,18 +88,17 @@ class ManualMilestoneDialog(QDialog):
         self.stack.addWidget(self._build_transfer_page())
         self.stack.addWidget(self._build_injury_page())
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Cancel
-            | QDialogButtonBox.StandardButton.Save
-        )
-        buttons.button(QDialogButtonBox.StandardButton.Save).setText("기록 추가")
+        buttons = make_button_box(save=True, save_text="기록 추가")
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.tabs)
-        layout.addWidget(self.stack)
-        layout.addWidget(buttons)
+        content_card = CardPanel("수동 입력")
+        content_card.add_widget(self.tabs)
+        content_card.add_widget(self.stack)
+
+        layout = init_dialog_layout(self)
+        layout.addWidget(content_card, stretch=1)
+        add_dialog_footer(layout, buttons)
 
         self._on_tab_changed(0)
 
@@ -118,8 +119,7 @@ class ManualMilestoneDialog(QDialog):
 
         self.date_edit = QLineEdit()
         self.date_edit.setPlaceholderText("2026-03-01")
-        self.date_error = QLabel("")
-        self.date_error.setStyleSheet("color: #dc2626;")
+        self.date_error = error_label()
         self.date_error.hide()
         self.date_edit.textChanged.connect(self._validate_date_field)
 
@@ -219,8 +219,7 @@ class ManualMilestoneDialog(QDialog):
 
         self.transfer_date_edit = QLineEdit()
         self.transfer_date_edit.setPlaceholderText("2026-03-01")
-        self.transfer_date_error = QLabel("")
-        self.transfer_date_error.setStyleSheet("color: #dc2626;")
+        self.transfer_date_error = error_label()
         self.transfer_date_error.hide()
         self.transfer_date_edit.textChanged.connect(self._validate_transfer_date_field)
 
@@ -282,8 +281,7 @@ class ManualMilestoneDialog(QDialog):
 
         self.injury_date_edit = QLineEdit()
         self.injury_date_edit.setPlaceholderText("2026-03-01")
-        self.injury_date_error = QLabel("")
-        self.injury_date_error.setStyleSheet("color: #dc2626;")
+        self.injury_date_error = error_label()
         self.injury_date_error.hide()
         self.injury_date_edit.textChanged.connect(self._validate_injury_date_field)
 

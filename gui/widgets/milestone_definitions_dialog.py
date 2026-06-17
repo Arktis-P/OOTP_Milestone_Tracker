@@ -26,6 +26,15 @@ from core.milestone.definitions import (
 )
 from gui.widgets.milestone_definition_form_dialog import MilestoneDefinitionFormDialog
 from gui.ui_compact import scale_size
+from gui.widgets.app_dialog import (
+    add_dialog_footer,
+    init_dialog_layout,
+    make_button_box,
+    muted_label,
+    summary_label,
+    table_card,
+    toolbar_row,
+)
 from gui.widgets.table_widgets import FilterBar
 
 
@@ -39,15 +48,14 @@ class MilestoneDefinitionsDialog(QDialog):
         self._items: list[MilestoneDefinition] = list(self._definitions.all_milestones)
 
         self.setWindowTitle("마일스톤 기준 관리")
-        self.resize(*scale_size(980, 560))
+        self.resize(*scale_size(1960, 1400))
 
-        intro = QLabel(
+        intro = muted_label(
             f"마일스톤 달성 판정에 사용되는 기준 목록입니다.\n"
             f"파일: {milestones_path}"
         )
-        intro.setWordWrap(True)
 
-        self.summary_label = QLabel()
+        self.summary_label = summary_label()
         self.filter_bar = FilterBar("key·이름·scope 검색...")
         self.filter_bar.search_input.textChanged.connect(self._reload_table)
 
@@ -67,23 +75,26 @@ class MilestoneDefinitionsDialog(QDialog):
         self.edit_button.clicked.connect(self._edit_selected)
         self.delete_button.clicked.connect(self._delete_selected)
 
-        button_row = QHBoxLayout()
-        button_row.addWidget(self.add_button)
-        button_row.addWidget(self.edit_button)
-        button_row.addWidget(self.delete_button)
-        button_row.addStretch()
-        button_row.addWidget(QLabel("더블클릭: 수정"))
+        button_row = toolbar_row(
+            self.add_button,
+            self.edit_button,
+            self.delete_button,
+        )
+        hint = muted_label("더블클릭: 수정", wrap=False)
 
-        close_buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close_buttons = make_button_box(close=True, cancel=False)
         close_buttons.rejected.connect(self.reject)
 
-        layout = QVBoxLayout(self)
+        table_panel = table_card("기준 목록", self.table)
+
+        layout = init_dialog_layout(self)
         layout.addWidget(intro)
         layout.addWidget(self.summary_label)
         layout.addWidget(self.filter_bar)
-        layout.addWidget(self.table, stretch=1)
-        layout.addLayout(button_row)
-        layout.addWidget(close_buttons)
+        layout.addWidget(table_panel, stretch=1)
+        layout.addWidget(button_row)
+        layout.addWidget(hint)
+        add_dialog_footer(layout, close_buttons)
 
         self._reload_table()
 

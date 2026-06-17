@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QDialog,
-    QDialogButtonBox,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
@@ -17,7 +17,6 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
-    QVBoxLayout,
 )
 
 from core.config import AppSettings, SettingsManager, resolve_data_path
@@ -29,6 +28,16 @@ from core.parser.boxscore_html import (
 )
 from core.stats.aggregator import Aggregator
 from gui.ui_compact import scale_size
+from gui.widgets.app_dialog import (
+    add_dialog_footer,
+    init_dialog_layout,
+    make_button_box,
+    muted_label,
+    style_primary_button,
+    table_card,
+    toolbar_row,
+)
+from gui.theme import RED_TEXT
 from gui.workers.import_worker import ImportFinishedPayload
 from gui.workers.reimport_worker import ReimportBoxscoreWorker
 
@@ -52,31 +61,27 @@ class DevBoxscoreReimportDialog(QDialog):
         self.result_message = ""
 
         self.setWindowTitle("박스스코어 다시 불러오기 (개발용)")
-        self.resize(*scale_size(820, 520))
+        self.resize(*scale_size(820, 1300))
 
-        intro = QLabel(
+        intro = muted_label(
             "박스스코어 HTML을 선택해 다시 불러옵니다. "
             "이미 DB에 있는 경기도 삭제 후 재파싱·마일스톤 기록합니다. "
             "(연속 기록 상태는 시즌 전체 재처리와 다를 수 있습니다.)"
         )
-        intro.setWordWrap(True)
-        intro.setStyleSheet("color: #555;")
 
-        self.dir_label = QLabel()
-        self.dir_label.setWordWrap(True)
-        self.dir_label.setStyleSheet("color: #666; font-size: 11px;")
+        self.dir_label = muted_label("", wrap=True)
 
-        load_row = QHBoxLayout()
         self.load_button = QPushButton("목록 불러오기")
         self.load_button.clicked.connect(self._load_from_current_dir)
         self.browse_dir_button = QPushButton("폴더 선택...")
         self.browse_dir_button.clicked.connect(self._browse_directory)
         self.add_file_button = QPushButton("파일 추가...")
         self.add_file_button.clicked.connect(self._add_files)
-        load_row.addWidget(self.load_button)
-        load_row.addWidget(self.browse_dir_button)
-        load_row.addWidget(self.add_file_button)
-        load_row.addStretch()
+        load_row = toolbar_row(
+            self.load_button,
+            self.browse_dir_button,
+            self.add_file_button,
+        )
 
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(
@@ -96,27 +101,30 @@ class DevBoxscoreReimportDialog(QDialog):
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self.table.itemSelectionChanged.connect(self._update_reimport_button)
 
-        self.status_label = QLabel("")
-        self.status_label.setWordWrap(True)
+        self.status_label = muted_label("", wrap=True)
 
-        action_row = QHBoxLayout()
         self.reimport_button = QPushButton("선택 경기 다시 불러오기")
         self.reimport_button.setEnabled(False)
         self.reimport_button.clicked.connect(self._reimport_selected)
+        style_primary_button(self.reimport_button)
+
+        action_row = QHBoxLayout()
         action_row.addWidget(self.reimport_button)
         action_row.addStretch()
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
-        buttons.rejected.connect(self.reject)
+        buttons = make_button_box(close=True, cancel=False)
 
-        layout = QVBoxLayout(self)
+        table_panel = table_card("박스스코어 파일", self.table)
+
+        layout = init_dialog_layout(self)
         layout.addWidget(intro)
         layout.addWidget(self.dir_label)
-        layout.addLayout(load_row)
-        layout.addWidget(self.table, stretch=1)
+        layout.addWidget(load_row)
+        layout.addWidget(table_panel, stretch=1)
         layout.addWidget(self.status_label)
         layout.addLayout(action_row)
-        layout.addWidget(buttons)
+        add_dialog_footer(layout, buttons)
+        buttons.rejected.connect(self.reject)
 
         self._refresh_dir_label()
         if self._scan_dir and self._scan_dir.is_dir():
@@ -155,7 +163,7 @@ class DevBoxscoreReimportDialog(QDialog):
                 if col == 2:
                     cell.setData(Qt.ItemDataRole.UserRole, item.game_id)
                 if col == 4 and item.already_imported:
-                    cell.setForeground(Qt.GlobalColor.darkRed)
+                    cell.setForeground(QColor(RED_TEXT))
                 self.table.setItem(row, col, cell)
             self.table.item(row, 0).setData(
                 Qt.ItemDataRole.UserRole, str(item.path)

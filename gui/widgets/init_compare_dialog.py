@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
-    QLabel,
     QTableWidget,
     QTableWidgetItem,
-    QVBoxLayout,
 )
 
 from core.stats.initial_import import StatDiff
 from gui.ui_compact import scale_size
+from gui.widgets.app_dialog import init_dialog_layout, make_button_box, muted_label, table_card
 
 
 class InitCompareDialog(QDialog):
@@ -46,27 +46,26 @@ class InitCompareDialog(QDialog):
         else:
             table = None
 
-        note = QLabel(
+        note = muted_label(
             "차이가 없습니다." if not diffs else "박스스코어에 없는 경기가 파일에 포함됐을 수 있습니다."
         )
-        note.setWordWrap(True)
 
-        buttons = QDialogButtonBox()
         if allow_save:
-            save_button = buttons.addButton(save_label, QDialogButtonBox.ButtonRole.AcceptRole)
-            buttons.addButton(QDialogButtonBox.StandardButton.Cancel)
-            save_button.clicked.connect(self._confirm_save)
+            buttons = make_button_box(
+                cancel=True,
+                custom_accept=(save_label, QDialogButtonBox.ButtonRole.AcceptRole),
+            )
+            buttons.accepted.connect(self._confirm_save)
+            buttons.rejected.connect(self.reject)
         else:
-            buttons.addButton(QDialogButtonBox.StandardButton.Ok)
-        buttons.rejected.connect(self.reject)
-        if not allow_save:
+            buttons = make_button_box(ok=True)
             buttons.accepted.connect(self.accept)
 
-        layout = QVBoxLayout(self)
-        if table:
-            layout.addWidget(table)
+        layout = init_dialog_layout(self)
+        if table is not None:
+            layout.addWidget(table_card("통계 차이", table), stretch=1)
         layout.addWidget(note)
-        layout.addWidget(buttons)
+        layout.addWidget(buttons, alignment=Qt.AlignmentFlag.AlignRight)
 
     def _confirm_save(self) -> None:
         self._save_confirmed = True

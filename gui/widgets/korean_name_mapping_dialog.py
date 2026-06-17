@@ -19,23 +19,31 @@ from PyQt6.QtWidgets import (
 
 from core.roster.korean_names import KoreanNameStore, PendingName, pending_full_name_label
 from gui.ui_compact import scale_size
+from gui.widgets.app_dialog import (
+    add_dialog_footer,
+    init_dialog_layout,
+    make_button_box,
+    muted_label,
+    style_primary_button,
+    summary_label,
+    table_card,
+)
 
 
 class KoreanNameMappingDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("한글 이름 매핑")
-        self.resize(*scale_size(720, 520))
+        self.resize(*scale_size(1440, 1300))
         self._store = KoreanNameStore.load()
 
-        intro = QLabel(
+        intro = muted_label(
             "박스스코어·스탯 불러오기 중 등록되지 않은 성/이름이 여기에 쌓입니다.\n"
             "OOTP 풀 네임(First Last) 기준으로 성·이름을 나눠 매핑합니다. "
             "한국인은 성+이름, 그 외는 이름+성 순으로 표시됩니다."
         )
-        intro.setWordWrap(True)
 
-        self.summary_label = QLabel()
+        self.summary_label = summary_label()
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("로마자 검색...")
         self.search_input.textChanged.connect(self._reload_table)
@@ -53,20 +61,28 @@ class KoreanNameMappingDialog(QDialog):
 
         save_button = QPushButton("입력한 항목 저장")
         save_button.clicked.connect(self._save_entries)
+        style_primary_button(save_button)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons = make_button_box(close=True, cancel=False)
         buttons.rejected.connect(self.reject)
 
         top_row = QHBoxLayout()
+        top_row.setSpacing(10)
         top_row.addWidget(self.summary_label, stretch=1)
         top_row.addWidget(self.search_input, stretch=1)
 
-        layout = QVBoxLayout(self)
+        table_panel = table_card("매핑 대기 목록", self.table)
+
+        footer = QHBoxLayout()
+        footer.addStretch()
+        footer.addWidget(save_button)
+        footer.addWidget(buttons)
+
+        layout = init_dialog_layout(self)
         layout.addWidget(intro)
         layout.addLayout(top_row)
-        layout.addWidget(self.table, stretch=1)
-        layout.addWidget(save_button, alignment=Qt.AlignmentFlag.AlignRight)
-        layout.addWidget(buttons)
+        layout.addWidget(table_panel, stretch=1)
+        layout.addLayout(footer)
 
         self._reload_table()
 

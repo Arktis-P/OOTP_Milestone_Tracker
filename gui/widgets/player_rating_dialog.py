@@ -20,6 +20,8 @@ from core.roster.position_filter import position_label
 from core.roster.rating_fields import RATING_SECTIONS, RatingSection
 from core.roster.row_access import RowField, row_get_field, row_set_field
 from gui.ui_compact import scale_size
+from gui.widgets.app_dialog import add_dialog_footer, init_dialog_layout, make_button_box
+from gui.widgets.card_panel import CardPanel
 
 
 class PlayerRatingDialog(QDialog):
@@ -42,6 +44,7 @@ class PlayerRatingDialog(QDialog):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         body = QWidget()
         body_layout = QVBoxLayout(body)
         body_layout.setSpacing(8)
@@ -55,15 +58,16 @@ class PlayerRatingDialog(QDialog):
 
         scroll.setWidget(body)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
-        )
+        buttons = make_button_box(save=True, save_text="저장")
         buttons.accepted.connect(self._apply_and_accept)
         buttons.rejected.connect(self.reject)
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(scroll)
-        layout.addWidget(buttons)
+        ratings_card = CardPanel("레이팅")
+        ratings_card.add_widget(scroll)
+
+        layout = init_dialog_layout(self)
+        layout.addWidget(ratings_card, stretch=1)
+        add_dialog_footer(layout, buttons)
 
     def _build_section_table(
         self,
