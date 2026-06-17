@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from core.db.meta import set_meta
 from core.milestone.checker import MilestoneChecker
 from core.milestone.definitions import MilestoneDefinition, MilestoneDefinitions, load_milestones
 from core.parser.boxscore_html import BoxscoreHTMLParser
@@ -54,7 +55,7 @@ def test_load_milestones_csv_grade(milestones: MilestoneDefinitions) -> None:
     cg = milestones.get_by_key("pit_game_cg")
     assert cg is not None
     assert cg.grade == "uncommon"
-    assert len(milestones.all_milestones) == 266
+    assert len(milestones.all_milestones) == 276
     ratio_keys = {
         item.key for item in milestones.all_milestones if item.scope == "season_ratio"
     }
@@ -286,3 +287,103 @@ def test_lower_direction_era(aggregator: Aggregator) -> None:
     )
     bad = checker.check_season_ratios(2026)
     assert bad == []
+
+
+def test_career_first_stats_from_zero(
+    aggregator: Aggregator, checker: MilestoneChecker
+) -> None:
+    aggregator.conn.executemany(
+        "INSERT INTO players (player_id, full_name, short_name) VALUES (?, ?, ?)",
+        [(9001, "Rookie Batter", "R. Batter"), (9002, "Rookie Pitcher", "R. Pitcher")],
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team,
+            away_score, home_score, away_innings, home_innings, is_mlb
+        ) VALUES (900, '2026-04-01', 2026, 'Away', 'Home', 2, 3, '[]', '[]', 1)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO batting_logs (
+            game_id, player_id, season, team, date, ab, h, rbi, home_runs, stolen_bases
+        ) VALUES (900, 9001, 2026, 'Home', '2026-04-01', 4, 1, 1, 0, 1)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO pitching_logs (
+            game_id, player_id, season, team, date, ip_outs, h, bb, k, er,
+            win, loss, save, hold, is_cg, is_sho, is_no_hitter, is_perfect_game
+        ) VALUES (900, 9002, 2026, 'Home', '2026-04-01', 3, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0)
+        """
+    )
+    aggregator.conn.commit()
+
+    achievements = checker.check_new_games([900], season=2026)
+    batter_keys = {
+        item.milestone.key
+        for item in achievements
+        if item.player_id == 9001
+    }
+    pitcher_keys = {
+        item.milestone.key
+        for item in achievements
+        if item.player_id == 9002
+    }
+
+    assert {
+        "bat_career_first_games",
+        "bat_career_first_hit",
+        "bat_career_first_rbi",
+        "bat_career_first_sb",
+    } <= batter_keys
+    assert {
+        "pit_career_first_game",
+        "pit_career_first_k",
+        "pit_career_first_hold",
+        "pit_career_first_save",
+    } <= pitcher_keys
+    assert "pit_career_first_win" not in pitcher_keys
+
+
+def test_career_first_stat_not_retriggered_with_prior_init(
+    aggregator: Aggregator, checker: MilestoneChecker
+) -> None:
+    aggregator.conn.execute(
+        "INSERT INTO players (player_id, full_name, short_name) VALUES (9003, 'Vet', 'V. Vet')"
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO career_batting_init (
+            player_id, season, g, ab, h, hr, rbi, bb, k, doubles, triples, sb, r
+        ) VALUES (9003, 2025, 10, 30, 5, 0, 2, 1, 8, 1, 0, 0, 1)
+        """
+    )
+    set_meta(aggregator.conn, "init_season_coverage", "2025")
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team,
+            away_score, home_score, away_innings, home_innings, is_mlb
+        ) VALUES (901, '2026-04-02', 2026, 'Away', 'Home', 1, 2, '[]', '[]', 1)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO batting_logs (
+            game_id, player_id, season, team, date, ab, h, rbi, home_runs, stolen_bases
+        ) VALUES (901, 9003, 2026, 'Home', '2026-04-02', 3, 1, 0, 0, 0)
+        """
+    )
+    aggregator.conn.commit()
+
+    achievements = checker.check_new_games([901], season=2026)
+    first_keys = {
+        item.milestone.key
+        for item in achievements
+        if item.player_id == 9003 and item.milestone.key.startswith("bat_career_first_")
+    }
+    assert first_keys == set()
+

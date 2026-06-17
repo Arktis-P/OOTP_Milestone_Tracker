@@ -95,6 +95,11 @@ batting,bat_season_award_silver_slugger,실버슬러거,season,award_silver_slug
 batting,bat_season_award_gold_glove,골드글러브,season,award_gold_glove,1,boolean,rare,,,season_batting_award
 batting,bat_season_award_rookie_of_year,신인왕,season,award_rookie_of_year,1,boolean,epic,,,season_batting_award
 batting,bat_season_award_mvp,MVP,season,award_mvp,1,boolean,epic,,,season_batting_award
+batting,bat_career_first_games,통산 첫 출장,career,career_g,1,higher,common,,,career_batting_stat
+batting,bat_career_first_hit,통산 첫 안타,career,career_h,1,higher,common,,,career_batting_stat
+batting,bat_career_first_rbi,통산 첫 타점,career,career_rbi,1,higher,common,,,career_batting_stat
+batting,bat_career_first_hr,통산 첫 홈런,career,career_hr,1,higher,common,,,career_batting_stat
+batting,bat_career_first_sb,통산 첫 도루,career,career_sb,1,higher,common,,,career_batting_stat
 batting,bat_career_games_1500,통산 1500 경기,career,career_g,1500,higher,uncommon,100,10,career_batting_stat
 batting,bat_career_games_2000,통산 2000 경기,career,career_g,2000,higher,rare,100,10,career_batting_stat
 batting,bat_career_games_2500,통산 2500 경기,career,career_g,2500,higher,rare,100,10,career_batting_stat
@@ -196,6 +201,11 @@ pitching,pit_season_award_rookie_of_year,신인왕,season,award_rookie_of_year,1
 pitching,pit_season_award_reliever_of_year,올해의 구원투수상,season,award_reliever_of_year,1,boolean,epic,,,season_pitching_award
 pitching,pit_season_award_cy_young,사이영상,season,award_cy_young,1,boolean,epic,,,season_pitching_award
 pitching,pit_season_award_mvp,MVP,season,award_mvp,1,boolean,epic,,,season_pitching_award
+pitching,pit_career_first_game,통산 첫 등판,career,career_g_pit,1,higher,common,,,career_pitching_stat
+pitching,pit_career_first_k,통산 첫 탈삼진,career,career_k_pit,1,higher,common,,,career_pitching_stat
+pitching,pit_career_first_win,통산 첫 승,career,career_wins,1,higher,common,,,career_pitching_stat
+pitching,pit_career_first_hold,통산 첫 홀드,career,career_holds,1,higher,common,,,career_pitching_stat
+pitching,pit_career_first_save,통산 첫 세이브,career,career_saves,1,higher,common,,,career_pitching_stat
 pitching,pit_career_games_300,통산 300 경기,career,career_g_pit,300,higher,uncommon,30,5,career_pitching_stat
 pitching,pit_career_games_400,통산 400 경기,career,career_g_pit,400,higher,uncommon,30,5,career_pitching_stat
 pitching,pit_career_games_500,통산 500 경기,career,career_g_pit,500,higher,rare,30,5,career_pitching_stat
