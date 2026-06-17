@@ -1,61 +1,61 @@
 ﻿category,key,label,scope,stat,threshold,direction,grade,track_from,near_n,description_template
-batting,bat_game_hits_4,한 경기 안타 4,game,h,4,higher,uncommon,,,batting_cumulative
-batting,bat_game_hits_5,한 경기 안타 5,game,h,5,higher,rare,,,batting_cumulative
-batting,bat_game_hits_6,한 경기 안타 6,game,h,6,higher,epic,,,batting_cumulative
-batting,bat_game_hits_7plus,한 경기 안타 7+,game,h,7,higher,legendary,,,batting_cumulative
-batting,bat_game_hr_2,한 경기 홈런 2,game,hr,2,higher,uncommon,,,batting_cumulative
-batting,bat_game_hr_3,한 경기 홈런 3,game,hr,3,higher,rare,,,batting_cumulative
-batting,bat_game_hr_4,한 경기 홈런 4,game,hr,4,higher,epic,,,batting_cumulative
-batting,bat_game_hr_5plus,한 경기 홈런 5+,game,hr,5,higher,legendary,,,batting_cumulative
-batting,bat_game_rbi_5,한 경기 타점 5,game,rbi,5,higher,uncommon,,,batting_cumulative
-batting,bat_game_rbi_6,한 경기 타점 6,game,rbi,6,higher,uncommon,,,batting_cumulative
-batting,bat_game_rbi_7,한 경기 타점 7,game,rbi,7,higher,rare,,,batting_cumulative
-batting,bat_game_rbi_8,한 경기 타점 8,game,rbi,8,higher,epic,,,batting_cumulative
-batting,bat_game_rbi_9,한 경기 타점 9,game,rbi,9,higher,epic,,,batting_cumulative
-batting,bat_game_rbi_10plus,한 경기 타점 10+,game,rbi,10,higher,legendary,,,batting_cumulative
-batting,bat_game_sb_3,한 경기 도루 3,game,sb,3,higher,uncommon,,,batting_cumulative
-batting,bat_game_sb_4,한 경기 도루 4,game,sb,4,higher,rare,,,batting_cumulative
-batting,bat_game_sb_5,한 경기 도루 5,game,sb,5,higher,rare,,,batting_cumulative
-batting,bat_game_sb_6,한 경기 도루 6,game,sb,6,higher,epic,,,batting_cumulative
-batting,bat_game_sb_7plus,한 경기 도루 7+,game,sb,7,higher,legendary,,,batting_cumulative
+batting,bat_game_hits_4,한 경기 4 안타,game,h,4,higher,uncommon,,,batting_cumulative
+batting,bat_game_hits_5,한 경기 5 안타,game,h,5,higher,rare,,,batting_cumulative
+batting,bat_game_hits_6,한 경기 6 안타,game,h,6,higher,epic,,,batting_cumulative
+batting,bat_game_hits_7plus,한 경기 7+ 안타,game,h,7,higher,legendary,,,batting_cumulative
+batting,bat_game_hr_2,한 경기 2 홈런,game,hr,2,higher,uncommon,,,batting_cumulative
+batting,bat_game_hr_3,한 경기 3 홈런,game,hr,3,higher,rare,,,batting_cumulative
+batting,bat_game_hr_4,한 경기 4 홈런,game,hr,4,higher,epic,,,batting_cumulative
+batting,bat_game_hr_5plus,한 경기 5+ 홈런,game,hr,5,higher,legendary,,,batting_cumulative
+batting,bat_game_rbi_5,한 경기 5 타점,game,rbi,5,higher,uncommon,,,batting_cumulative
+batting,bat_game_rbi_6,한 경기 6 타점,game,rbi,6,higher,uncommon,,,batting_cumulative
+batting,bat_game_rbi_7,한 경기 7 타점,game,rbi,7,higher,rare,,,batting_cumulative
+batting,bat_game_rbi_8,한 경기 8 타점,game,rbi,8,higher,epic,,,batting_cumulative
+batting,bat_game_rbi_9,한 경기 9 타점,game,rbi,9,higher,epic,,,batting_cumulative
+batting,bat_game_rbi_10plus,한 경기 10+ 타점,game,rbi,10,higher,legendary,,,batting_cumulative
+batting,bat_game_sb_3,한 경기 3 도루,game,sb,3,higher,uncommon,,,batting_cumulative
+batting,bat_game_sb_4,한 경기 4 도루,game,sb,4,higher,rare,,,batting_cumulative
+batting,bat_game_sb_5,한 경기 5 도루,game,sb,5,higher,rare,,,batting_cumulative
+batting,bat_game_sb_6,한 경기 6 도루,game,sb,6,higher,epic,,,batting_cumulative
+batting,bat_game_sb_7plus,한 경기 7+ 도루,game,sb,7,higher,legendary,,,batting_cumulative
 batting,bat_game_cycle,사이클링 히트,game,cycle,1,boolean,epic,,,batting_event
 batting,bat_game_grand_slam,그랜드슬램,game,grand_slam,1,boolean,rare,,,batting_event
-batting,bat_season_hits_150,시즌 안타 150,season,season_h,150,higher,uncommon,,,season_batting_stat
-batting,bat_season_hits_200,시즌 안타 200,season,season_h,200,higher,rare,,,season_batting_stat
-batting,bat_season_hits_250,시즌 안타 250,season,season_h,250,higher,rare,,,season_batting_stat
-batting,bat_season_hits_300,시즌 안타 300,season,season_h,300,higher,epic,,,season_batting_stat
-batting,bat_season_hits_350plus,시즌 안타 350+,season,season_h,350,higher,legendary,,,season_batting_stat
-batting,bat_season_hr_20,시즌 홈런 20,season,season_hr,20,higher,uncommon,,,season_batting_stat
-batting,bat_season_hr_30,시즌 홈런 30,season,season_hr,30,higher,uncommon,,,season_batting_stat
-batting,bat_season_hr_40,시즌 홈런 40,season,season_hr,40,higher,rare,,,season_batting_stat
-batting,bat_season_hr_50,시즌 홈런 50,season,season_hr,50,higher,rare,,,season_batting_stat
-batting,bat_season_hr_60,시즌 홈런 60,season,season_hr,60,higher,epic,,,season_batting_stat
-batting,bat_season_hr_70,시즌 홈런 70,season,season_hr,70,higher,legendary,,,season_batting_stat
-batting,bat_season_hr_80plus,시즌 홈런 80+,season,season_hr,80,higher,legendary,,,season_batting_stat
-batting,bat_season_rbi_100,시즌 타점 100,season,season_rbi,100,higher,uncommon,,,season_batting_stat
-batting,bat_season_rbi_125,시즌 타점 125,season,season_rbi,125,higher,rare,,,season_batting_stat
-batting,bat_season_rbi_150,시즌 타점 150,season,season_rbi,150,higher,rare,,,season_batting_stat
-batting,bat_season_rbi_175,시즌 타점 175,season,season_rbi,175,higher,epic,,,season_batting_stat
-batting,bat_season_rbi_200plus,시즌 타점 200+,season,season_rbi,200,higher,legendary,,,season_batting_stat
-batting,bat_season_runs_100,시즌 득점 100,season,season_r,100,higher,uncommon,,,season_batting_stat
-batting,bat_season_runs_125,시즌 득점 125,season,season_r,125,higher,rare,,,season_batting_stat
-batting,bat_season_runs_150,시즌 득점 150,season,season_r,150,higher,rare,,,season_batting_stat
-batting,bat_season_runs_175,시즌 득점 175,season,season_r,175,higher,epic,,,season_batting_stat
-batting,bat_season_runs_200plus,시즌 득점 200+,season,season_r,200,higher,legendary,,,season_batting_stat
-batting,bat_season_sb_20,시즌 도루 20,season,season_sb,20,higher,uncommon,,,season_batting_stat
-batting,bat_season_sb_30,시즌 도루 30,season,season_sb,30,higher,uncommon,,,season_batting_stat
-batting,bat_season_sb_40,시즌 도루 40,season,season_sb,40,higher,rare,,,season_batting_stat
-batting,bat_season_sb_50,시즌 도루 50,season,season_sb,50,higher,rare,,,season_batting_stat
-batting,bat_season_sb_60,시즌 도루 60,season,season_sb,60,higher,rare,,,season_batting_stat
-batting,bat_season_sb_70,시즌 도루 70,season,season_sb,70,higher,epic,,,season_batting_stat
-batting,bat_season_sb_80,시즌 도루 80,season,season_sb,80,higher,epic,,,season_batting_stat
-batting,bat_season_sb_90,시즌 도루 90,season,season_sb,90,higher,legendary,,,season_batting_stat
-batting,bat_season_sb_100plus,시즌 도루 100+,season,season_sb,100,higher,legendary,,,season_batting_stat
-batting,bat_season_bb_50,시즌 볼넷 50,season,season_bb,50,higher,uncommon,,,season_batting_stat
-batting,bat_season_bb_100,시즌 볼넷 100,season,season_bb,100,higher,rare,,,season_batting_stat
-batting,bat_season_bb_150,시즌 볼넷 150,season,season_bb,150,higher,rare,,,season_batting_stat
-batting,bat_season_bb_200,시즌 볼넷 200,season,season_bb,200,higher,epic,,,season_batting_stat
-batting,bat_season_bb_250plus,시즌 볼넷 250+,season,season_bb,250,higher,legendary,,,season_batting_stat
+batting,bat_season_hits_150,시즌 150 안타,season,season_h,150,higher,uncommon,,,season_batting_stat
+batting,bat_season_hits_200,시즌 200 안타,season,season_h,200,higher,rare,,,season_batting_stat
+batting,bat_season_hits_250,시즌 250 안타,season,season_h,250,higher,rare,,,season_batting_stat
+batting,bat_season_hits_300,시즌 300 안타,season,season_h,300,higher,epic,,,season_batting_stat
+batting,bat_season_hits_350plus,시즌 350+ 안타,season,season_h,350,higher,legendary,,,season_batting_stat
+batting,bat_season_hr_20,시즌 20 홈런,season,season_hr,20,higher,uncommon,,,season_batting_stat
+batting,bat_season_hr_30,시즌 30 홈런,season,season_hr,30,higher,uncommon,,,season_batting_stat
+batting,bat_season_hr_40,시즌 40 홈런,season,season_hr,40,higher,rare,,,season_batting_stat
+batting,bat_season_hr_50,시즌 50 홈런,season,season_hr,50,higher,rare,,,season_batting_stat
+batting,bat_season_hr_60,시즌 60 홈런,season,season_hr,60,higher,epic,,,season_batting_stat
+batting,bat_season_hr_70,시즌 70 홈런,season,season_hr,70,higher,legendary,,,season_batting_stat
+batting,bat_season_hr_80plus,시즌 80+ 홈런,season,season_hr,80,higher,legendary,,,season_batting_stat
+batting,bat_season_rbi_100,시즌 100 타점,season,season_rbi,100,higher,uncommon,,,season_batting_stat
+batting,bat_season_rbi_125,시즌 125 타점,season,season_rbi,125,higher,rare,,,season_batting_stat
+batting,bat_season_rbi_150,시즌 150 타점,season,season_rbi,150,higher,rare,,,season_batting_stat
+batting,bat_season_rbi_175,시즌 175 타점,season,season_rbi,175,higher,epic,,,season_batting_stat
+batting,bat_season_rbi_200plus,시즌 200+ 타점,season,season_rbi,200,higher,legendary,,,season_batting_stat
+batting,bat_season_runs_100,시즌 100 득점,season,season_r,100,higher,uncommon,,,season_batting_stat
+batting,bat_season_runs_125,시즌 125 득점,season,season_r,125,higher,rare,,,season_batting_stat
+batting,bat_season_runs_150,시즌 150 득점,season,season_r,150,higher,rare,,,season_batting_stat
+batting,bat_season_runs_175,시즌 175 득점,season,season_r,175,higher,epic,,,season_batting_stat
+batting,bat_season_runs_200plus,시즌 200+ 득점,season,season_r,200,higher,legendary,,,season_batting_stat
+batting,bat_season_sb_20,시즌 20 도루,season,season_sb,20,higher,uncommon,,,season_batting_stat
+batting,bat_season_sb_30,시즌 30 도루,season,season_sb,30,higher,uncommon,,,season_batting_stat
+batting,bat_season_sb_40,시즌 40 도루,season,season_sb,40,higher,rare,,,season_batting_stat
+batting,bat_season_sb_50,시즌 50 도루,season,season_sb,50,higher,rare,,,season_batting_stat
+batting,bat_season_sb_60,시즌 60 도루,season,season_sb,60,higher,rare,,,season_batting_stat
+batting,bat_season_sb_70,시즌 70 도루,season,season_sb,70,higher,epic,,,season_batting_stat
+batting,bat_season_sb_80,시즌 80 도루,season,season_sb,80,higher,epic,,,season_batting_stat
+batting,bat_season_sb_90,시즌 90 도루,season,season_sb,90,higher,legendary,,,season_batting_stat
+batting,bat_season_sb_100plus,시즌 100+ 도루,season,season_sb,100,higher,legendary,,,season_batting_stat
+batting,bat_season_bb_50,시즌 50 볼넷,season,season_bb,50,higher,uncommon,,,season_batting_stat
+batting,bat_season_bb_100,시즌 100 볼넷,season,season_bb,100,higher,rare,,,season_batting_stat
+batting,bat_season_bb_150,시즌 150 볼넷,season,season_bb,150,higher,rare,,,season_batting_stat
+batting,bat_season_bb_200,시즌 200 볼넷,season,season_bb,200,higher,epic,,,season_batting_stat
+batting,bat_season_bb_250plus,시즌 250+ 볼넷,season,season_bb,250,higher,legendary,,,season_batting_stat
 batting,bat_season_avg_300,시즌 타율 .300,season,season_avg,.300,higher,uncommon,,,season_batting_rate
 batting,bat_season_avg_350,시즌 타율 .350,season,season_avg,.350,higher,rare,,,season_batting_rate
 batting,bat_season_avg_400,시즌 타율 .400,season,season_avg,.400,higher,epic,,,season_batting_rate
@@ -95,91 +95,91 @@ batting,bat_season_award_silver_slugger,실버슬러거,season,award_silver_slug
 batting,bat_season_award_gold_glove,골드글러브,season,award_gold_glove,1,boolean,rare,,,season_batting_award
 batting,bat_season_award_rookie_of_year,신인왕,season,award_rookie_of_year,1,boolean,epic,,,season_batting_award
 batting,bat_season_award_mvp,MVP,season,award_mvp,1,boolean,epic,,,season_batting_award
-batting,bat_career_games_1500,통산 출장 경기 1500,career,career_g,1500,higher,uncommon,100,10,career_batting_stat
-batting,bat_career_games_2000,통산 출장 경기 2000,career,career_g,2000,higher,rare,100,10,career_batting_stat
-batting,bat_career_games_2500,통산 출장 경기 2500,career,career_g,2500,higher,rare,100,10,career_batting_stat
-batting,bat_career_games_3000,통산 출장 경기 3000,career,career_g,3000,higher,epic,100,10,career_batting_stat
-batting,bat_career_games_3500plus,통산 출장 경기 3500+,career,career_g,3500,higher,legendary,100,10,career_batting_stat
-batting,bat_career_hits_1500,통산 안타 1500,career,career_h,1500,higher,uncommon,100,10,career_batting_stat
-batting,bat_career_hits_2000,통산 안타 2000,career,career_h,2000,higher,uncommon,100,10,career_batting_stat
-batting,bat_career_hits_2500,통산 안타 2500,career,career_h,2500,higher,rare,100,10,career_batting_stat
-batting,bat_career_hits_3000,통산 안타 3000,career,career_h,3000,higher,epic,100,10,career_batting_stat
-batting,bat_career_hits_3500,통산 안타 3500,career,career_h,3500,higher,epic,100,10,career_batting_stat
-batting,bat_career_hits_4000plus,통산 안타 4000+,career,career_h,4000,higher,legendary,100,10,career_batting_stat
-batting,bat_career_hr_200,통산 홈런 200,career,career_hr,200,higher,uncommon,50,10,career_batting_stat
-batting,bat_career_hr_300,통산 홈런 300,career,career_hr,300,higher,uncommon,50,10,career_batting_stat
-batting,bat_career_hr_400,통산 홈런 400,career,career_hr,400,higher,rare,50,10,career_batting_stat
-batting,bat_career_hr_500,통산 홈런 500,career,career_hr,500,higher,rare,50,10,career_batting_stat
-batting,bat_career_hr_600,통산 홈런 600,career,career_hr,600,higher,epic,50,10,career_batting_stat
-batting,bat_career_hr_700,통산 홈런 700,career,career_hr,700,higher,legendary,50,10,career_batting_stat
-batting,bat_career_hr_800plus,통산 홈런 800+,career,career_hr,800,higher,legendary,50,10,career_batting_stat
-batting,bat_career_rbi_750,통산 타점 750,career,career_rbi,750,higher,uncommon,100,10,career_batting_stat
-batting,bat_career_rbi_1000,통산 타점 1000,career,career_rbi,1000,higher,uncommon,100,10,career_batting_stat
-batting,bat_career_rbi_1250,통산 타점 1250,career,career_rbi,1250,higher,rare,100,10,career_batting_stat
-batting,bat_career_rbi_1500,통산 타점 1500,career,career_rbi,1500,higher,epic,100,10,career_batting_stat
-batting,bat_career_rbi_1750,통산 타점 1750,career,career_rbi,1750,higher,epic,100,10,career_batting_stat
-batting,bat_career_rbi_2000plus,통산 타점 2000+,career,career_rbi,2000,higher,legendary,100,10,career_batting_stat
-batting,bat_career_runs_750,통산 득점 750,career,career_r,750,higher,uncommon,100,10,career_batting_stat
-batting,bat_career_runs_1000,통산 득점 1000,career,career_r,1000,higher,uncommon,100,10,career_batting_stat
-batting,bat_career_runs_1250,통산 득점 1250,career,career_r,1250,higher,rare,100,10,career_batting_stat
-batting,bat_career_runs_1500,통산 득점 1500,career,career_r,1500,higher,epic,100,10,career_batting_stat
-batting,bat_career_runs_1750,통산 득점 1750,career,career_r,1750,higher,epic,100,10,career_batting_stat
-batting,bat_career_runs_2000plus,통산 득점 2000+,career,career_r,2000,higher,legendary,100,10,career_batting_stat
-batting,bat_career_sb_200,통산 도루 200,career,career_sb,200,higher,uncommon,50,10,career_batting_stat
-batting,bat_career_sb_300,통산 도루 300,career,career_sb,300,higher,uncommon,50,10,career_batting_stat
-batting,bat_career_sb_400,통산 도루 400,career,career_sb,400,higher,rare,50,10,career_batting_stat
-batting,bat_career_sb_500,통산 도루 500,career,career_sb,500,higher,rare,50,10,career_batting_stat
-batting,bat_career_sb_600,통산 도루 600,career,career_sb,600,higher,rare,50,10,career_batting_stat
-batting,bat_career_sb_700,통산 도루 700,career,career_sb,700,higher,epic,50,10,career_batting_stat
-batting,bat_career_sb_800,통산 도루 800,career,career_sb,800,higher,epic,50,10,career_batting_stat
-batting,bat_career_sb_900,통산 도루 900,career,career_sb,900,higher,legendary,50,10,career_batting_stat
-batting,bat_career_sb_1000plus,통산 도루 1000+,career,career_sb,1000,higher,legendary,50,10,career_batting_stat
-batting,bat_career_bb_750,통산 볼넷 750,career,career_bb,750,higher,uncommon,100,10,career_batting_stat
-batting,bat_career_bb_1000,통산 볼넷 1000,career,career_bb,1000,higher,uncommon,100,10,career_batting_stat
-batting,bat_career_bb_1250,통산 볼넷 1250,career,career_bb,1250,higher,rare,100,10,career_batting_stat
-batting,bat_career_bb_1500,통산 볼넷 1500,career,career_bb,1500,higher,epic,100,10,career_batting_stat
-batting,bat_career_bb_1750,통산 볼넷 1750,career,career_bb,1750,higher,epic,100,10,career_batting_stat
-batting,bat_career_bb_2000plus,통산 볼넷 2000+,career,career_bb,2000,higher,legendary,100,10,career_batting_stat
+batting,bat_career_games_1500,통산 1500 경기,career,career_g,1500,higher,uncommon,100,10,career_batting_stat
+batting,bat_career_games_2000,통산 2000 경기,career,career_g,2000,higher,rare,100,10,career_batting_stat
+batting,bat_career_games_2500,통산 2500 경기,career,career_g,2500,higher,rare,100,10,career_batting_stat
+batting,bat_career_games_3000,통산 3000 경기,career,career_g,3000,higher,epic,100,10,career_batting_stat
+batting,bat_career_games_3500plus,통산 3500+ 경기,career,career_g,3500,higher,legendary,100,10,career_batting_stat
+batting,bat_career_hits_1500,통산 1500 안타,career,career_h,1500,higher,uncommon,100,10,career_batting_stat
+batting,bat_career_hits_2000,통산 2000 안타,career,career_h,2000,higher,uncommon,100,10,career_batting_stat
+batting,bat_career_hits_2500,통산 2500 안타,career,career_h,2500,higher,rare,100,10,career_batting_stat
+batting,bat_career_hits_3000,통산 3000 안타,career,career_h,3000,higher,epic,100,10,career_batting_stat
+batting,bat_career_hits_3500,통산 3500 안타,career,career_h,3500,higher,epic,100,10,career_batting_stat
+batting,bat_career_hits_4000plus,통산 4000+ 안타,career,career_h,4000,higher,legendary,100,10,career_batting_stat
+batting,bat_career_hr_200,통산 200 홈런,career,career_hr,200,higher,uncommon,50,10,career_batting_stat
+batting,bat_career_hr_300,통산 300 홈런,career,career_hr,300,higher,uncommon,50,10,career_batting_stat
+batting,bat_career_hr_400,통산 400 홈런,career,career_hr,400,higher,rare,50,10,career_batting_stat
+batting,bat_career_hr_500,통산 500 홈런,career,career_hr,500,higher,rare,50,10,career_batting_stat
+batting,bat_career_hr_600,통산 600 홈런,career,career_hr,600,higher,epic,50,10,career_batting_stat
+batting,bat_career_hr_700,통산 700 홈런,career,career_hr,700,higher,legendary,50,10,career_batting_stat
+batting,bat_career_hr_800plus,통산 800+ 홈런,career,career_hr,800,higher,legendary,50,10,career_batting_stat
+batting,bat_career_rbi_750,통산 750 타점,career,career_rbi,750,higher,uncommon,100,10,career_batting_stat
+batting,bat_career_rbi_1000,통산 1000 타점,career,career_rbi,1000,higher,uncommon,100,10,career_batting_stat
+batting,bat_career_rbi_1250,통산 1250 타점,career,career_rbi,1250,higher,rare,100,10,career_batting_stat
+batting,bat_career_rbi_1500,통산 1500 타점,career,career_rbi,1500,higher,epic,100,10,career_batting_stat
+batting,bat_career_rbi_1750,통산 1750 타점,career,career_rbi,1750,higher,epic,100,10,career_batting_stat
+batting,bat_career_rbi_2000plus,통산 2000+ 타점,career,career_rbi,2000,higher,legendary,100,10,career_batting_stat
+batting,bat_career_runs_750,통산 750 득점,career,career_r,750,higher,uncommon,100,10,career_batting_stat
+batting,bat_career_runs_1000,통산 1000 득점,career,career_r,1000,higher,uncommon,100,10,career_batting_stat
+batting,bat_career_runs_1250,통산 1250 득점,career,career_r,1250,higher,rare,100,10,career_batting_stat
+batting,bat_career_runs_1500,통산 1500 득점,career,career_r,1500,higher,epic,100,10,career_batting_stat
+batting,bat_career_runs_1750,통산 1750 득점,career,career_r,1750,higher,epic,100,10,career_batting_stat
+batting,bat_career_runs_2000plus,통산 2000+ 득점,career,career_r,2000,higher,legendary,100,10,career_batting_stat
+batting,bat_career_sb_200,통산 200 도루,career,career_sb,200,higher,uncommon,50,10,career_batting_stat
+batting,bat_career_sb_300,통산 300 도루,career,career_sb,300,higher,uncommon,50,10,career_batting_stat
+batting,bat_career_sb_400,통산 400 도루,career,career_sb,400,higher,rare,50,10,career_batting_stat
+batting,bat_career_sb_500,통산 500 도루,career,career_sb,500,higher,rare,50,10,career_batting_stat
+batting,bat_career_sb_600,통산 600 도루,career,career_sb,600,higher,rare,50,10,career_batting_stat
+batting,bat_career_sb_700,통산 700 도루,career,career_sb,700,higher,epic,50,10,career_batting_stat
+batting,bat_career_sb_800,통산 800 도루,career,career_sb,800,higher,epic,50,10,career_batting_stat
+batting,bat_career_sb_900,통산 900 도루,career,career_sb,900,higher,legendary,50,10,career_batting_stat
+batting,bat_career_sb_1000plus,통산 1000+ 도루,career,career_sb,1000,higher,legendary,50,10,career_batting_stat
+batting,bat_career_bb_750,통산 750 볼넷,career,career_bb,750,higher,uncommon,100,10,career_batting_stat
+batting,bat_career_bb_1000,통산 1000 볼넷,career,career_bb,1000,higher,uncommon,100,10,career_batting_stat
+batting,bat_career_bb_1250,통산 1250 볼넷,career,career_bb,1250,higher,rare,100,10,career_batting_stat
+batting,bat_career_bb_1500,통산 1500 볼넷,career,career_bb,1500,higher,epic,100,10,career_batting_stat
+batting,bat_career_bb_1750,통산 1750 볼넷,career,career_bb,1750,higher,epic,100,10,career_batting_stat
+batting,bat_career_bb_2000plus,통산 2000+ 볼넷,career,career_bb,2000,higher,legendary,100,10,career_batting_stat
 batting,bat_career_hall_of_fame,명예의 전당 입성,career,hall_of_fame,1,boolean,legendary,,,career_batting_honor
 batting,bat_career_retired_number,영구결번,career,retired_number,1,boolean,legendary,,,career_batting_honor
-pitching,pit_game_k_10,한 경기 탈삼진 10,game,k_pit,10,higher,uncommon,,,pitching_k_only
-pitching,pit_game_k_15,한 경기 탈삼진 15,game,k_pit,15,higher,rare,,,pitching_k_only
-pitching,pit_game_k_20,한 경기 탈삼진 20,game,k_pit,20,higher,rare,,,pitching_k_only
-pitching,pit_game_k_25,한 경기 탈삼진 25,game,k_pit,25,higher,epic,,,pitching_k_only
-pitching,pit_game_k_30plus,한 경기 탈삼진 30+,game,k_pit,30,higher,legendary,,,pitching_k_only
+pitching,pit_game_k_10,한 경기 10 탈삼진,game,k_pit,10,higher,uncommon,,,pitching_k_only
+pitching,pit_game_k_15,한 경기 15 탈삼진,game,k_pit,15,higher,rare,,,pitching_k_only
+pitching,pit_game_k_20,한 경기 20 탈삼진,game,k_pit,20,higher,rare,,,pitching_k_only
+pitching,pit_game_k_25,한 경기 25 탈삼진,game,k_pit,25,higher,epic,,,pitching_k_only
+pitching,pit_game_k_30plus,한 경기 30+ 탈삼진,game,k_pit,30,higher,legendary,,,pitching_k_only
 pitching,pit_game_cg,완투,game,cg,1,boolean,uncommon,,,pitching_full
 pitching,pit_game_sho,완봉,game,sho,1,boolean,rare,,,pitching_full
 pitching,pit_game_no_hitter,노히터,game,no_hitter,1,boolean,epic,,,pitching_full
 pitching,pit_game_perfect_game,퍼펙트 게임,game,perfect_game,1,boolean,legendary,,,pitching_full
-pitching,pit_season_wins_15,시즌 승리 15,season,season_wins,15,higher,uncommon,,,season_pitching_stat
-pitching,pit_season_wins_20,시즌 승리 20,season,season_wins,20,higher,rare,,,season_pitching_stat
-pitching,pit_season_wins_25,시즌 승리 25,season,season_wins,25,higher,rare,,,season_pitching_stat
-pitching,pit_season_wins_30,시즌 승리 30,season,season_wins,30,higher,epic,,,season_pitching_stat
-pitching,pit_season_wins_35plus,시즌 승리 35+,season,season_wins,35,higher,legendary,,,season_pitching_stat
-pitching,pit_season_ip_150,시즌 투구 이닝 150,season,season_ip,150,higher,uncommon,,,season_pitching_stat
-pitching,pit_season_ip_200,시즌 투구 이닝 200,season,season_ip,200,higher,rare,,,season_pitching_stat
-pitching,pit_season_ip_250,시즌 투구 이닝 250,season,season_ip,250,higher,rare,,,season_pitching_stat
-pitching,pit_season_ip_300,시즌 투구 이닝 300,season,season_ip,300,higher,epic,,,season_pitching_stat
-pitching,pit_season_ip_350plus,시즌 투구 이닝 350+,season,season_ip,350,higher,legendary,,,season_pitching_stat
-pitching,pit_season_k_150,시즌 탈삼진 150,season,season_k_pit,150,higher,uncommon,,,season_pitching_stat
-pitching,pit_season_k_200,시즌 탈삼진 200,season,season_k_pit,200,higher,uncommon,,,season_pitching_stat
-pitching,pit_season_k_250,시즌 탈삼진 250,season,season_k_pit,250,higher,rare,,,season_pitching_stat
-pitching,pit_season_k_300,시즌 탈삼진 300,season,season_k_pit,300,higher,epic,,,season_pitching_stat
-pitching,pit_season_k_350,시즌 탈삼진 350,season,season_k_pit,350,higher,epic,,,season_pitching_stat
-pitching,pit_season_k_400plus,시즌 탈삼진 400+,season,season_k_pit,400,higher,legendary,,,season_pitching_stat
+pitching,pit_season_wins_15,시즌 15 승,season,season_wins,15,higher,uncommon,,,season_pitching_stat
+pitching,pit_season_wins_20,시즌 20 승,season,season_wins,20,higher,rare,,,season_pitching_stat
+pitching,pit_season_wins_25,시즌 25 승,season,season_wins,25,higher,rare,,,season_pitching_stat
+pitching,pit_season_wins_30,시즌 30 승,season,season_wins,30,higher,epic,,,season_pitching_stat
+pitching,pit_season_wins_35plus,시즌 35+ 승,season,season_wins,35,higher,legendary,,,season_pitching_stat
+pitching,pit_season_ip_150,시즌 150 이닝,season,season_ip,150,higher,uncommon,,,season_pitching_stat
+pitching,pit_season_ip_200,시즌 200 이닝,season,season_ip,200,higher,rare,,,season_pitching_stat
+pitching,pit_season_ip_250,시즌 250 이닝,season,season_ip,250,higher,rare,,,season_pitching_stat
+pitching,pit_season_ip_300,시즌 300 이닝,season,season_ip,300,higher,epic,,,season_pitching_stat
+pitching,pit_season_ip_350plus,시즌 350+ 이닝,season,season_ip,350,higher,legendary,,,season_pitching_stat
+pitching,pit_season_k_150,시즌 150 탈삼진,season,season_k_pit,150,higher,uncommon,,,season_pitching_stat
+pitching,pit_season_k_200,시즌 200 탈삼진,season,season_k_pit,200,higher,uncommon,,,season_pitching_stat
+pitching,pit_season_k_250,시즌 250 탈삼진,season,season_k_pit,250,higher,rare,,,season_pitching_stat
+pitching,pit_season_k_300,시즌 300 탈삼진,season,season_k_pit,300,higher,epic,,,season_pitching_stat
+pitching,pit_season_k_350,시즌 350 탈삼진,season,season_k_pit,350,higher,epic,,,season_pitching_stat
+pitching,pit_season_k_400plus,시즌 400+ 탈삼진,season,season_k_pit,400,higher,legendary,,,season_pitching_stat
 pitching,pit_season_era_2,시즌 ERA 2점대 이하,season,season_era,3.00,lower,rare,,,season_pitching_rate
 pitching,pit_season_era_1,시즌 ERA 1점대 이하,season,season_era,2.00,lower,epic,,,season_pitching_rate
 pitching,pit_season_era_0,시즌 ERA 0점대,season,season_era,1.00,lower,legendary,,,season_pitching_rate
-pitching,pit_season_saves_20,시즌 세이브 20,season,season_saves,20,higher,uncommon,,,season_pitching_stat
-pitching,pit_season_saves_30,시즌 세이브 30,season,season_saves,30,higher,rare,,,season_pitching_stat
-pitching,pit_season_saves_40,시즌 세이브 40,season,season_saves,40,higher,rare,,,season_pitching_stat
-pitching,pit_season_saves_50,시즌 세이브 50,season,season_saves,50,higher,epic,,,season_pitching_stat
-pitching,pit_season_saves_60plus,시즌 세이브 60+,season,season_saves,60,higher,legendary,,,season_pitching_stat
-pitching,pit_season_holds_10,시즌 홀드 10,season,season_holds,10,higher,uncommon,,,season_pitching_stat
-pitching,pit_season_holds_15,시즌 홀드 15,season,season_holds,15,higher,rare,,,season_pitching_stat
-pitching,pit_season_holds_20,시즌 홀드 20,season,season_holds,20,higher,rare,,,season_pitching_stat
-pitching,pit_season_holds_25,시즌 홀드 25,season,season_holds,25,higher,epic,,,season_pitching_stat
-pitching,pit_season_holds_30plus,시즌 홀드 30+,season,season_holds,30,higher,legendary,,,season_pitching_stat
+pitching,pit_season_saves_20,시즌 20 세이브,season,season_saves,20,higher,uncommon,,,season_pitching_stat
+pitching,pit_season_saves_30,시즌 30 세이브,season,season_saves,30,higher,rare,,,season_pitching_stat
+pitching,pit_season_saves_40,시즌 40 세이브,season,season_saves,40,higher,rare,,,season_pitching_stat
+pitching,pit_season_saves_50,시즌 50 세이브,season,season_saves,50,higher,epic,,,season_pitching_stat
+pitching,pit_season_saves_60plus,시즌 60+ 세이브,season,season_saves,60,higher,legendary,,,season_pitching_stat
+pitching,pit_season_holds_10,시즌 10 홀드,season,season_holds,10,higher,uncommon,,,season_pitching_stat
+pitching,pit_season_holds_15,시즌 15 홀드,season,season_holds,15,higher,rare,,,season_pitching_stat
+pitching,pit_season_holds_20,시즌 20 홀드,season,season_holds,20,higher,rare,,,season_pitching_stat
+pitching,pit_season_holds_25,시즌 25 홀드,season,season_holds,25,higher,epic,,,season_pitching_stat
+pitching,pit_season_holds_30plus,시즌 30+ 홀드,season,season_holds,30,higher,legendary,,,season_pitching_stat
 pitching,pit_season_title_era_leader,ERA 1위,season,title_era_leader,1,boolean,epic,,,season_pitching_title
 pitching,pit_season_title_wins_leader,다승왕,season,title_wins_leader,1,boolean,epic,,,season_pitching_title
 pitching,pit_season_title_strikeout_leader,탈삼진왕,season,title_strikeout_leader,1,boolean,epic,,,season_pitching_title
@@ -196,58 +196,58 @@ pitching,pit_season_award_rookie_of_year,신인왕,season,award_rookie_of_year,1
 pitching,pit_season_award_reliever_of_year,올해의 구원투수상,season,award_reliever_of_year,1,boolean,epic,,,season_pitching_award
 pitching,pit_season_award_cy_young,사이영상,season,award_cy_young,1,boolean,epic,,,season_pitching_award
 pitching,pit_season_award_mvp,MVP,season,award_mvp,1,boolean,epic,,,season_pitching_award
-pitching,pit_career_games_300,통산 출장 경기 300,career,career_g_pit,300,higher,uncommon,30,5,career_pitching_stat
-pitching,pit_career_games_400,통산 출장 경기 400,career,career_g_pit,400,higher,uncommon,30,5,career_pitching_stat
-pitching,pit_career_games_500,통산 출장 경기 500,career,career_g_pit,500,higher,rare,30,5,career_pitching_stat
-pitching,pit_career_games_600,통산 출장 경기 600,career,career_g_pit,600,higher,rare,30,5,career_pitching_stat
-pitching,pit_career_games_700,통산 출장 경기 700,career,career_g_pit,700,higher,epic,30,5,career_pitching_stat
-pitching,pit_career_games_800,통산 출장 경기 800,career,career_g_pit,800,higher,epic,30,5,career_pitching_stat
-pitching,pit_career_games_900,통산 출장 경기 900,career,career_g_pit,900,higher,legendary,30,5,career_pitching_stat
-pitching,pit_career_games_1000plus,통산 출장 경기 1000+,career,career_g_pit,1000,higher,legendary,30,5,career_pitching_stat
-pitching,pit_career_starts_200,통산 선발 등판 경기 200,career,career_gs,200,higher,uncommon,30,5,career_pitching_stat
-pitching,pit_career_starts_250,통산 선발 등판 경기 250,career,career_gs,250,higher,uncommon,30,5,career_pitching_stat
-pitching,pit_career_starts_300,통산 선발 등판 경기 300,career,career_gs,300,higher,rare,30,5,career_pitching_stat
-pitching,pit_career_starts_350,통산 선발 등판 경기 350,career,career_gs,350,higher,rare,30,5,career_pitching_stat
-pitching,pit_career_starts_400,통산 선발 등판 경기 400,career,career_gs,400,higher,rare,30,5,career_pitching_stat
-pitching,pit_career_starts_450,통산 선발 등판 경기 450,career,career_gs,450,higher,epic,30,5,career_pitching_stat
-pitching,pit_career_starts_500,통산 선발 등판 경기 500,career,career_gs,500,higher,epic,30,5,career_pitching_stat
-pitching,pit_career_starts_550,통산 선발 등판 경기 550,career,career_gs,550,higher,legendary,30,5,career_pitching_stat
-pitching,pit_career_starts_600plus,통산 선발 등판 경기 600+,career,career_gs,600,higher,legendary,30,5,career_pitching_stat
-pitching,pit_career_wins_100,통산 승리 100,career,career_wins,100,higher,uncommon,20,5,career_pitching_stat
-pitching,pit_career_wins_150,통산 승리 150,career,career_wins,150,higher,uncommon,20,5,career_pitching_stat
-pitching,pit_career_wins_200,통산 승리 200,career,career_wins,200,higher,rare,20,5,career_pitching_stat
-pitching,pit_career_wins_250,통산 승리 250,career,career_wins,250,higher,rare,20,5,career_pitching_stat
-pitching,pit_career_wins_300,통산 승리 300,career,career_wins,300,higher,rare,20,5,career_pitching_stat
-pitching,pit_career_wins_350,통산 승리 350,career,career_wins,350,higher,epic,20,5,career_pitching_stat
-pitching,pit_career_wins_400,통산 승리 400,career,career_wins,400,higher,epic,20,5,career_pitching_stat
-pitching,pit_career_wins_450,통산 승리 450,career,career_wins,450,higher,legendary,20,5,career_pitching_stat
-pitching,pit_career_wins_500plus,통산 승리 500+,career,career_wins,500,higher,legendary,20,5,career_pitching_stat
-pitching,pit_career_ip_1500,통산 투구 이닝 1500,career,career_ip,1500,higher,uncommon,150,50,career_pitching_stat
-pitching,pit_career_ip_2000,통산 투구 이닝 2000,career,career_ip,2000,higher,uncommon,150,50,career_pitching_stat
-pitching,pit_career_ip_2500,통산 투구 이닝 2500,career,career_ip,2500,higher,rare,150,50,career_pitching_stat
-pitching,pit_career_ip_3000,통산 투구 이닝 3000,career,career_ip,3000,higher,rare,150,50,career_pitching_stat
-pitching,pit_career_ip_3500,통산 투구 이닝 3500,career,career_ip,3500,higher,epic,150,50,career_pitching_stat
-pitching,pit_career_ip_4000,통산 투구 이닝 4000,career,career_ip,4000,higher,epic,150,50,career_pitching_stat
-pitching,pit_career_ip_4500,통산 투구 이닝 4500,career,career_ip,4500,higher,legendary,150,50,career_pitching_stat
-pitching,pit_career_ip_5000plus,통산 투구 이닝 5000+,career,career_ip,5000,higher,legendary,150,50,career_pitching_stat
-pitching,pit_career_k_1000,통산 탈삼진 1000,career,career_k_pit,1000,higher,uncommon,150,50,career_pitching_stat
-pitching,pit_career_k_1500,통산 탈삼진 1500,career,career_k_pit,1500,higher,uncommon,150,50,career_pitching_stat
-pitching,pit_career_k_2000,통산 탈삼진 2000,career,career_k_pit,2000,higher,rare,150,50,career_pitching_stat
-pitching,pit_career_k_2500,통산 탈삼진 2500,career,career_k_pit,2500,higher,rare,150,50,career_pitching_stat
-pitching,pit_career_k_3000,통산 탈삼진 3000,career,career_k_pit,3000,higher,epic,150,50,career_pitching_stat
-pitching,pit_career_k_3500,통산 탈삼진 3500,career,career_k_pit,3500,higher,legendary,150,50,career_pitching_stat
-pitching,pit_career_k_4000plus,통산 탈삼진 4000+,career,career_k_pit,4000,higher,legendary,150,50,career_pitching_stat
-pitching,pit_career_saves_200,통산 세이브 200,career,career_saves,200,higher,uncommon,20,5,career_pitching_stat
-pitching,pit_career_saves_300,통산 세이브 300,career,career_saves,300,higher,uncommon,20,5,career_pitching_stat
-pitching,pit_career_saves_400,통산 세이브 400,career,career_saves,400,higher,rare,20,5,career_pitching_stat
-pitching,pit_career_saves_500,통산 세이브 500,career,career_saves,500,higher,epic,20,5,career_pitching_stat
-pitching,pit_career_saves_600,통산 세이브 600,career,career_saves,600,higher,epic,20,5,career_pitching_stat
-pitching,pit_career_saves_700plus,통산 세이브 700+,career,career_saves,700,higher,legendary,20,5,career_pitching_stat
-pitching,pit_career_holds_100,통산 홀드 100,career,career_holds,100,higher,uncommon,20,5,career_pitching_stat
-pitching,pit_career_holds_150,통산 홀드 150,career,career_holds,150,higher,rare,20,5,career_pitching_stat
-pitching,pit_career_holds_200,통산 홀드 200,career,career_holds,200,higher,rare,20,5,career_pitching_stat
-pitching,pit_career_holds_250,통산 홀드 250,career,career_holds,250,higher,epic,20,5,career_pitching_stat
-pitching,pit_career_holds_300plus,통산 홀드 300+,career,career_holds,300,higher,legendary,20,5,career_pitching_stat
+pitching,pit_career_games_300,통산 300 경기,career,career_g_pit,300,higher,uncommon,30,5,career_pitching_stat
+pitching,pit_career_games_400,통산 400 경기,career,career_g_pit,400,higher,uncommon,30,5,career_pitching_stat
+pitching,pit_career_games_500,통산 500 경기,career,career_g_pit,500,higher,rare,30,5,career_pitching_stat
+pitching,pit_career_games_600,통산 600 경기,career,career_g_pit,600,higher,rare,30,5,career_pitching_stat
+pitching,pit_career_games_700,통산 700 경기,career,career_g_pit,700,higher,epic,30,5,career_pitching_stat
+pitching,pit_career_games_800,통산 800 경기,career,career_g_pit,800,higher,epic,30,5,career_pitching_stat
+pitching,pit_career_games_900,통산 900 경기,career,career_g_pit,900,higher,legendary,30,5,career_pitching_stat
+pitching,pit_career_games_1000plus,통산 1000+ 경기,career,career_g_pit,1000,higher,legendary,30,5,career_pitching_stat
+pitching,pit_career_starts_200,통산 200 선발,career,career_gs,200,higher,uncommon,30,5,career_pitching_stat
+pitching,pit_career_starts_250,통산 250 선발,career,career_gs,250,higher,uncommon,30,5,career_pitching_stat
+pitching,pit_career_starts_300,통산 300 선발,career,career_gs,300,higher,rare,30,5,career_pitching_stat
+pitching,pit_career_starts_350,통산 350 선발,career,career_gs,350,higher,rare,30,5,career_pitching_stat
+pitching,pit_career_starts_400,통산 400 선발,career,career_gs,400,higher,rare,30,5,career_pitching_stat
+pitching,pit_career_starts_450,통산 450 선발,career,career_gs,450,higher,epic,30,5,career_pitching_stat
+pitching,pit_career_starts_500,통산 500 선발,career,career_gs,500,higher,epic,30,5,career_pitching_stat
+pitching,pit_career_starts_550,통산 550 선발,career,career_gs,550,higher,legendary,30,5,career_pitching_stat
+pitching,pit_career_starts_600plus,통산 600+ 선발,career,career_gs,600,higher,legendary,30,5,career_pitching_stat
+pitching,pit_career_wins_100,통산 100 승,career,career_wins,100,higher,uncommon,20,5,career_pitching_stat
+pitching,pit_career_wins_150,통산 150 승,career,career_wins,150,higher,uncommon,20,5,career_pitching_stat
+pitching,pit_career_wins_200,통산 200 승,career,career_wins,200,higher,rare,20,5,career_pitching_stat
+pitching,pit_career_wins_250,통산 250 승,career,career_wins,250,higher,rare,20,5,career_pitching_stat
+pitching,pit_career_wins_300,통산 300 승,career,career_wins,300,higher,rare,20,5,career_pitching_stat
+pitching,pit_career_wins_350,통산 350 승,career,career_wins,350,higher,epic,20,5,career_pitching_stat
+pitching,pit_career_wins_400,통산 400 승,career,career_wins,400,higher,epic,20,5,career_pitching_stat
+pitching,pit_career_wins_450,통산 450 승,career,career_wins,450,higher,legendary,20,5,career_pitching_stat
+pitching,pit_career_wins_500plus,통산 500+ 승,career,career_wins,500,higher,legendary,20,5,career_pitching_stat
+pitching,pit_career_ip_1500,통산 1500 이닝,career,career_ip,1500,higher,uncommon,150,50,career_pitching_stat
+pitching,pit_career_ip_2000,통산 2000 이닝,career,career_ip,2000,higher,uncommon,150,50,career_pitching_stat
+pitching,pit_career_ip_2500,통산 2500 이닝,career,career_ip,2500,higher,rare,150,50,career_pitching_stat
+pitching,pit_career_ip_3000,통산 3000 이닝,career,career_ip,3000,higher,rare,150,50,career_pitching_stat
+pitching,pit_career_ip_3500,통산 3500 이닝,career,career_ip,3500,higher,epic,150,50,career_pitching_stat
+pitching,pit_career_ip_4000,통산 4000 이닝,career,career_ip,4000,higher,epic,150,50,career_pitching_stat
+pitching,pit_career_ip_4500,통산 4500 이닝,career,career_ip,4500,higher,legendary,150,50,career_pitching_stat
+pitching,pit_career_ip_5000plus,통산 5000+ 이닝,career,career_ip,5000,higher,legendary,150,50,career_pitching_stat
+pitching,pit_career_k_1000,통산 1000 탈삼진,career,career_k_pit,1000,higher,uncommon,150,50,career_pitching_stat
+pitching,pit_career_k_1500,통산 1500 탈삼진,career,career_k_pit,1500,higher,uncommon,150,50,career_pitching_stat
+pitching,pit_career_k_2000,통산 2000 탈삼진,career,career_k_pit,2000,higher,rare,150,50,career_pitching_stat
+pitching,pit_career_k_2500,통산 2500 탈삼진,career,career_k_pit,2500,higher,rare,150,50,career_pitching_stat
+pitching,pit_career_k_3000,통산 3000 탈삼진,career,career_k_pit,3000,higher,epic,150,50,career_pitching_stat
+pitching,pit_career_k_3500,통산 3500 탈삼진,career,career_k_pit,3500,higher,legendary,150,50,career_pitching_stat
+pitching,pit_career_k_4000plus,통산 4000+ 탈삼진,career,career_k_pit,4000,higher,legendary,150,50,career_pitching_stat
+pitching,pit_career_saves_200,통산 200 세이브,career,career_saves,200,higher,uncommon,20,5,career_pitching_stat
+pitching,pit_career_saves_300,통산 300 세이브,career,career_saves,300,higher,uncommon,20,5,career_pitching_stat
+pitching,pit_career_saves_400,통산 400 세이브,career,career_saves,400,higher,rare,20,5,career_pitching_stat
+pitching,pit_career_saves_500,통산 500 세이브,career,career_saves,500,higher,epic,20,5,career_pitching_stat
+pitching,pit_career_saves_600,통산 600 세이브,career,career_saves,600,higher,epic,20,5,career_pitching_stat
+pitching,pit_career_saves_700plus,통산 700+ 세이브,career,career_saves,700,higher,legendary,20,5,career_pitching_stat
+pitching,pit_career_holds_100,통산 100 홀드,career,career_holds,100,higher,uncommon,20,5,career_pitching_stat
+pitching,pit_career_holds_150,통산 150 홀드,career,career_holds,150,higher,rare,20,5,career_pitching_stat
+pitching,pit_career_holds_200,통산 200 홀드,career,career_holds,200,higher,rare,20,5,career_pitching_stat
+pitching,pit_career_holds_250,통산 250 홀드,career,career_holds,250,higher,epic,20,5,career_pitching_stat
+pitching,pit_career_holds_300plus,통산 300+ 홀드,career,career_holds,300,higher,legendary,20,5,career_pitching_stat
 pitching,pit_career_hall_of_fame,명예의 전당 입성,career,hall_of_fame,1,boolean,legendary,,,career_pitching_honor
 pitching,pit_career_retired_number,영구결번,career,retired_number,1,boolean,legendary,,,career_pitching_honor
 team,team_game_starter_all_hit,경기 선발전원안타,team_game,starter_all_hit,1,boolean,rare,,,team_game
@@ -255,11 +255,11 @@ team,team_game_starter_all_rbi,경기 선발전원타점,team_game,starter_all_r
 team,team_game_starter_all_run,경기 선발전원득점,team_game,starter_all_run,1,boolean,epic,,,team_game
 team,team_game_no_hitter,경기 팀 노히터,team_game,team_no_hitter,1,boolean,epic,,,team_game
 team,team_game_perfect_game,경기 팀 퍼펙트 게임,team_game,team_perfect_game,1,boolean,legendary,,,team_game
-team,team_season_wins_80,시즌 승리 80,team_season,team_wins,80,higher,uncommon,,,team_season
-team,team_season_wins_90,시즌 승리 90,team_season,team_wins,90,higher,rare,,,team_season
-team,team_season_wins_100,시즌 승리 100,team_season,team_wins,100,higher,rare,,,team_season
-team,team_season_wins_110,시즌 승리 110,team_season,team_wins,110,higher,epic,,,team_season
-team,team_season_wins_120plus,시즌 승리 120+,team_season,team_wins,120,higher,legendary,,,team_season
+team,team_season_wins_80,시즌 80 승,team_season,team_wins,80,higher,uncommon,,,team_season
+team,team_season_wins_90,시즌 90 승,team_season,team_wins,90,higher,rare,,,team_season
+team,team_season_wins_100,시즌 100 승,team_season,team_wins,100,higher,rare,,,team_season
+team,team_season_wins_110,시즌 110 승,team_season,team_wins,110,higher,epic,,,team_season
+team,team_season_wins_120plus,시즌 120+ 승,team_season,team_wins,120,higher,legendary,,,team_season
 team,team_season_division_title,지구 우승,team_season,division_title,1,boolean,rare,,,team_season_event
 team,team_season_wildcard_series_win,와일드카드 시리즈 승리,team_season,wildcard_series_win,1,boolean,rare,,,team_season_event
 team,team_season_division_series_win,디비전 시리즈 승리,team_season,division_series_win,1,boolean,epic,,,team_season_event
