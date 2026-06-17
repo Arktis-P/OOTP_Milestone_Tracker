@@ -122,6 +122,9 @@ class KoreanNameMappingDialog(QDialog):
                 saved += 1
             except ValueError as exc:
                 errors.append(str(exc))
+            except OSError as exc:
+                errors.append(str(exc) or "한글 매핑 파일을 저장하지 못했습니다.")
+                break
 
         if errors:
             QMessageBox.warning(self, "저장 오류", "\n".join(errors[:5]))

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import csv
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -18,6 +20,40 @@ DEFAULT_FIRST_NAMES_FILE = "data/korean_first_names.csv"
 DEFAULT_PENDING_FILE = "data/korean_names_pending.csv"
 
 _PART_KEY_COLUMN = {"last": "last_name", "first": "first_name"}
+
+
+class KoreanNameStoreError(OSError):
+    """User-facing error when Korean name CSV files cannot be written."""
+
+
+def _format_store_io_error(path: Path, exc: OSError) -> KoreanNameStoreError:
+    return KoreanNameStoreError(
+        f"「{path.name}」 파일을 저장할 수 없습니다.\n"
+        "OneDrive 동기화 중이거나 Excel·메모장 등 다른 프로그램에서 "
+        "해당 파일을 열어 두었을 수 있습니다. 파일을 닫은 뒤 다시 시도하세요."
+    )
+
+
+def _write_csv_file(path: Path, write_rows: Callable[[csv.DictWriter], None], fieldnames: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f"{path.name}.{time.time_ns()}.tmp")
+    last_error: OSError | None = None
+
+    for attempt in range(3):
+        try:
+            with tmp_path.open("w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fieldnames)
+                write_rows(writer)
+            tmp_path.replace(path)
+            return
+        except OSError as exc:
+            last_error = exc
+            tmp_path.unlink(missing_ok=True)
+            if attempt < 2:
+                time.sleep(0.15 * (attempt + 1))
+
+    assert last_error is not None
+    raise _format_store_io_error(path, last_error) from last_error
 
 
 @dataclass(frozen=True)
@@ -224,15 +260,12 @@ class KoreanNameStore:
 
     def _save_pending(self) -> None:
         path = self.data_dir / "korean_names_pending.csv"
-        path.parent.mkdir(parents=True, exist_ok=True)
         rows = sorted(
             self.pending,
             key=lambda item: (item.part != "last", item.name.casefold()),
         )
-        with path.open("w", encoding="utf-8-sig", newline="") as handle:
-            writer = csv.DictWriter(
-                handle, fieldnames=["part", "name", "source", "first_seen"]
-            )
+
+        def write_rows(writer: csv.DictWriter) -> None:
             writer.writeheader()
             for item in rows:
                 writer.writerow(
@@ -243,6 +276,12 @@ class KoreanNameStore:
                         "first_seen": item.first_seen,
                     }
                 )
+
+        _write_csv_file(
+            path,
+            write_rows,
+            fieldnames=["part", "name", "source", "first_seen"],
+        )
 
 
 def split_ootp_full_name(full_name: str) -> tuple[str, str]:
@@ -321,13 +360,14 @@ def _load_part_file(path: Path, key_column: str) -> dict[str, str]:
 
 
 def _write_part_file(path: Path, key_column: str, table: dict[str, str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
     rows = sorted(table.items(), key=lambda item: item[0].casefold())
-    with path.open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=[key_column, "korean"])
+
+    def write_rows(writer: csv.DictWriter) -> None:
         writer.writeheader()
         for key, value in rows:
             writer.writerow({key_column: key, "korean": value})
+
+    _write_csv_file(path, write_rows, fieldnames=[key_column, "korean"])
 
 
 def _load_pending_file(path: Path) -> list[PendingName]:
