@@ -48,6 +48,7 @@ class SetupView(QWidget):
     bundle_updates_changed = pyqtSignal()
     save_database_reset_prepare = pyqtSignal()
     save_database_reset = pyqtSignal()
+    boxscore_reimported = pyqtSignal(str)
 
     def __init__(
         self,
@@ -245,6 +246,7 @@ class SetupView(QWidget):
             right_column.addWidget(names_group)
             right_column.addWidget(bundle_updates_group)
             right_column.addWidget(milestones_group)
+            right_column.addWidget(self._build_dev_tools_group())
             right_column.addWidget(self._build_database_reset_group())
             right_column.addStretch()
 
@@ -453,6 +455,44 @@ class SetupView(QWidget):
             self.selected_path_label.setText("(리그를 선택하세요)")
         if hasattr(self, "db_summary_label"):
             self._refresh_database_summary()
+
+    def _build_dev_tools_group(self) -> QGroupBox:
+        group = QGroupBox("개발 도구")
+        layout = QVBoxLayout(group)
+
+        self.dev_reimport_button = QPushButton("박스스코어 다시 불러오기...")
+        self.dev_reimport_button.clicked.connect(self._open_dev_boxscore_reimport)
+        layout.addWidget(
+            self.dev_reimport_button, alignment=Qt.AlignmentFlag.AlignLeft
+        )
+        layout.addWidget(
+            QLabel(
+                "특정 박스스코어 HTML만 다시 파싱·마일스톤 기록합니다. "
+                "이미 불러온 경기도 덮어씁니다."
+            )
+        )
+        return group
+
+    def _open_dev_boxscore_reimport(self) -> None:
+        settings = self.settings_manager.ensure_derived_paths(self.settings)
+        if not settings.active_save_path:
+            QMessageBox.warning(
+                self, "리그 필요", "다시 불러올 리그를 먼저 선택하세요."
+            )
+            return
+
+        db_path = resolve_data_path(settings.db_path)
+        from gui.widgets.dev_boxscore_reimport_dialog import DevBoxscoreReimportDialog
+
+        dialog = DevBoxscoreReimportDialog(
+            settings_manager=self.settings_manager,
+            settings=settings,
+            db_path=db_path,
+            parent=self,
+        )
+        dialog.exec()
+        if dialog.result_message:
+            self.boxscore_reimported.emit(dialog.result_message)
 
     def _build_database_reset_group(self) -> QGroupBox:
         group = QGroupBox("현재 세이브 데이터")

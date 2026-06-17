@@ -12,9 +12,13 @@ from core.db.sqlite_config import configure_sqlite_connection
 from core.parser.batting_notes import (
     BattingEventCounts,
     assign_batting_events_to_lineup,
-    player_has_grand_slam_for_lineup,
+    grand_slam_player_ids_for_lineup,
 )
-from core.parser.boxscore_html import BoxscoreHTMLParser, peek_is_mlb_boxscore
+from core.parser.boxscore_html import (
+    BoxscoreHTMLParser,
+    GAME_BOX_GLOB,
+    peek_is_mlb_boxscore,
+)
 from core.parser.common import ParserError
 from core.parser.pitching_notes import get_player_pitching_counts
 from core.stats.ip_utils import ip_to_outs, outs_to_ip_float, outs_to_ip_str
@@ -27,7 +31,6 @@ from core.stats.models import (
     PitcherLine,
 )
 
-GAME_BOX_GLOB = "game_box_*.html"
 _MLB_GAME_JOIN_B = "JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1"
 _MLB_GAME_JOIN_PL = "JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1"
 
@@ -82,6 +85,61 @@ class Aggregator:
 
     def game_exists(self, game_id: int) -> bool:
         return game_id in self.get_known_game_ids()
+
+    def delete_game_import_data(self, game_id: int) -> bool:
+        """Remove one imported game so it can be re-imported."""
+        if not self.game_exists(game_id):
+            return False
+        try:
+            self._conn.execute("BEGIN")
+            self._conn.execute("DELETE FROM batting_logs WHERE game_id = ?", (game_id,))
+            self._conn.execute("DELETE FROM pitching_logs WHERE game_id = ?", (game_id,))
+            self._conn.execute(
+                "DELETE FROM milestone_records WHERE game_id = ?", (game_id,)
+            )
+            self._conn.execute(
+                "DELETE FROM streak_processed_games WHERE game_id = ?", (game_id,)
+            )
+            self._conn.execute("DELETE FROM games WHERE game_id = ?", (game_id,))
+            self._conn.commit()
+            return True
+        except Exception:
+            self._conn.rollback()
+            raise
+
+    def reimport_boxscore_file(
+        self,
+        filepath: str | Path,
+        season: int,
+        *,
+        mlb_only: bool = True,
+    ) -> ImportResult:
+        """Replace an existing import or import a single box score file."""
+        path = Path(filepath)
+        game_id = _game_id_from_filename(path.name)
+        if game_id < 0:
+            return ImportResult(
+                game_id=game_id,
+                error=f"Invalid filename: {path.name}",
+            )
+        if not path.is_file():
+            return ImportResult(
+                game_id=game_id,
+                error=f"File not found: {path}",
+            )
+        if mlb_only and not peek_is_mlb_boxscore(path):
+            return ImportResult(game_id=game_id, error="MLB 박스스코어가 아닙니다.")
+
+        if self.game_exists(game_id):
+            self.delete_game_import_data(game_id)
+
+        try:
+            data = BoxscoreHTMLParser(path).parse()
+            return self.import_boxscore(data, season, is_mlb=mlb_only)
+        except ParserError as exc:
+            return ImportResult(game_id=game_id, error=str(exc))
+        except Exception as exc:
+            return ImportResult(game_id=game_id, error=str(exc))
 
     def get_known_game_ids(self) -> set[int]:
         rows = self._conn.execute("SELECT game_id FROM games").fetchall()
@@ -389,9 +447,8 @@ class Aggregator:
         )
         is_grand_slam = (
             1
-            if player_has_grand_slam_for_lineup(
-                note_text, batter.player_name, lineup
-            )
+            if batter.player_id
+            in grand_slam_player_ids_for_lineup(note_text, lineup)
             else 0
         )
         team_id = batter.team_id

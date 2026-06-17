@@ -119,6 +119,7 @@ class MainWindow(QMainWindow):
         setup_tab.bundle_updates_changed.connect(self._refresh_settings_tab_badge)
         setup_tab.save_database_reset_prepare.connect(self._prepare_save_database_reset)
         setup_tab.save_database_reset.connect(self._on_save_database_reset)
+        setup_tab.boxscore_reimported.connect(self._on_boxscore_reimported)
         setup_tab.confirm_button.setText("설정 저장")
         self._setup_tab = setup_tab
         self._setup_tab_index = self._tabs.count()
@@ -205,6 +206,12 @@ class MainWindow(QMainWindow):
         self._sync_view_settings()
         self._update_status_message()
         self.data_refreshed.emit("all")
+
+    def _on_boxscore_reimported(self, _message: str) -> None:
+        self._reopen_aggregator_if_needed()
+        self._sync_view_settings()
+        self.data_refreshed.emit("all")
+        self._update_status_message()
 
     def _sync_view_settings(self) -> None:
         from core.stats.initial_import import InitialImporter

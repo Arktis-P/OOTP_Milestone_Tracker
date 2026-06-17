@@ -24,11 +24,7 @@ def is_cycling_hit(row: dict[str, Any]) -> bool:
 
 def is_grand_slam(row: dict[str, Any]) -> bool:
     """Grand slam flag from box score BATTING notes (``3 on`` in HR detail)."""
-    if int(row.get("is_grand_slam") or 0):
-        return True
-    hr = int(row.get("home_runs") or row.get("hr") or 0)
-    rbi = int(row.get("rbi") or 0)
-    return hr >= 1 and rbi >= 4
+    return bool(int(row.get("is_grand_slam") or 0))
 
 
 def game_event_value(stat: str, row: dict[str, Any]) -> float | None:

@@ -130,31 +130,63 @@ def assign_batting_events_to_lineup(
 def player_has_grand_slam_for_lineup(
     note_text: str, player_name: str, batters: Sequence[BatterLine]
 ) -> bool:
-    if player_name not in parse_grand_slam_players(note_text):
+    ids = [
+        batter.player_id
+        for batter in batters
+        if batter.player_name == player_name
+    ]
+    if len(ids) != 1:
         return False
-    ids = [batter.player_id for batter in batters if batter.player_name == player_name]
-    return len(ids) == 1
+    return ids[0] in grand_slam_player_ids_for_lineup(note_text, batters)
+
+
+def grand_slam_player_ids_for_lineup(
+    note_text: str, batters: Sequence[BatterLine]
+) -> set[int]:
+    """Map ``3 on`` home-run notes to ``player_id`` (supports duplicate short names)."""
+    if not batters:
+        return set()
+
+    by_name: dict[str, list[int]] = defaultdict(list)
+    for batter in batters:
+        by_name[batter.player_name].append(batter.player_id)
+
+    assigned: set[int] = set()
+    name_index: dict[str, int] = defaultdict(int)
+
+    for name, detail_line in _parse_home_run_entries(note_text):
+        player_ids = by_name.get(name, [])
+        if not player_ids:
+            continue
+        idx = name_index[name]
+        if idx >= len(player_ids):
+            continue
+        player_id = player_ids[idx]
+        name_index[name] += 1
+        if detail_line and GRAND_SLAM_ON_RE.search(detail_line):
+            assigned.add(player_id)
+
+    return assigned
 
 
 GRAND_SLAM_ON_RE = re.compile(r"\b3\s+on\b", re.I)
 HOME_RUNS_SECTION_RE = re.compile(r"Home Runs\s*:", re.I)
 
 
-def parse_grand_slam_players(note_text: str) -> set[str]:
-    """Players with a grand slam per BATTING notes (``3 on`` in HR detail)."""
+def _parse_home_run_entries(note_text: str) -> list[tuple[str, str]]:
     if not note_text:
-        return set()
+        return []
     batting_idx = note_text.find("BATTING")
     text = note_text[batting_idx:] if batting_idx >= 0 else note_text
     match = HOME_RUNS_SECTION_RE.search(text)
     if not match:
-        return set()
+        return []
     section_body = text[match.end() :]
     end_match = NEXT_SECTION_RE.search(section_body)
     if end_match:
         section_body = section_body[: end_match.start()]
 
-    players: set[str] = set()
+    entries: list[tuple[str, str]] = []
     lines = [line.strip().rstrip(",") for line in section_body.splitlines()]
     lines = [line for line in lines if line]
     idx = 0
@@ -164,10 +196,18 @@ def parse_grand_slam_players(note_text: str) -> set[str]:
             idx += 1
             continue
         name_line, detail_line, consumed = _split_entry_line(line, lines, idx)
-        if detail_line and GRAND_SLAM_ON_RE.search(detail_line):
-            players.add(_extract_player_name(name_line))
+        entries.append((_extract_player_name(name_line), detail_line))
         idx += consumed
-    return players
+    return entries
+
+
+def parse_grand_slam_players(note_text: str) -> set[str]:
+    """Players with a grand slam per BATTING notes (``3 on`` in HR detail)."""
+    return {
+        name
+        for name, detail_line in _parse_home_run_entries(note_text)
+        if detail_line and GRAND_SLAM_ON_RE.search(detail_line)
+    }
 
 
 def player_has_grand_slam(note_text: str, player_name: str) -> bool:

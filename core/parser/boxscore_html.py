@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from bs4 import BeautifulSoup, Tag
@@ -36,6 +37,81 @@ from core.stats.models import (
 BoxScoreHtmlParseError = ParserError
 
 _BOXSCORE_TITLE_RE = re.compile(r"<title>(.*?)</title>", re.I | re.S)
+_BOXSCORE_META_TITLE_RE = re.compile(
+    r"Box Score,\s*(.+?)\s+at\s+(.+?),\s*(\d{1,2}/\d{1,2}/\d{4})",
+    re.I,
+)
+GAME_BOX_GLOB = "game_box_*.html"
+
+
+@dataclass(frozen=True)
+class BoxscoreFileSummary:
+    path: Path
+    game_id: int
+    away_team: str
+    home_team: str
+    date: str
+    is_mlb: bool
+    already_imported: bool = False
+
+
+def summarize_boxscore_file(
+    filepath: str | Path,
+    *,
+    known_game_ids: set[int] | None = None,
+    read_limit: int = 16384,
+) -> BoxscoreFileSummary | None:
+    """Lightweight summary for listing box score files (title peek only)."""
+    path = Path(filepath)
+    if not path.is_file():
+        return None
+
+    game_id = parse_game_id_from_filename(path.name, GAME_BOX_ID_RE)
+    if game_id is None:
+        return None
+
+    is_mlb = peek_is_mlb_boxscore(path, read_limit=read_limit)
+    away_team = ""
+    home_team = ""
+    date = ""
+    head = path.read_text(encoding="utf-8", errors="replace")[:read_limit]
+    title_match = _BOXSCORE_TITLE_RE.search(head)
+    if title_match:
+        meta_match = _BOXSCORE_META_TITLE_RE.search(title_match.group(1))
+        if meta_match:
+            away_team = meta_match.group(1).strip()
+            home_team = meta_match.group(2).strip()
+            try:
+                date = parse_date_iso(meta_match.group(3))
+            except ParserError:
+                date = meta_match.group(3).strip()
+
+    imported = bool(known_game_ids and game_id in known_game_ids)
+    return BoxscoreFileSummary(
+        path=path,
+        game_id=game_id,
+        away_team=away_team,
+        home_team=home_team,
+        date=date,
+        is_mlb=is_mlb,
+        already_imported=imported,
+    )
+
+
+def list_boxscore_summaries(
+    directory: str | Path,
+    *,
+    known_game_ids: set[int] | None = None,
+) -> list[BoxscoreFileSummary]:
+    root = Path(directory)
+    if not root.is_dir():
+        return []
+    summaries: list[BoxscoreFileSummary] = []
+    for path in sorted(root.glob(GAME_BOX_GLOB)):
+        item = summarize_boxscore_file(path, known_game_ids=known_game_ids)
+        if item is not None:
+            summaries.append(item)
+    return summaries
 
 
 def peek_is_mlb_boxscore(filepath: str | Path, *, read_limit: int = 8192) -> bool:

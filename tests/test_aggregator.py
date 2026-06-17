@@ -138,6 +138,56 @@ def test_import_mtime_filter(aggregator: Aggregator) -> None:
     assert result.skipped_mtime == result.total_scanned
 
 
+def test_reimport_boxscore_file(aggregator: Aggregator) -> None:
+    path = SAMPLES_BOX / "game_box_13.html"
+    data = BoxscoreHTMLParser(path).parse()
+    first = aggregator.import_boxscore(data, season=2026)
+    assert first.skipped is False
+
+    row = aggregator.conn.execute(
+        "SELECT home_runs FROM batting_logs WHERE game_id = 13 AND player_id = 28987"
+    ).fetchone()
+    assert row["home_runs"] == 1
+
+    aggregator.conn.execute(
+        """
+        UPDATE batting_logs SET home_runs = 99
+        WHERE game_id = 13 AND player_id = 28987
+        """
+    )
+    aggregator.conn.commit()
+
+    result = aggregator.reimport_boxscore_file(path, season=2026)
+    assert result.error is None
+    assert result.skipped is False
+
+    row = aggregator.conn.execute(
+        "SELECT home_runs FROM batting_logs WHERE game_id = 13 AND player_id = 28987"
+    ).fetchone()
+    assert row["home_runs"] == 1
+
+
+def test_delete_game_import_data(aggregator: Aggregator) -> None:
+    path = SAMPLES_BOX / "game_box_13.html"
+    data = BoxscoreHTMLParser(path).parse()
+    aggregator.import_boxscore(data, season=2026)
+    assert aggregator.delete_game_import_data(13) is True
+    assert not aggregator.game_exists(13)
+    assert aggregator.delete_game_import_data(13) is False
+
+
+def test_summarize_boxscore_file() -> None:
+    from core.parser.boxscore_html import summarize_boxscore_file
+
+    summary = summarize_boxscore_file(SAMPLES_BOX / "game_box_13.html")
+    assert summary is not None
+    assert summary.game_id == 13
+    assert summary.is_mlb is True
+    assert summary.away_team
+    assert summary.home_team
+    assert summary.date
+
+
 def test_season_aggregation(aggregator: Aggregator) -> None:
     for path in (SAMPLES_BOX / "game_box_13.html", SAMPLES_BOX / "game_box_14.html"):
         aggregator.import_boxscore(BoxscoreHTMLParser(path).parse(), season=2026)

@@ -17,6 +17,7 @@ def test_cycling_hit_detection() -> None:
 def test_grand_slam_flag() -> None:
     assert is_grand_slam({"is_grand_slam": 1})
     assert not is_grand_slam({"is_grand_slam": 0, "home_runs": 0})
+    assert not is_grand_slam({"is_grand_slam": 0, "home_runs": 1, "rbi": 4})
 
 
 def test_hr_sb_composite_crossed() -> None:
