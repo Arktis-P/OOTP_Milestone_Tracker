@@ -6,14 +6,16 @@ import json
 from pathlib import Path
 from typing import Any
 
+from core.config.paths import resolve_data_path
 from core.stats.ip_utils import outs_to_ip_str
 
-ROOT = Path(__file__).resolve().parent.parent.parent
-DEFAULT_POLICIES_PATH = ROOT / "data" / "streak_policies.json"
+
+def default_policies_path() -> Path:
+    return resolve_data_path("data/streak_policies.json")
 
 
 def load_streak_policies(path: str | Path | None = None) -> dict[str, Any]:
-    policy_path = Path(path) if path else DEFAULT_POLICIES_PATH
+    policy_path = Path(path) if path else default_policies_path()
     with policy_path.open(encoding="utf-8") as handle:
         return json.load(handle)
 

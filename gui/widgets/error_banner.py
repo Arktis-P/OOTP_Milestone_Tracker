@@ -23,6 +23,10 @@ class ErrorBanner(QWidget):
         self.setVisible(False)
         self._label = QLabel()
         self._label.setWordWrap(True)
+        self._label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
         self._close = QPushButton("×")
         self._close.setFixedWidth(28)
         self._close.clicked.connect(self.hide)

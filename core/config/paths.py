@@ -16,6 +16,7 @@ BUNDLE_DATA_FILES = (
     "korean_last_names.csv",
     "korean_first_names.csv",
     "korean_names_pending.csv",
+    "streak_policies.json",
 )
 
 _USER_DATA_READY = False
