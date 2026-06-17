@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -76,8 +77,15 @@ def test_game_scope_multi_hr_triggered(
 ) -> None:
     if not (SAMPLES_BOX / "game_box_20.html").is_file():
         pytest.skip("game_box_20 sample missing")
-    game_ids = _import_games(aggregator, "game_box_20.html")
-    achievements = checker.check_new_games(game_ids, season=2026)
+    data = BoxscoreHTMLParser(SAMPLES_BOX / "game_box_20.html").parse()
+    data.home_batting_notes = re.sub(
+        r"K\. Tucker\s*\n\s*\(2, 5th Inning off R\. Nelson, 0 on, 0 outs\)",
+        "K. Tucker 2 (5, 5th Inning off R. Nelson, 0 on, 0 outs)",
+        data.home_batting_notes,
+    )
+    result = aggregator.import_boxscore(data, season=2026)
+    assert result.error is None
+    achievements = checker.check_new_games([data.meta.game_id], season=2026)
     hr2 = [item for item in achievements if item.milestone.key == "bat_game_hr_2"]
     assert len(hr2) >= 1
     assert any(item.player_name == "K. Tucker" for item in hr2)

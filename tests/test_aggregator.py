@@ -49,7 +49,7 @@ def test_batting_notes_counts() -> None:
 
     game20 = BoxscoreHTMLParser(SAMPLES_BOX / "game_box_20.html").parse()
     tucker = get_player_event_counts(game20.home_batting_notes, "K. Tucker")
-    assert tucker.home_runs == 2
+    assert tucker.home_runs == 1
 
     from core.parser.batting_notes import parse_team_batting_notes
 

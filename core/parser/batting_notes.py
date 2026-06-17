@@ -327,12 +327,11 @@ def _extract_player_name(line: str) -> str:
 def _resolve_game_event_count(name_line: str, detail_line: str, field_name: str) -> int:
     """Resolve per-game event count from name + detail lines.
 
-    Formats:
-    - ``R. Grichuk 2 (5, 6th Inning ...)`` → game=2 (outside), 5=season in parens
-    - ``J. Lee 3 (15)`` (SB) → game=3, 15=season steals
-    - ``R. Grichuk`` + ``(1, 6th Inning ...)`` → game=1 (season counter in parens)
-    - ``K. Tucker`` + ``(2, 5th Inning ...)`` (HR) → game=2 when N != inning number
-    - ``J. Lee`` + ``(1)`` (SB) → game=1
+    OOTP BATTING note conventions:
+    - ``Name N (season)`` (SB) → N = steals this game, parenthetical = season total
+    - ``Name N (season, Xth Inning ...)`` → N = events this game, first paren number = season
+    - ``Name (season, Xth Inning ...)`` → one event this game (each listed line is one play)
+    - ``Name`` comma list (doubles) → one event per name
     """
     outside_match = NAME_TRAILING_COUNT_RE.match(name_line)
     outside_count = int(outside_match.group(2)) if outside_match else None
@@ -346,21 +345,8 @@ def _resolve_game_event_count(name_line: str, detail_line: str, field_name: str)
             return outside_count if outside_count is not None else 1
         return outside_count or 1
 
-    inning_match = INNING_DETAIL_RE.search(detail_line)
-    if inning_match:
-        first_num = int(inning_match.group(1))
-        inning_num = int(inning_match.group(2))
-
-        if outside_count is not None:
-            return outside_count
-
-        if first_num == inning_num:
-            return 1
-
-        if field_name == "home_runs" and first_num != inning_num:
-            return first_num
-
-        return 1
+    if INNING_DETAIL_RE.search(detail_line):
+        return outside_count if outside_count is not None else 1
 
     paren_match = re.match(r"\((\d+)", detail_line)
     if paren_match:
