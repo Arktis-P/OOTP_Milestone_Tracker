@@ -32,6 +32,16 @@ def test_is_milestone_value_fixed_and_repeat(policies) -> None:
     assert not policy_is_milestone(9, hit)
 
 
+def test_rbi_and_run_streak_milestones_only_after_ten(policies) -> None:
+    rbi = policies["batting"]["rbi_streak"]
+    run = policies["batting"]["run_streak"]
+    for policy in (rbi, run):
+        for value in (5, 7, 10):
+            assert not policy_is_milestone(value, policy)
+        for value in (11, 12, 13):
+            assert policy_is_milestone(value, policy)
+
+
 def test_ongoing_and_ended_labels(policies) -> None:
     assert ongoing_label("hit_streak", 10, policies) == "10경기 연속 안타"
     assert ended_label("hit_streak", 23, policies) == "23경기 연속 안타 기록 종료"

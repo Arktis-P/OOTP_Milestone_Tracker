@@ -10,7 +10,7 @@ GRADE_COLORS: dict[str, dict[str, str | None]] = {
     "uncommon": {"bg": None, "fg": None},
     "rare": {"bg": "#BAE6FD", "fg": "#0C4A6E"},
     "epic": {"bg": "#DDD6FE", "fg": "#4C1D95"},
-    "legendary": {"bg": "#FEF08A", "fg": "#854D0E"},
+    "legendary": {"bg": "#B45309", "fg": "#FFFBEB"},
 }
 
 _PLAYER_NAME_SQL = """

@@ -34,16 +34,16 @@
       "ended_event_min_value": 3
     },
     "rbi_streak": {
-      "fixed_milestones": [5, 7, 10],
+      "fixed_milestones": [],
       "repeat_after": 10,
       "repeat_step": 1,
-      "ended_event_min_value": 5
+      "ended_event_min_value": 10
     },
     "run_streak": {
-      "fixed_milestones": [5, 7, 10],
+      "fixed_milestones": [],
       "repeat_after": 10,
       "repeat_step": 1,
-      "ended_event_min_value": 5
+      "ended_event_min_value": 10
     },
     "stolen_base_streak": {
       "fixed_milestones": [3],
