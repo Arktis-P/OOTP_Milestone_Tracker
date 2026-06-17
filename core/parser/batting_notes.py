@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Sequence
+
+if TYPE_CHECKING:
+    from core.stats.models import BatterLine
 
 SECTION_PATTERNS: dict[str, list[str]] = {
     "doubles": [r"Doubles\s*:"],
@@ -74,6 +79,63 @@ def get_player_event_counts(
     return all_counts.get(player_name, BattingEventCounts())
 
 
+def assign_batting_events_to_lineup(
+    batters: Sequence[BatterLine], note_text: str
+) -> dict[int, BattingEventCounts]:
+    """Map BATTING note events to ``player_id`` (not ambiguous short names).
+
+    When multiple lineup players share the same box-score name (e.g. two ``H. Kim``),
+    note totals are applied only if:
+    - the name is unique in the lineup, or
+    - the note section lists the same number of entries as players with that name
+      (matched in batting-order sequence).
+    Otherwise note-derived counts are left at zero for that field.
+    """
+    if not batters:
+        return {}
+
+    parsed_totals = parse_team_batting_notes(note_text)
+    field_lists = _parse_all_section_entry_lists(note_text)
+    by_name: dict[str, list[int]] = defaultdict(list)
+    for batter in batters:
+        by_name[batter.player_name].append(batter.player_id)
+
+    result: dict[int, BattingEventCounts] = {
+        batter.player_id: BattingEventCounts() for batter in batters
+    }
+
+    for name, player_ids in by_name.items():
+        if len(player_ids) == 1:
+            counts = parsed_totals.get(name, BattingEventCounts())
+            result[player_ids[0]] = BattingEventCounts(
+                doubles=counts.doubles,
+                triples=counts.triples,
+                home_runs=counts.home_runs,
+                stolen_bases=counts.stolen_bases,
+                hit_by_pitch=counts.hit_by_pitch,
+                gidp=counts.gidp,
+            )
+            continue
+
+        for field_name in SECTION_PATTERNS:
+            values = field_lists.get(field_name, {}).get(name, [])
+            if len(values) != len(player_ids):
+                continue
+            for player_id, value in zip(player_ids, values):
+                setattr(result[player_id], field_name, value)
+
+    return result
+
+
+def player_has_grand_slam_for_lineup(
+    note_text: str, player_name: str, batters: Sequence[BatterLine]
+) -> bool:
+    if player_name not in parse_grand_slam_players(note_text):
+        return False
+    ids = [batter.player_id for batter in batters if batter.player_name == player_name]
+    return len(ids) == 1
+
+
 GRAND_SLAM_ON_RE = re.compile(r"\b3\s+on\b", re.I)
 HOME_RUNS_SECTION_RE = re.compile(r"Home Runs\s*:", re.I)
 
@@ -110,6 +172,58 @@ def parse_grand_slam_players(note_text: str) -> set[str]:
 
 def player_has_grand_slam(note_text: str, player_name: str) -> bool:
     return player_name in parse_grand_slam_players(note_text)
+
+
+def _parse_all_section_entry_lists(note_text: str) -> dict[str, dict[str, list[int]]]:
+    if not note_text:
+        return {}
+
+    batting_idx = note_text.find("BATTING")
+    text = note_text[batting_idx:] if batting_idx >= 0 else note_text
+    result: dict[str, dict[str, list[int]]] = {}
+
+    for field_name, patterns in SECTION_PATTERNS.items():
+        for pattern in patterns:
+            match = re.search(pattern, text, re.I)
+            if not match:
+                continue
+            section_body = text[match.end() :]
+            end_match = NEXT_SECTION_RE.search(section_body)
+            if end_match:
+                section_body = section_body[: end_match.start()]
+            result[field_name] = _parse_section_entry_lists(section_body, field_name)
+            break
+
+    return result
+
+
+def _parse_section_entry_lists(section_text: str, field_name: str) -> dict[str, list[int]]:
+    lists: dict[str, list[int]] = {}
+    lines = [line.strip().rstrip(",") for line in section_text.splitlines()]
+    lines = [line for line in lines if line]
+
+    idx = 0
+    while idx < len(lines):
+        line = lines[idx]
+        if not line or line.startswith("(") or NEXT_SECTION_RE.match(line):
+            idx += 1
+            continue
+
+        if "," in line and "(" not in line:
+            for part in line.split(","):
+                name = part.strip()
+                if name:
+                    lists.setdefault(name, []).append(1)
+            idx += 1
+            continue
+
+        name_line, detail_line, consumed = _split_entry_line(line, lines, idx)
+        count = _resolve_game_event_count(name_line, detail_line, field_name)
+        name = _extract_player_name(name_line)
+        lists.setdefault(name, []).append(count)
+        idx += consumed
+
+    return lists
 
 
 def _parse_section_entries(section_text: str, field_name: str) -> dict[str, int]:

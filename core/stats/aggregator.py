@@ -9,7 +9,11 @@ from typing import Any
 
 from core.db.schema import init_database
 from core.db.sqlite_config import configure_sqlite_connection
-from core.parser.batting_notes import get_player_event_counts, player_has_grand_slam
+from core.parser.batting_notes import (
+    BattingEventCounts,
+    assign_batting_events_to_lineup,
+    player_has_grand_slam_for_lineup,
+)
 from core.parser.boxscore_html import BoxscoreHTMLParser, peek_is_mlb_boxscore
 from core.parser.common import ParserError
 from core.parser.pitching_notes import get_player_pitching_counts
@@ -150,18 +154,30 @@ class Aggregator:
                 home_team_id=data.meta.home_team_id,
             )
             self._insert_game(data, season, is_mlb=is_mlb)
-            away_events = self._batting_events_for_team(data.away_batting_notes)
-            home_events = self._batting_events_for_team(data.home_batting_notes)
+            away_events = assign_batting_events_to_lineup(
+                data.away_batting, data.away_batting_notes
+            )
+            home_events = assign_batting_events_to_lineup(
+                data.home_batting, data.home_batting_notes
+            )
             away_pitch_events = self._pitching_events_for_team(data.away_pitching_notes)
             home_pitch_events = self._pitching_events_for_team(data.home_pitching_notes)
 
             for batter in data.away_batting:
                 self._insert_batting_log(
-                    data, batter, season, away_events.get(batter.player_name)
+                    data,
+                    batter,
+                    season,
+                    away_events.get(batter.player_id, BattingEventCounts()),
+                    data.away_batting,
                 )
             for batter in data.home_batting:
                 self._insert_batting_log(
-                    data, batter, season, home_events.get(batter.player_name)
+                    data,
+                    batter,
+                    season,
+                    home_events.get(batter.player_id, BattingEventCounts()),
+                    data.home_batting,
                 )
             for pitcher in data.away_pitching:
                 self._insert_pitching_log(
@@ -346,24 +362,38 @@ class Aggregator:
         data: BoxscoreData,
         batter: BatterLine,
         season: int,
-        events=None,
+        events: BattingEventCounts | None = None,
+        team_batters: list[BatterLine] | None = None,
     ) -> None:
         self.upsert_player(batter.player_id, batter.player_name)
-        if events is None:
-            note_text = (
-                data.away_batting_notes
-                if batter.team == data.meta.away_team
-                else data.home_batting_notes
-            )
-            event_counts = get_player_event_counts(note_text, batter.player_name)
-        else:
-            event_counts = events
         note_text = (
             data.away_batting_notes
             if batter.team == data.meta.away_team
             else data.home_batting_notes
         )
-        is_grand_slam = 1 if player_has_grand_slam(note_text, batter.player_name) else 0
+        if events is None:
+            lineup = team_batters or (
+                data.away_batting
+                if batter.team == data.meta.away_team
+                else data.home_batting
+            )
+            event_counts = assign_batting_events_to_lineup(lineup, note_text).get(
+                batter.player_id, BattingEventCounts()
+            )
+        else:
+            event_counts = events
+        lineup = team_batters or (
+            data.away_batting
+            if batter.team == data.meta.away_team
+            else data.home_batting
+        )
+        is_grand_slam = (
+            1
+            if player_has_grand_slam_for_lineup(
+                note_text, batter.player_name, lineup
+            )
+            else 0
+        )
         team_id = batter.team_id
         if team_id is None:
             from core.teams.registry import TeamRegistry
