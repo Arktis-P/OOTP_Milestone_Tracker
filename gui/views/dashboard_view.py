@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtGui import QColor
 from PyQt6.QtGui import QShowEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -22,10 +23,11 @@ from core.config import AppSettings, SettingsManager
 from core.milestone.definitions import MilestoneDefinitions
 from core.milestone.prediction_store import CachedPrediction, PredictionStore
 from core.stats.aggregator import Aggregator
+from core.stats.player_display import best_display_name
 from gui.theme import TEXT_SECONDARY, hint_style
 from gui.widgets.card_panel import CardPanel
 from gui.widgets.error_banner import ErrorBanner
-from gui.widgets.grade_styles import apply_grade_to_list_item
+from gui.widgets.grade_styles import dashboard_milestone_color
 from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
 
@@ -103,6 +105,7 @@ class DashboardView(QWidget):
         self.progress_card.setVisible(False)
 
         self.recent_list = QListWidget()
+        self.recent_list.setObjectName("dashboardMilestoneList")
         self.recent_list.itemClicked.connect(self._on_recent_clicked)
         self.recent_more = QPushButton("마일스톤 기록 전체 보기 →")
         self.recent_more.setObjectName("linkButton")
@@ -172,6 +175,7 @@ class DashboardView(QWidget):
         if not self._recent_records:
             item = QListWidgetItem("최근 달성 기록이 없습니다.")
             item.setFlags(Qt.ItemFlag.NoItemFlags)
+            item.setForeground(Qt.GlobalColor.lightGray)
             self.recent_list.addItem(item)
             return
         for record in self._recent_records:
@@ -182,14 +186,21 @@ class DashboardView(QWidget):
                 else record.get("milestone_label", record["milestone_key"])
             )
             grade = milestone.grade if milestone else "common"
-            name = record.get("display_name") or ""
-            if not name and int(record.get("player_id") or 0) == 0:
-                name = record.get("team") or ""
-            date = (record.get("achieved_date") or "")[:10]
-            text = f"🏆 {name}\n   {label} ({date})"
+            if int(record.get("player_id") or 0) == 0:
+                name = record.get("team_display") or record.get("team") or ""
+            else:
+                name = best_display_name(
+                    record.get("full_name"),
+                    record.get("short_name"),
+                )
+            if not name:
+                name = record.get("team") or "—"
+            text = f"{name}  ·  {label}"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, record)
-            apply_grade_to_list_item(item, grade)
+            item.setToolTip(text)
+            item.setSizeHint(QSize(0, 32))
+            item.setForeground(QColor(dashboard_milestone_color(grade)))
             self.recent_list.addItem(item)
 
     def refresh_near_predictions(self) -> None:

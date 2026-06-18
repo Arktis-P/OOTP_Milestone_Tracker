@@ -1703,8 +1703,10 @@ class Aggregator:
                    CASE
                        WHEN mr.player_id = 0 AND mr.team IS NOT NULL AND mr.team != ''
                            THEN mr.team
-                       ELSE COALESCE(p.short_name, p.full_name, '')
-                   END AS display_name,
+                       ELSE ''
+                   END AS team_display,
+                   COALESCE(p.full_name, '') AS full_name,
+                   COALESCE(p.short_name, '') AS short_name,
                    mr.player_id,
                    mr.milestone_key,
                    mr.milestone_label,

@@ -383,6 +383,34 @@ QHeaderView::section {{
     font-weight: 600;
 }}
 
+QLabel#dashboardPlayerName {{
+    color: #f3f3f3;
+    font-size: 12px;
+    font-weight: 600;
+}}
+
+QLabel#dashboardMilestoneName {{
+    font-size: 11px;
+    font-weight: 500;
+}}
+
+QListWidget#dashboardMilestoneList {{
+    background-color: transparent;
+    border: none;
+}}
+QListWidget#dashboardMilestoneList::item {{
+    border-bottom: 1px solid {BORDER_SUBTLE};
+    padding: 6px 10px;
+    min-height: 28px;
+}}
+QListWidget#dashboardMilestoneList::item:selected {{
+    background-color: {ACCENT_SUBTLE};
+    border-left: 3px solid {ACCENT};
+}}
+QListWidget#dashboardMilestoneList::item:hover:!selected {{
+    background-color: {BG_HOVER};
+}}
+
 QListWidget {{
     background-color: {BG_PANEL};
     border: 1px solid {BORDER};

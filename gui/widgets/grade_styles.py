@@ -13,6 +13,15 @@ GRADE_COLORS: dict[str, dict[str, str | None]] = {
     "legendary": {"bg": "#3a2a10", "fg": "#dcdcaa"},
 }
 
+# Brighter foregrounds for dashboard list rows (dark background)
+DASHBOARD_GRADE_FG: dict[str, str] = {
+    "common": "#e8e8e8",
+    "uncommon": "#6ee7b4",
+    "rare": "#9cdcfe",
+    "epic": "#e0a8ff",
+    "legendary": "#ffe082",
+}
+
 _PLAYER_NAME_SQL = """
     CASE
         WHEN mr.player_id = 0 AND mr.team IS NOT NULL AND mr.team != '' THEN mr.team
@@ -47,3 +56,7 @@ def apply_grade_to_list_item(item, grade: str) -> None:
         item.setBackground(QColor(bg))
     if fg:
         item.setForeground(QColor(fg))
+
+
+def dashboard_milestone_color(grade: str) -> str:
+    return DASHBOARD_GRADE_FG.get(grade, DASHBOARD_GRADE_FG["common"])
