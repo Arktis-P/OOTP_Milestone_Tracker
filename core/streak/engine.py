@@ -25,6 +25,8 @@ class StreakEvent:
     streak_value: int
     milestone_value: int
     milestone_label: str
+    first_success_game_id: int | None
+    first_success_game_date: str | None
     last_success_game_id: int | None
     last_success_game_date: str | None
 
@@ -34,6 +36,8 @@ class StreakState:
     run_index: int = 1
     current: int = 0
     ip_outs_accum: int = 0
+    first_success_game_id: int | None = None
+    first_success_game_date: str | None = None
     last_success_game_id: int | None = None
     last_success_game_date: str | None = None
     recorded_milestones: set[int] = field(default_factory=set)
@@ -74,6 +78,8 @@ def _append_ended_event(
             milestone_label=streak_record_label(
                 streak_type, ended_value, policies_root
             ),
+            first_success_game_id=state.first_success_game_id,
+            first_success_game_date=state.first_success_game_date,
             last_success_game_id=state.last_success_game_id,
             last_success_game_date=state.last_success_game_date,
         )
@@ -84,6 +90,8 @@ def _reset_streak_state(state: StreakState) -> None:
     state.run_index += 1
     state.current = 0
     state.ip_outs_accum = 0
+    state.first_success_game_id = None
+    state.first_success_game_date = None
     state.last_success_game_id = None
     state.last_success_game_date = None
     state.recorded_milestones.clear()
@@ -186,6 +194,9 @@ def update_counter_streak(
         return events
 
     if outcome == "continue":
+        if state.current == 0:
+            state.first_success_game_id = game_id
+            state.first_success_game_date = game_date
         state.current += 1
         state.last_success_game_id = game_id
         state.last_success_game_date = game_date
@@ -235,6 +246,9 @@ def update_ip_outs_streak(
         _reset_streak_state(state)
         return events
 
+    if state.ip_outs_accum == 0 and log.ip_outs > 0:
+        state.first_success_game_id = log.game_id
+        state.first_success_game_date = log.game_date
     state.ip_outs_accum += log.ip_outs
     state.last_success_game_id = log.game_id
     state.last_success_game_date = log.game_date

@@ -10,6 +10,7 @@ from core.stats.aggregator import Aggregator
 from core.streak.engine import StreakState, process_pitching_log, update_counter_streak
 from core.streak.game_log import BattingGameLog, PitchingGameLog, pitching_log_from_row
 from core.streak.policies import (
+    format_streak_description,
     load_streak_policies,
     should_record_streak_on_break,
     streak_record_label,
@@ -42,6 +43,23 @@ def test_streak_record_labels(policies) -> None:
     assert streak_record_label(
         "scoreless_innings_streak", 90, policies
     ) == "30.0 연속 무실점 이닝"
+
+
+def test_format_streak_description(policies) -> None:
+    assert format_streak_description(
+        start_date="2026-04-05",
+        end_date="2026-04-30",
+        value=20,
+        streak_type="hit_streak",
+        policies=policies,
+    ) == "2026-04-05 부터 2026-04-30 까지, 20경기 연속"
+    assert format_streak_description(
+        start_date="2026-04-05",
+        end_date="2026-04-30",
+        value=90,
+        streak_type="scoreless_innings_streak",
+        policies=policies,
+    ) == "2026-04-05 부터 2026-04-30 까지, 30.0 연속 무실점 이닝"
 
 
 def test_hit_streak_only_recorded_on_break(policies) -> None:
@@ -155,7 +173,8 @@ def test_tracker_records_milestone_only_when_streak_ends(aggregator: Aggregator)
 
     rows = aggregator.conn.execute(
         """
-        SELECT milestone_label, scope, streak_event_type, game_id, milestone_key
+        SELECT milestone_label, scope, streak_event_type, game_id, milestone_key,
+               description, achieved_date
         FROM milestone_records
         WHERE player_id = 42 AND milestone_key = 'streak_hit_streak'
         """
@@ -165,6 +184,8 @@ def test_tracker_records_milestone_only_when_streak_ends(aggregator: Aggregator)
     assert rows[0]["milestone_label"] == "10경기 연속 안타"
     assert rows[0]["streak_event_type"] == "streak_ended"
     assert int(rows[0]["game_id"]) == 11
+    assert rows[0]["description"] == "2026-03-01 부터 2026-03-10 까지, 10경기 연속"
+    assert rows[0]["achieved_date"] == "2026-03-11"
 
 
 def _seed_batter_hit_log(

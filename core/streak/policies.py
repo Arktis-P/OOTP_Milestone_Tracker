@@ -74,3 +74,46 @@ def ongoing_label(streak_type: str, value: int, policies: dict[str, Any]) -> str
 
 def ended_label(streak_type: str, value: int, policies: dict[str, Any]) -> str:
     return streak_record_label(streak_type, value, policies)
+
+
+def _normalize_streak_date(value: str | None) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if "T" in text:
+        text = text.split("T", 1)[0]
+    if len(text) >= 10 and text[4:5] == "-" and text[7:8] == "-":
+        return text[:10]
+    return text
+
+
+def streak_value_phrase(
+    streak_type: str, value: int, policies: dict[str, Any]
+) -> str:
+    policy = _policy_for_type(streak_type, policies)
+    if policy and policy.get("unit") == "outs":
+        labels = policies.get("labels") or {}
+        name = labels.get(streak_type, streak_type)
+        return f"{format_streak_value(value, policy)} {name}"
+    return f"{value}경기 연속"
+
+
+def format_streak_description(
+    *,
+    start_date: str | None,
+    end_date: str | None,
+    value: int,
+    streak_type: str,
+    policies: dict[str, Any],
+) -> str:
+    """Human-readable streak span for milestone_records.description."""
+    start = _normalize_streak_date(start_date)
+    end = _normalize_streak_date(end_date)
+    value_text = streak_value_phrase(streak_type, value, policies)
+    if start and end:
+        return f"{start} 부터 {end} 까지, {value_text}"
+    if start:
+        return f"{start} 부터, {value_text}"
+    if end:
+        return f"{end} 까지, {value_text}"
+    return value_text
