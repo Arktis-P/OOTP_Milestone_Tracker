@@ -114,8 +114,12 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._dashboard_view)
 
         self._milestone_view = MilestoneView(
-            self._aggregator, self._milestones, self.settings
+            self._aggregator,
+            self._milestones,
+            self.settings,
+            self.settings_manager,
         )
+        self._milestone_view.import_finished.connect(self._on_boxscore_import_finished)
         self._stack.addWidget(self._milestone_view)
 
         self._stats_view = StatsView(

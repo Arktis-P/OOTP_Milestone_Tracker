@@ -10,11 +10,13 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QSpinBox,
     QTableWidgetItem,
@@ -24,6 +26,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings
+from core.config.settings_manager import SettingsManager
 from core.milestone.checker import MilestoneChecker
 from core.milestone.definitions import MilestoneDefinitions
 from core.roster.korean_names import (
@@ -40,8 +43,10 @@ from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.table_widgets import TablePanel
 from gui.widgets.edit_milestone_record_dialog import EditMilestoneRecordDialog
 from gui.widgets.manual_milestone_dialog import ManualMilestoneDialog
+from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.widgets.card_panel import CardPanel, section_label
-from gui.theme import AMBER_TEXT, meta_panel_style
+from gui.theme import AMBER_TEXT, TEXT_SECONDARY, hint_style, meta_panel_style
+from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
 
 _TABLE_COLUMNS = [
     "날짜",
@@ -59,22 +64,43 @@ _TABLE_COLUMNS = [
 
 class MilestoneView(QWidget):
     records_changed = pyqtSignal()
+    import_finished = pyqtSignal(str)
 
     def __init__(
         self,
         aggregator: Aggregator,
         milestones: MilestoneDefinitions,
         settings: AppSettings,
+        settings_manager: SettingsManager | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.aggregator = aggregator
         self.milestones = milestones
         self.settings = settings
+        self.settings_manager = settings_manager or SettingsManager()
+        self._import_worker: ImportWorker | None = None
         self._records: list[dict] = []
         self._highlight_id: int | None = None
 
         self.banner = ErrorBanner(self)
+
+        self.import_button = QPushButton("📥  박스스코어 가져오기")
+        self.import_button.setObjectName("primaryButton")
+        self.import_button.clicked.connect(self.start_import)
+        self.mlb_only_checkbox = QCheckBox("MLB만")
+        self.mlb_only_checkbox.setChecked(self.settings.import_mlb_only)
+        self.mlb_only_checkbox.setToolTip(
+            "메이저리그 박스스코어만 가져옵니다. KBO·WBC 등은 건너뜁니다."
+        )
+        self.mlb_only_checkbox.toggled.connect(self._on_mlb_only_toggled)
+        self.progress_label = QLabel("")
+        self.progress_label.setVisible(False)
+        self.progress_label.setStyleSheet(hint_style(TEXT_SECONDARY))
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setMinimumWidth(120)
+        self.progress_bar.setMaximumWidth(260)
 
         self.subject_combo = QComboBox()
         self.subject_combo.addItem("전체", "all")
@@ -147,16 +173,27 @@ class MilestoneView(QWidget):
         filter_row.setSpacing(10)
         filter_row.addWidget(section_label("대상"))
         filter_row.addWidget(self.subject_combo)
+        self.subject_combo.setMaximumWidth(88)
         filter_row.addWidget(section_label("팀"))
         filter_row.addWidget(self.team_filter)
+        self.team_filter.setMinimumWidth(100)
+        self.team_filter.setMaximumWidth(150)
         filter_row.addWidget(section_label("SCOPE"))
         filter_row.addWidget(self.scope_combo)
+        self.scope_combo.setMaximumWidth(120)
         filter_row.addWidget(section_label("시즌"))
         filter_row.addWidget(self.season_spin)
-        filter_row.addStretch()
+        self.season_spin.setMaximumWidth(72)
+        filter_row.addWidget(section_label("검색"))
+        filter_row.addWidget(self.table_panel.filter_bar.search_input, stretch=1)
 
         action_row = QHBoxLayout()
         action_row.setSpacing(6)
+        action_row.addWidget(self.import_button)
+        action_row.addWidget(self.mlb_only_checkbox)
+        action_row.addWidget(self.progress_label)
+        action_row.addWidget(self.progress_bar)
+        action_row.addSpacing(28)
         action_row.addWidget(self.manual_button)
         action_row.addWidget(self.season_ratio_button)
         action_row.addStretch()
@@ -171,7 +208,6 @@ class MilestoneView(QWidget):
 
         filter_card = CardPanel()
         filter_card.content_layout.addLayout(filter_row)
-        filter_card.content_layout.addWidget(self.table_panel.filter_bar)
         filter_card.content_layout.addLayout(action_row)
         filter_card.content_layout.addWidget(hint)
 
@@ -218,6 +254,98 @@ class MilestoneView(QWidget):
             if kind == "all":
                 self._reload_team_filter()
             self.refresh()
+
+    def _on_mlb_only_toggled(self, checked: bool) -> None:
+        self.settings.import_mlb_only = checked
+        self.settings_manager.save(self.settings)
+
+    def start_import(self) -> None:
+        self.settings.import_mlb_only = self.mlb_only_checkbox.isChecked()
+        boxscore_dir = self.settings.boxscore_dir
+        if not boxscore_dir:
+            self.banner.show_warning(
+                "박스스코어 폴더가 설정되지 않았습니다. 설정 탭에서 리그를 선택하세요."
+            )
+            return
+
+        self.import_button.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_label.setVisible(True)
+        self.progress_bar.setValue(0)
+
+        since_mtime = self.settings_manager.get_last_boxscore_import_at(
+            self.settings, boxscore_dir
+        )
+        self._import_worker = ImportWorker(
+            self.aggregator.db_path,
+            self.settings_manager,
+            self.milestones,
+            self.settings,
+            boxscore_dir,
+            self.settings.current_season,
+            since_mtime=since_mtime,
+            parent=self,
+        )
+        self._import_worker.progress.connect(self._on_import_progress)
+        self._import_worker.finished.connect(self._on_import_finished)
+        self._import_worker.error.connect(self._on_import_error)
+        self._import_worker.start()
+
+    def _on_import_progress(
+        self, current: int, total: int, filename: str, phase: str = "import"
+    ) -> None:
+        self.progress_bar.setMaximum(max(total, 1))
+        self.progress_bar.setValue(current)
+        if phase == "milestone":
+            self.progress_label.setText(
+                f"마일스톤 확인 중... ({current}/{total}) {filename}"
+            )
+        elif phase == "streak":
+            self.progress_label.setText(
+                f"연속기록 확인 중... ({current}/{total}) {filename}"
+            )
+        else:
+            self.progress_label.setText(
+                f"박스스코어 가져오는 중... ({current}/{total}) {filename}"
+            )
+
+    def _on_import_finished(self, payload: ImportFinishedPayload) -> None:
+        self.import_button.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        self.progress_label.setVisible(False)
+
+        result = payload.batch
+        parts = [f"{result.imported}경기 추가됨"]
+        if result.skipped_non_mlb:
+            parts.append(f"MLB 외 {result.skipped_non_mlb}건 스킵")
+        if payload.milestones_recorded:
+            parts.append(f"마일스톤 {payload.milestones_recorded}건 달성")
+        message = " · ".join(parts)
+        self.import_finished.emit(message)
+        self.refresh()
+
+        if result.errors:
+            self.banner.show_warning(
+                f"일부 오류: {len(result.errors)}건 — "
+                f"{result.errors[0].error if result.errors else ''}"
+            )
+        elif result.imported == 0 and not payload.milestones:
+            self.banner.show_info(message or "새 경기 없음")
+        elif payload.milestones:
+            box = QMessageBox(self)
+            box.setWindowTitle("가져오기 완료")
+            box.setText(message)
+            detail_button = box.addButton("자세히 보기", QMessageBox.ButtonRole.ActionRole)
+            box.addButton(QMessageBox.StandardButton.Ok)
+            box.exec()
+            if box.clickedButton() == detail_button:
+                MilestoneAchievedDialog(payload.milestones, self).exec()
+
+    def _on_import_error(self, message: str) -> None:
+        self.import_button.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        self.progress_label.setVisible(False)
+        self.banner.show_error(f"가져오기 실패: {message}")
 
     def refresh(self) -> None:
         checker = MilestoneChecker(
