@@ -42,6 +42,18 @@ def test_home_run_two_lines_sum_to_game_total() -> None:
     assert counts.home_runs == 2
 
 
+def test_home_run_multiline_multi_inning_detail() -> None:
+    """OOTP: name on one line, game count + semicolon innings on the next."""
+    notes = (
+        "BATTING\nHome Runs:\n"
+        "H. Ahn\n"
+        "2 (21, 1st Inning off E. Rodriguez, 1 on, 0 outs; "
+        "6th Inning off T. Clarke, 1 on, 2 outs)\n"
+    )
+    counts = get_player_event_counts(notes, "H. Ahn")
+    assert counts.home_runs == 2
+
+
 def test_doubles_paren_is_season_total() -> None:
     notes = (
         "BATTING\nDoubles:\n"

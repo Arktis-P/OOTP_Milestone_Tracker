@@ -141,6 +141,69 @@ class Aggregator:
         except Exception as exc:
             return ImportResult(game_id=game_id, error=str(exc))
 
+    def refresh_batting_events_from_file(
+        self, filepath: str | Path, season: int
+    ) -> bool:
+        """Re-parse BATTING notes and update per-game event columns on existing logs."""
+        path = Path(filepath)
+        game_id = _game_id_from_filename(path.name)
+        if game_id < 0 or not path.is_file() or not self.game_exists(game_id):
+            return False
+        try:
+            data = BoxscoreHTMLParser(path).parse()
+        except (ParserError, OSError):
+            return False
+
+        away_events = assign_batting_events_to_lineup(
+            data.away_batting, data.away_batting_notes
+        )
+        home_events = assign_batting_events_to_lineup(
+            data.home_batting, data.home_batting_notes
+        )
+        changed = False
+        for batter in data.away_batting:
+            if self._update_batting_log_events(
+                data,
+                batter,
+                away_events.get(batter.player_id, BattingEventCounts()),
+                data.away_batting,
+            ):
+                changed = True
+        for batter in data.home_batting:
+            if self._update_batting_log_events(
+                data,
+                batter,
+                home_events.get(batter.player_id, BattingEventCounts()),
+                data.home_batting,
+            ):
+                changed = True
+        if changed:
+            self._conn.commit()
+        return changed
+
+    def refresh_all_batting_events_from_dir(
+        self,
+        boxscore_dir: str | Path,
+        season: int,
+        *,
+        mlb_only: bool = True,
+    ) -> list[int]:
+        """Re-parse BATTING notes for every known game with a box score file."""
+        directory = Path(boxscore_dir)
+        if not directory.is_dir():
+            return []
+
+        refreshed: list[int] = []
+        for game_id in sorted(self.get_known_game_ids()):
+            path = directory / f"game_box_{game_id}.html"
+            if not path.is_file():
+                continue
+            if mlb_only and not peek_is_mlb_boxscore(path):
+                continue
+            if self.refresh_batting_events_from_file(path, season):
+                refreshed.append(game_id)
+        return refreshed
+
     def get_known_game_ids(self) -> set[int]:
         rows = self._conn.execute("SELECT game_id FROM games").fetchall()
         return {int(row["game_id"]) for row in rows}
@@ -296,6 +359,9 @@ class Aggregator:
                     continue
 
                 if game_id in known_ids:
+                    if since_mtime is not None and file_path.stat().st_mtime > since_mtime:
+                        if self.refresh_batting_events_from_file(file_path, season):
+                            result.refreshed_game_ids.append(game_id)
                     result.skipped_existing += 1
                     continue
 
@@ -494,6 +560,66 @@ class Aggregator:
                 is_grand_slam,
             ),
         )
+
+    def _update_batting_log_events(
+        self,
+        data: BoxscoreData,
+        batter: BatterLine,
+        event_counts: BattingEventCounts,
+        lineup: list[BatterLine],
+    ) -> bool:
+        note_text = (
+            data.away_batting_notes
+            if batter.team == data.meta.away_team
+            else data.home_batting_notes
+        )
+        is_grand_slam = (
+            1
+            if batter.player_id
+            in grand_slam_player_ids_for_lineup(note_text, lineup)
+            else 0
+        )
+        row = self._conn.execute(
+            """
+            SELECT doubles, triples, home_runs, stolen_bases, hit_by_pitch, gidp,
+                   is_grand_slam
+            FROM batting_logs
+            WHERE game_id = ? AND player_id = ?
+            """,
+            (data.meta.game_id, batter.player_id),
+        ).fetchone()
+        if row is None:
+            return False
+        new_values = (
+            event_counts.doubles,
+            event_counts.triples,
+            event_counts.home_runs,
+            event_counts.stolen_bases,
+            event_counts.hit_by_pitch,
+            event_counts.gidp,
+            is_grand_slam,
+        )
+        old_values = tuple(int(row[name] or 0) for name in (
+            "doubles",
+            "triples",
+            "home_runs",
+            "stolen_bases",
+            "hit_by_pitch",
+            "gidp",
+            "is_grand_slam",
+        ))
+        if new_values == old_values:
+            return False
+        self._conn.execute(
+            """
+            UPDATE batting_logs
+            SET doubles = ?, triples = ?, home_runs = ?, stolen_bases = ?,
+                hit_by_pitch = ?, gidp = ?, is_grand_slam = ?
+            WHERE game_id = ? AND player_id = ?
+            """,
+            (*new_values, data.meta.game_id, batter.player_id),
+        )
+        return True
 
     def _insert_pitching_log(
         self,
