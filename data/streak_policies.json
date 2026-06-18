@@ -23,22 +23,22 @@
       "min_value": 10
     },
     "home_run_streak": {
-      "min_value": 5
+      "min_value": 3
     },
     "rbi_streak": {
       "min_value": 5
     },
     "run_streak": {
-      "min_value": 5
+      "min_value": 7
     },
     "stolen_base_streak": {
-      "min_value": 5
+      "min_value": 3
     },
     "walk_streak": {
-      "min_value": 5
+      "min_value": 10
     },
     "on_base_streak": {
-      "min_value": 10
+      "min_value": 15
     }
   },
   "pitching": {
@@ -55,10 +55,10 @@
       "min_value": 3
     },
     "scoreless_streak_reliever": {
-      "min_value": 5
+      "min_value": 7
     },
     "scoreless_innings_streak": {
-      "min_value": 90,
+      "min_value": 45,
       "unit": "outs",
       "display_unit": "IP"
     }
