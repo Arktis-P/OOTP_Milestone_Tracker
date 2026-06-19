@@ -74,3 +74,38 @@ def test_legacy_shared_db_migrates_once(
     assert target.is_file()
     assert target.read_bytes() == b"legacy-db"
     assert migrate_legacy_shared_db(save_path).resolve() == target.resolve()
+
+
+def test_additional_save_gets_empty_db_not_legacy_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user_dir = tmp_path / "userdata"
+    user_dir.mkdir()
+    legacy = user_dir / "records.db"
+    legacy.write_bytes(b"legacy-db")
+
+    import core.config.paths as paths
+
+    monkeypatch.setattr(paths, "get_user_data_dir", lambda: user_dir)
+    monkeypatch.setattr(paths, "_USER_DATA_READY", True)
+
+    save_a = tmp_path / "League A"
+    save_b = tmp_path / "League B"
+    save_a.mkdir()
+    save_b.mkdir()
+
+    first = migrate_legacy_shared_db(save_a)
+    assert first.read_bytes() == b"legacy-db"
+
+    second = migrate_legacy_shared_db(save_b)
+    assert second.is_file()
+    assert second.read_bytes() != b"legacy-db"
+
+    import sqlite3
+
+    with sqlite3.connect(second) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='games'"
+        ).fetchone()
+        assert row is not None
+        assert conn.execute("SELECT COUNT(*) FROM milestone_records").fetchone()[0] == 0

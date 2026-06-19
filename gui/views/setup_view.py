@@ -742,5 +742,6 @@ class SetupView(QWidget):
         updated.current_season = self.season_spin.value()
         updated.season_games_total = self.season_games_spin.value()
         self.tracked_teams_widget.apply_to_settings(updated)
+        self.settings = updated
         self.settings_manager.save(updated)
         self.setup_completed.emit(updated)

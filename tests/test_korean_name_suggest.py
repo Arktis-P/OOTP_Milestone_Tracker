@@ -8,6 +8,7 @@ import pytest
 
 from core.roster.korean_name_reference import clear_reference_cache, load_merged_reference
 from core.roster.korean_name_suggest import suggest_korean_name
+from core.roster.mlb_name_phonetic import mlb_phonetic_hangul
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -27,6 +28,12 @@ def test_suggest_skips_initials() -> None:
 def test_suggest_common_korean_surname() -> None:
     assert suggest_korean_name("last", "Kim") == "김"
     assert suggest_korean_name("last", "Ahn") == "안"
+
+
+def test_phonetic_fallback_does_not_recursion_error_on_japanese_heuristic() -> None:
+    assert mlb_phonetic_hangul("Mike", "first")
+    assert mlb_phonetic_hangul("Kazuma", "first")
+    assert suggest_korean_name("first", "Kazuma")
 
 
 def test_suggest_from_bundled_mlb_reference() -> None:

@@ -7,9 +7,11 @@ import re
 import shutil
 from pathlib import Path
 
-from core.config.paths import resolve_data_path
+from core.config import paths as paths_module
+from core.db.schema import init_database
 
 _LEGACY_DB_RELATIVE_PATHS = ("records.db", "data/records.db")
+_LEGACY_MIGRATION_FLAG = ".legacy_shared_db_migrated"
 
 
 def save_db_slug(save_path: str | Path) -> str:
@@ -27,20 +29,29 @@ def save_db_relative_path(save_path: str | Path) -> str:
 
 
 def resolve_save_db_path(save_path: str | Path) -> Path:
-    return resolve_data_path(save_db_relative_path(save_path))
+    return paths_module.resolve_data_path(save_db_relative_path(save_path))
 
 
 def migrate_legacy_shared_db(save_path: str | Path) -> Path:
-    """Copy the old single shared records.db into this save's DB once."""
+    """Ensure the per-save DB file exists.
+
+    One-time upgrade only: copy the old shared ``records.db`` into the first
+    league save that needs a database. Every other save starts empty.
+    """
     target = resolve_save_db_path(save_path)
     if target.is_file():
         return target
 
     target.parent.mkdir(parents=True, exist_ok=True)
-    for relative in _LEGACY_DB_RELATIVE_PATHS:
-        legacy = resolve_data_path(relative)
-        if legacy.is_file() and legacy.resolve() != target.resolve():
-            shutil.copy2(legacy, target)
-            return target
+    flag = paths_module.get_user_data_dir() / _LEGACY_MIGRATION_FLAG
 
+    if not flag.is_file():
+        for relative in _LEGACY_DB_RELATIVE_PATHS:
+            legacy = paths_module.resolve_data_path(relative)
+            if legacy.is_file() and legacy.resolve() != target.resolve():
+                shutil.copy2(legacy, target)
+                flag.write_text(str(target.resolve()), encoding="utf-8")
+                return target
+
+    init_database(target)
     return target

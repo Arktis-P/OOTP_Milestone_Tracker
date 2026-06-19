@@ -199,13 +199,18 @@ _CONSONANT_END: dict[str, str] = {
 }
 
 
-def mlb_phonetic_hangul(roman: str, part: NamePart) -> str:
+def mlb_phonetic_hangul(
+    roman: str,
+    part: NamePart,
+    *,
+    _skip_japanese: bool = False,
+) -> str:
     """Best-effort MLB broadcast-style transliteration for unknown names."""
     text = roman.strip()
     if not text:
         return ""
 
-    if part == "first" and _looks_japanese_roman(text):
+    if not _skip_japanese and part == "first" and _looks_japanese_roman(text):
         return _japanese_roman_to_hangul(text)
 
     lower = text.lower()
@@ -279,7 +284,7 @@ def _japanese_roman_to_hangul(text: str) -> str:
     }
     if lower in _KNOWN:
         return _KNOWN[lower]
-    return mlb_phonetic_hangul(text, "first")
+    return mlb_phonetic_hangul(text, "first", _skip_japanese=True)
 
 
 def _postprocess(text: str, part: NamePart) -> str:

@@ -275,7 +275,8 @@ class MainWindow(QMainWindow):
     def _apply_settings_changes(self, settings: AppSettings) -> None:
         settings = self.settings_manager.ensure_derived_paths(settings)
         self.settings = settings
-        self._reopen_aggregator_if_needed()
+        self._reload_aggregator()
+        self._sync_view_settings()
         self._update_status_message()
         self._build_pages()
         self.data_refreshed.emit("all")

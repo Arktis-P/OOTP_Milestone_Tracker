@@ -157,6 +157,7 @@ class SettingsManager:
         save_path: str,
         ootp_version: int | None = None,
     ) -> AppSettings:
+        old_boxscore_dir = settings.paths.get("boxscore_dir", "")
         settings.ootp_save_root = save_root
         settings.active_save = save_name
         settings.active_save_path = save_path
@@ -165,6 +166,13 @@ class SettingsManager:
         settings.paths = self._derive_paths(save_path, settings.paths)
         settings.initial_stats_dir = str(Path(save_path) / "import_export")
         settings.db_path = save_db_relative_path(save_path)
+        new_boxscore_dir = settings.paths.get("boxscore_dir", "")
+        if (
+            old_boxscore_dir
+            and new_boxscore_dir
+            and old_boxscore_dir != new_boxscore_dir
+        ):
+            settings.import_state = {}
         migrate_legacy_shared_db(save_path)
         return settings
 
