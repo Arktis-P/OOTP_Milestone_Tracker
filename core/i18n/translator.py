@@ -627,6 +627,19 @@ _KO: dict[str, str] = {
     # ── setup_view.py (remaining) ─────────────────────────────────────────
     "Developer Tools":                   "개발 도구",
 
+    # ── bundle_updates.py ─────────────────────────────────────────────────
+    "Milestone Criteria":               "마일스톤 기준",
+    "Streak Policies":                  "연속기록 정책",
+    "Korean Last Name Mappings":        "한글 성 매핑",
+    "Korean First Name Mappings":       "한글 이름 매핑",
+    "Update Failed":                    "업데이트 실패",
+    "Reference File Update":            "기준 파일 업데이트",
+    "Reference files merged successfully.": "기준 파일이 병합되었습니다.",
+
+    # ── validation.py ─────────────────────────────────────────────────────
+    "Career stats warning: {seasons} season(s) exist in both initial data and boxscores. Career totals may be inflated. Re-import from the Initial Setup tab, excluding those seasons.":
+        "통산 집계 경고: {seasons}시즌이 초기값과 박스스코어에 모두 존재합니다. 통산 수치가 부풀려질 수 있습니다. 초기값 설정 탭에서 해당 시즌을 제외하고 재임포트하세요.",
+
     # ── workers ───────────────────────────────────────────────────────────
     "Re-importing boxscore: {filename}": "박스스코어 다시 불러오기: {filename}",
     "Checking milestones...":            "마일스톤 확인 중...",

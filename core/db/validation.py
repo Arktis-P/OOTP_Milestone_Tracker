@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from core.i18n import tr
+
 _MLB_BAT_SEASONS = """
     SELECT DISTINCT b.season FROM batting_logs b
     JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
@@ -51,8 +53,8 @@ def validate_no_overlap(conn: sqlite3.Connection) -> list[int]:
 
 def format_overlap_warning(overlaps: list[int]) -> str:
     seasons_str = ", ".join(str(season) for season in overlaps)
-    return (
-        f"통산 집계 경고: {seasons_str}시즌이 초기값과 박스스코어에 "
-        f"모두 존재합니다. 통산 수치가 부풀려질 수 있습니다. "
-        f"초기값 설정 탭에서 해당 시즌을 제외하고 재임포트하세요."
-    )
+    return tr(
+        "Career stats warning: {seasons} season(s) exist in both initial data and boxscores. "
+        "Career totals may be inflated. "
+        "Re-import from the Initial Setup tab, excluding those seasons."
+    ).format(seasons=seasons_str)
