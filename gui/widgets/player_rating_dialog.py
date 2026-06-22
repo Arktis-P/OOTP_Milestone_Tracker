@@ -51,7 +51,7 @@ class PlayerRatingDialog(QDialog):
         body_layout.setSpacing(8)
 
         for section in RATING_SECTIONS:
-            group = QGroupBox(section.title)
+            group = QGroupBox(tr(section.title))
             group_layout = QVBoxLayout(group)
             group_layout.setContentsMargins(6, 8, 6, 6)
             group_layout.addWidget(self._build_section_table(section, row, fieldnames))

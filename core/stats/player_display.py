@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from core.i18n import tr
+
 _ABBREV_RE = re.compile(r"^[A-Z]\.\s+\S", re.UNICODE)
 
 
@@ -54,7 +56,7 @@ def format_manual_entry_label(player: dict) -> str:
 
     full = str(player.get("full_name") or "").strip()
     short = str(player.get("short_name") or "").strip() or derive_short_name(full)
-    return f"[수동] {short}"
+    return f"{tr('[Manual]')} {short}"
 
 
 def format_player_header(player: dict, *, korean_name: str = "") -> str:
@@ -65,14 +67,14 @@ def format_player_header(player: dict, *, korean_name: str = "") -> str:
     player_id = int(player["player_id"])
     roles: list[str] = []
     if player.get("is_batter"):
-        roles.append("타격")
+        roles.append(tr("Batting"))
     if player.get("is_pitcher"):
-        roles.append("투구")
-    role_text = " · ".join(roles) if roles else "기록 없음"
+        roles.append(tr("Pitching"))
+    role_text = " · ".join(roles) if roles else tr("No records")
     lines = [f"<b>{display}</b>"]
     if korean_name:
-        lines.append(f"한글명: <b>{korean_name}</b>")
+        lines.append(f"{tr('Korean Name')}: <b>{korean_name}</b>")
     lines.append(f"ID {player_id} · {role_text}")
     if full and short and full != short:
-        lines.append(f"박스스코어 표기: {short}")
+        lines.append(f"{tr('Boxscore name')}: {short}")
     return "<br>".join(lines)

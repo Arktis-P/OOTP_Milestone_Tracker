@@ -148,6 +148,9 @@ _KO: dict[str, str] = {
     "Stat":                          "항목",
     "Batting":                       "타격",
     "Pitching":                      "투구",
+    "No records":                    "기록 없음",
+    "Boxscore name":                 "박스스코어 표기",
+    "[Manual]":                      "[수동]",
     "Milestones":                    "마일스톤",
     "Position":                      "포지션",
     "Tracked Players":               "추적 대상 선수",
@@ -187,6 +190,11 @@ _KO: dict[str, str] = {
     "Progress":                      "달성률",
     "Status":                        "상태",
     "This Season":                   "이번 시즌",
+    "No data":                       "데이터 없음",
+    "Pre-season — achievability unknown": "시즌 전 — 달성 가능성 미정",
+    "Achievable (+{amount})":        "가능 (+{amount})",
+    "Not achievable (+{amount}, {after} remaining after season)":
+        "불가 (+{amount}, 시즌 후 {after} 남음)",
     "Career Milestone Predictions":  "통산 마일스톤 예측 목록",
     "No career milestone predictions to display.\nNo players are within tracking range, or check your tracked teams and boxscores.":
         "표시할 통산 마일스톤 예측이 없습니다.\n남은 수치가 추적 시작 기준 이하인 선수가 없거나, 추적 팀·박스스코어를 확인하세요.",
@@ -233,6 +241,16 @@ _KO: dict[str, str] = {
     "Batting: {batting_players:,} players · through {coverage} season (updated {batting_at})\nPitching: {pitching_players:,} players · through {coverage} season (updated {pitching_at})":
         "타격: {batting_players:,}명 · {coverage}시즌까지 (갱신 {batting_at})\n투구: {pitching_players:,}명 · {coverage}시즌까지 (갱신 {pitching_at})",
 
+    # ── Import / roster errors ────────────────────────────────────────────
+    "Not an MLB boxscore.":              "MLB 박스스코어가 아닙니다.",
+    "Unsupported roster format. An OOTP export (.txt) file is required.":
+        "지원하지 않는 로스터 형식입니다. OOTP export (.txt) 파일이 필요합니다.",
+    "Please enter a player name.":       "선수 이름을 입력하세요.",
+    "Cannot save 「{name}」.\nThe file may be open in OneDrive sync or another program (Excel, Notepad, etc.). Close the file and try again.":
+        "「{name}」 파일을 저장할 수 없습니다.\nOneDrive 동기화 중이거나 Excel·메모장 등 다른 프로그램에서 해당 파일을 열어 두었을 수 있습니다. 파일을 닫은 뒤 다시 시도하세요.",
+    "Please enter both the name and Korean notation.":
+        "이름과 한글 표기를 모두 입력하세요.",
+
     # ── Roster view ───────────────────────────────────────────────────────
     "Name":                          "이름",
     "League":                        "리그",
@@ -276,6 +294,14 @@ _KO: dict[str, str] = {
     "Saved to: {path}":              "저장 위치: {path}",
 
     # ── Setup view ───────────────────────────────────────────────────────
+    "Season Year":                        "시즌 연도",
+    "Season Games":                       "시즌 경기 수",
+    "saved_games Folder":                 "saved_games 폴더",
+    "📁  OOTP Integration":              "📁  OOTP 연동",
+    "⚙️  Tracking Settings":             "⚙️  추적 설정",
+    "🛠️  Tools":                         "🛠️  도구",
+    "The season year currently in progress in OOTP.\nUsed for boxscore import filtering, initial stats import, and milestone evaluation.":
+        "현재 OOTP에서 진행 중인 시즌 연도입니다.\n박스스코어 임포트 필터링, 초기값 임포트, 마일스톤 평가에 사용됩니다.",
     "OOTP saved_games folder path":      "OOTP saved_games 폴더 경로",
     "Verify Path":                       "경로 확인",
     "Auto-detected":                     "자동 감지됨",
@@ -357,6 +383,13 @@ _KO: dict[str, str] = {
     "Reset Data":                        "데이터 초기화",
     "All tracking data for save 「{save_name}」 will be deleted.\n\n{detail}\n\nMilestone records, season/career stats, and predictions will be permanently deleted. Continue?":
         "세이브 「{save_name}」의 모든 추적 데이터가 삭제됩니다.\n\n{detail}\n\n마일스톤 기록, 시즌/통산 스탯, 예측이 영구 삭제됩니다. 계속하시겠습니까?",
+    "MLB games: {games}":                "MLB 경기: {games}건",
+    "Recorded players: {players}":       "기록 선수: {players}명",
+    "Milestone records: {count}":        "마일스톤 기록: {count}건",
+    "Career batting init players: {count}": "통산 초기값 (타격): {count}명",
+    "Career pitching init players: {count}": "통산 초기값 (투구): {count}명",
+    "Career milestone predictions: {count}": "통산 마일스톤 예측: {count}건",
+    "Init coverage: through {season} season": "초기값 시즌 커버리지: {season}시즌까지",
     "Reset Failed":                      "초기화 실패",
     "Could not delete the DB file.\n{error}": "DB 파일을 삭제할 수 없습니다.\n{error}",
     "Reset Complete":                    "초기화 완료",
@@ -402,6 +435,20 @@ _KO: dict[str, str] = {
     # ── player_rating_dialog.py ───────────────────────────────────────────
     "Rating Editor — {name}":            "레이팅 편집 — {name}",
     "Ratings":                           "레이팅",
+    # ── rating_fields.py section titles ──────────────────────────────────
+    "Player Info":                       "선수 기본 정보",
+    "Batter Current Ratings":            "타자 현재 레이팅",
+    "Batter Potential":                  "타자 포텐셜",
+    "Batter Other":                      "타자 기타",
+    "Running / Tactics":                 "주루/작전",
+    "Defense":                           "수비",
+    "Pitcher Basic":                     "투수 기본",
+    "Pitcher Current Ratings":           "투수 현재 레이팅",
+    "Pitcher Potential":                 "투수 포텐셜",
+    "Pitch Type Current Ratings":        "투구 종류 현재 레이팅",
+    "Pitch Type Potential":              "투구 종류 포텐셜",
+    "Pitcher Other":                     "투수 기타",
+    "HBP (Pitcher)":                     "HBP (투수)",
 
     # ── dev_boxscore_reimport_dialog.py ──────────────────────────────────
     "Re-import Boxscores (Dev)":         "박스스코어 다시 불러오기 (개발용)",
@@ -683,6 +730,51 @@ _KO: dict[str, str] = {
     "No linked game for this manually entered record.":
         "수동 입력 기록에는 연결된 경기가 없습니다.",
     "File not found:\n{path}":          "파일을 찾을 수 없습니다:\n{path}",
+
+    # ── Transfer event type labels ────────────────────────────────────────
+    "FA Contract":                       "FA 계약",
+    "Extension Contract":                "연장 계약",
+    "Trade":                             "트레이드",
+    "Player Purchase":                   "선수 구매",
+
+    # ── manual_entry.py validation errors ────────────────────────────────
+    "Please select a team.":             "팀을 선택하세요.",
+    "Please enter a season.":            "시즌을 입력하세요.",
+    "Please enter games at achievement.": "동안 경기수를 입력하세요.",
+    "Please select a transfer type.":    "이적 유형을 선택하세요.",
+    "Please enter joining or leaving players.": "합류 또는 이탈 선수를 입력하세요.",
+    "Please enter the joining team.":    "합류팀을 입력하세요.",
+    "Please enter a player.":            "선수를 입력하세요.",
+    "Please enter the injury.":          "부상 내용을 입력하세요.",
+    "Please enter the affiliated team.": "소속팀을 입력하세요.",
+    "Player not found: {name}":          "선수를 찾을 수 없습니다: {name}",
+    "Already recorded career milestone.": "이미 기록된 통산 마일스톤입니다.",
+    "Already recorded for this season.": "이미 해당 시즌에 기록된 마일스톤입니다.",
+    "Already recorded team milestone for this season.":
+        "이미 해당 시즌에 기록된 팀 마일스톤입니다.",
+    "Already recorded on the same date.": "이미 같은 날짜에 동일 항목이 있습니다.",
+    "No players to record.":             "기록할 선수가 없습니다.",
+    "Unsupported transfer type.":        "지원하지 않는 이적 유형입니다.",
+
+    # ── record_edit.py validation errors ─────────────────────────────────
+    "Please enter a date.":              "날짜를 입력하세요.",
+    "Please check date format.":         "날짜 형식을 확인하세요.",
+
+    # ── definitions.py validation errors ─────────────────────────────────
+    "Please enter a key.":               "key를 입력하세요.",
+    "Key can only contain letters, numbers, and underscores.":
+        "key는 영문·숫자·밑줄만 사용할 수 있습니다.",
+    "Key already in use: {key}":         "이미 사용 중인 key입니다: {key}",
+    "Invalid category: {category}":      "유효하지 않은 category: {category}",
+    "Invalid scope: {scope}":            "유효하지 않은 scope: {scope}",
+    "Invalid direction: {direction}":    "유효하지 않은 direction: {direction}",
+    "Invalid grade: {grade}":            "유효하지 않은 grade: {grade}",
+    "Please enter a display name (label).": "표시 이름(label)을 입력하세요.",
+    "Please enter a stat.":              "stat을 입력하세요.",
+    "Threshold for boolean must be 1.":  "boolean 기준의 threshold는 1이어야 합니다.",
+    "Threshold must be greater than 0.": "threshold는 0보다 커야 합니다.",
+    "Unknown description_template: {template}":
+        "알 수 없는 description_template: {template}",
 }
 # fmt: on
 

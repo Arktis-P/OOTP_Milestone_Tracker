@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import (
 from core.config import AppSettings
 from core.i18n import tr
 from core.milestone.definitions import MilestoneDefinitions
-from core.milestone.prediction_store import PredictionStore
+from core.milestone.prediction_store import PredictionStore, render_season_note
 from core.roster.korean_names import (
     korean_display_for_player,
     load_korean_name_mapper,
@@ -208,7 +208,7 @@ class PredictView(QWidget):
                 f"{item.remaining:,.0f}",
                 f"{item.progress_pct:.1f}%",
                 status,
-                item.season_note,
+                render_season_note(item.season_note),
             ]
             for col_idx, value in enumerate(values):
                 cell = QTableWidgetItem(str(value))

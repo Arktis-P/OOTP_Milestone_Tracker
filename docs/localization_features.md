@@ -191,7 +191,7 @@ data/
 
 번들 파일과 사용자 파일을 모두 읽어 병합하며, **사용자 파일이 우선**합니다. 앱 업데이트 시 번들에 새 매핑이 추가되면 `Run Merge Update` 기능으로 사용자 파일에 병합할 수 있습니다.
 
-기본 제공 데이터: 성 64개, 이름 34개
+기본 제공 데이터: 성 1,029개, 이름 1,242개
 
 CSV 형식:
 
@@ -256,3 +256,95 @@ Taek-yun,택연
 | 독립성 | 서로 영향 없음 | 서로 영향 없음 |
 
 UI를 English로 설정해도 매핑된 선수 이름은 한글로 표시됩니다. UI를 한국어로 설정해도 매핑이 없는 선수 이름은 영문으로 표시됩니다.
+
+---
+
+## 변경 이력 (Changelog)
+
+### 2026-06-22 (3차) — 8차 검수 결과 반영
+
+검수 보고서(`docs/localization_verification_report.md` §8)에서 확인된 문제들을 수정했습니다.
+
+#### 예측 캐시 언어 중립화 ([중간])
+
+- **`core/milestone/prediction_store.py`**: `_season_note()`가 `tr()`로 번역한 문자열을 DB에 저장하던 문제를 수정했습니다. 이제 번역 대신 언어 중립적 코드(`"pre_season"`, `"achievable|{n}"`, `"not_achievable|{n}|{m}"`)를 DB에 저장합니다.
+  - `_season_note()` 반환값을 언어 중립 코드로 변경.
+  - `render_season_note(note: str) -> str` 공개 함수 추가: 저장된 코드를 현재 언어로 변환합니다.
+- **`gui/views/predict_view.py`**: `item.season_note`를 직접 표시하던 부분을 `render_season_note(item.season_note)` 호출로 변경했습니다. 언어 전환 후 재시작해도 예측 상태(`"가능 (+...)"`, `"시즌 전 — 달성 가능성 미정"` 등)가 현재 설정 언어로 올바르게 표시됩니다.
+
+#### 남은 사용자 노출 한국어 하드코딩 제거 ([중간])
+
+- **`core/stats/aggregator.py`**: `import_game()` 의 `"MLB 박스스코어가 아닙니다."` 오류 문자열을 `tr("Not an MLB boxscore.")`으로 변경. `from core.i18n import tr` 추가.
+- **`core/roster/player_registry.py`**: `add_manual_player()`의 `"선수 이름을 입력하세요."` 두 곳을 `tr("Please enter a player name.")`으로 변경. `from core.i18n import tr` 추가.
+- **`core/roster/editor.py`**: `load()`의 `"지원하지 않는 로스터 형식입니다. OOTP export (.txt) 파일이 필요합니다."` 를 `tr("Unsupported roster format. An OOTP export (.txt) file is required.")`으로 변경. `from core.i18n import tr` 추가.
+- **`core/roster/korean_names.py`**: CSV 저장 실패 오류와 `apply_mapping()` 입력 검증 오류를 tr()로 변경. `from core.i18n import tr` 추가.
+  - `_format_store_io_error()`: 파일 저장 불가 오류 메시지 → `tr("Cannot save 「{name}」.\n...")`
+  - `apply_mapping()`: 입력값 검증 오류 → `tr("Please enter both the name and Korean notation.")`
+- **`core/milestone/manual_entry.py`**: `build_transfer_records()`의 fallback 오류 `"지원하지 않는 이적 유형입니다."` → `tr("Unsupported transfer type.")` (키는 기존에 등록됨).
+- **`core/i18n/translator.py`**: 5개 신규 키 추가 (`"Not an MLB boxscore."`, `"Please enter a player name."`, `"Unsupported roster format..."`, `"Cannot save 「{name}」..."`, `"Please enter both the name and Korean notation."`).
+
+---
+
+### 2026-06-22 (2차) — 재검수 결과 반영
+
+재검수 보고서(`docs/localization_verification_report.md` §7)에서 발견된 문제들을 수정했습니다.
+
+#### 수동 입력 콤보 canonical name 오염 수정 ([높음])
+
+- **`gui/widgets/manual_milestone_dialog.py`**: 선수 콤보에 한글명을 병기할 때 표시 레이블(`"Mike Trout / 마이크 트라우트"`)이 이적·부상 저장 경로에 선수명으로 전달되는 버그를 수정했습니다.
+  - `_fill_player_combo()`: 항목 추가 시 canonical base_label을 `Qt.ItemDataRole.UserRole + 1`에 저장합니다.
+  - `_configure_player_multipick_combo()`의 `on_activated`: 드롭다운 선택 시 canonical name을 사용해 comma-separated 명단을 구성합니다.
+  - `_canonical_player_text()` 헬퍼 추가: 현재 선택 항목의 canonical name(한글 접미사 제외)을 반환합니다.
+  - 부상 폼의 `player_name`: `_combo_text()` 대신 `_canonical_player_text()` 사용.
+
+#### 이적 유형 레이블 번역 적용 ([중간])
+
+- **`core/milestone/manual_entry.py`**: `TRANSFER_EVENT_LABELS` 값을 English 키(`"FA Contract"`, `"Extension Contract"`, `"Trade"`, `"Player Purchase"`)로 변경.
+- **`gui/widgets/manual_milestone_dialog.py`**: 콤보 추가 시 `tr(label)` 적용.
+- **`core/i18n/translator.py`**: 이적 유형 4개 키 추가.
+
+#### 사용자 노출 validation/error 문자열 번역 ([중간])
+
+아래 파일들의 한국어 validation 에러 문자열을 `tr()` 경로로 변경했습니다.
+
+- **`core/milestone/manual_entry.py`**: `validate_manual_entry`, `validate_manual_transfer`, `validate_manual_injury`, `check_duplicate` 함수 전체 (15개 문자열)
+- **`core/milestone/record_edit.py`**: `validate_record_update`, `normalize_achieved_date` (3개 문자열)
+- **`core/milestone/definitions.py`**: `validate_milestone_definition` 함수 전체 (11개 문자열)
+- **`core/milestone/checker.py`**: `record_manual_transfer`, `record_manual_injury`의 ValueError 메시지 2개
+- **`core/i18n/translator.py`**: validation error 및 이적 유형 관련 총 34개 키 추가
+
+---
+
+### 2026-06-22 (1차) — 로컬라이제이션 검수 후 개선 (검수 보고서 기반)
+
+검수 결과(`docs/localization_verification_report.md`)에서 발견된 문제들을 수정하여 로컬라이제이션 커버리지를 완성했습니다.
+
+#### UI 번역 커버리지 완성 ([높음])
+
+- **`core/i18n/translator.py` — 누락 키 추가**: 검수에서 발견된 7개 미번역 키를 `_KO` 딕셔너리에 추가했습니다.
+  - `Season Year`, `Season Games`, `saved_games Folder`
+  - `📁  OOTP Integration`, `⚙️  Tracking Settings`, `🛠️  Tools`
+  - `The season year currently in progress in OOTP.\nUsed for...` (툴팁)
+
+- **`core/stats/player_display.py` — 하드코딩 한국어 제거**: `"타격"`, `"투구"`, `"기록 없음"`, `"한글명"`, `"박스스코어 표기"`, `"[수동]"` 를 모두 `tr()` 경로로 변경했습니다. English UI에서도 영문으로 표시됩니다.
+
+- **`core/db/reset.py` — DB 초기화 요약 번역**: `format_save_data_summary()`의 7개 한국어 줄(`MLB 경기`, `기록 선수` 등)을 `tr()` 키로 변경했습니다.
+
+- **`core/milestone/predictor.py` — 예측 결과 문자열 번역**: `"데이터 없음"`, `"가능 (+...)"`, `"불가 (+..., 시즌 후 ... 남음)"` 등 8개 한국어 문자열을 `tr()` 로 변경했습니다.
+
+- **`core/milestone/prediction_store.py` — 예측 상태 문자열 번역**: `"시즌 전 — 달성 가능성 미정"`, `"가능 (+...)"`, `"불가 (+...)"` 를 `tr()` 로 변경했습니다.
+
+- **`core/roster/rating_fields.py` + `gui/widgets/player_rating_dialog.py` — 레이팅 섹션 제목 번역**: 12개 한국어 섹션 제목(`"선수 기본 정보"`, `"타자 현재 레이팅"` 등)을 영어 키로 변경하고, 다이얼로그에서 `tr()` 를 통해 표시합니다. `"HBP (투수)"` 레이블도 `"HBP (Pitcher)"` 영어 키로 변경했습니다.
+
+#### 박스스코어 이름 대기열 수집 수정 ([중간])
+
+- **`gui/workers/import_worker.py`**, **`gui/workers/reimport_worker.py`**: `note_players_from_boxscore_import()` 호출을 `if self.settings.import_mlb_only:` 조건 밖으로 이동했습니다. 이 함수는 내부에서 MLB 경기만 필터링하므로 MLB Only 설정과 무관하게 항상 동작합니다. MLB Only를 끄고 임포트해도 MLB 선수의 미등록 이름이 대기열에 수집됩니다.
+
+#### 수동 입력 다이얼로그 한글명 병기 ([중간])
+
+- **`gui/widgets/manual_milestone_dialog.py`**: 선수 콤보박스를 채울 때 `KoreanNameMapper`와 로스터 이름을 로드하여 각 선수의 한글명을 계산하고 레이블에 병기합니다. 예: `"[B] Mike Trout / 마이크 트라우트"`. 매핑이 없는 선수는 기존 레이블만 표시됩니다.
+
+#### 기본 파일 및 문서 갱신 ([낮음])
+
+- **`data/settings.json.example`**: `language`, `language_selected` 두 필드를 예제 파일에 추가했습니다.
+- **`docs/localization_features.md`**: 기본 제공 이름 매핑 건수를 실제 현황(성 1,029개, 이름 1,242개)으로 정정했습니다.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -46,6 +47,7 @@ from core.milestone.manual_entry import (
 )
 from core.roster.player_registry import PlayerRegistry
 from core.stats.aggregator import Aggregator
+from core.roster.korean_names import korean_display_for_player, load_korean_name_mapper, load_roster_player_names
 from core.stats.player_display import format_manual_entry_label, format_player_list_label
 from core.stats.team_filter import (
     CANONICAL_MLB_TEAMS,
@@ -237,7 +239,7 @@ class ManualMilestoneDialog(QDialog):
 
         self.transfer_type_combo = QComboBox()
         for key, label in TRANSFER_EVENT_LABELS.items():
-            self.transfer_type_combo.addItem(label, key)
+            self.transfer_type_combo.addItem(tr(label), key)
         self.transfer_type_combo.currentIndexChanged.connect(
             self._update_transfer_description
         )
@@ -356,6 +358,10 @@ class ManualMilestoneDialog(QDialog):
         combo.blockSignals(True)
         combo.clear()
         seen_ids: set[int] = set()
+        mapper = load_korean_name_mapper()
+        roster_names = load_roster_player_names(
+            self.settings.import_export_dir or self.settings.initial_stats_dir or None
+        )
         players = self.aggregator.get_tracked_players(
             self.settings.tracked_teams,
             custom_teams=self.settings.custom_mlb_teams,
@@ -363,10 +369,16 @@ class ManualMilestoneDialog(QDialog):
         for player in players:
             player_id = int(player["player_id"])
             seen_ids.add(player_id)
-            combo.addItem(
-                format_player_list_label(player),
-                player_id,
+            base_label = format_player_list_label(player)
+            korean = korean_display_for_player(
+                mapper,
+                full_name=str(player.get("full_name") or ""),
+                player_id=player_id,
+                roster_names=roster_names,
             )
+            label = f"{base_label} / {korean}" if korean else base_label
+            combo.addItem(label, player_id)
+            combo.setItemData(combo.count() - 1, base_label, Qt.ItemDataRole.UserRole + 1)
         for player in self._player_registry().list_manual_players():
             player_id = int(player["player_id"])
             if player_id in seen_ids:
@@ -442,7 +454,9 @@ class ManualMilestoneDialog(QDialog):
         def on_activated(index: int) -> None:
             if index < 0:
                 return
-            picked_parts = parse_player_name_list(combo.itemText(index))
+            canonical = combo.itemData(index, Qt.ItemDataRole.UserRole + 1)
+            canonical_text = str(canonical) if canonical is not None else combo.itemText(index)
+            picked_parts = parse_player_name_list(canonical_text)
             if not picked_parts:
                 return
             picked = picked_parts[0]
@@ -459,6 +473,17 @@ class ManualMilestoneDialog(QDialog):
 
     def _combo_text(self, combo: QComboBox) -> str:
         return combo.currentText().strip()
+
+    def _canonical_player_text(self, combo: QComboBox) -> str:
+        """Return canonical player name (without Korean suffix) from player combo."""
+        text = combo.currentText().strip()
+        for i in range(combo.count()):
+            if combo.itemText(i).strip() == text:
+                canonical = combo.itemData(i, Qt.ItemDataRole.UserRole + 1)
+                if canonical is not None:
+                    return str(canonical)
+                break
+        return text
 
     def _fill_teams(self) -> None:
         self.team_combo.clear()
@@ -751,7 +776,7 @@ class ManualMilestoneDialog(QDialog):
             return None
 
         form = ManualInjuryFormData(
-            player_name=self._combo_text(self.injury_player_combo),
+            player_name=self._canonical_player_text(self.injury_player_combo),
             achieved_date=parsed,
             injury_label=self.injury_label_edit.text().strip(),
             duration=self.injury_duration_edit.text().strip(),

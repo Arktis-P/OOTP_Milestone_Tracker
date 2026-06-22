@@ -106,15 +106,14 @@ class ReimportBoxscoreWorker(QThread):
                         tracked_teams=self.settings.tracked_teams,
                         custom_teams=self.settings.custom_mlb_teams,
                     ).update_after_import(batch.imported_game_ids)
-                    if self.settings.import_mlb_only:
-                        note_players_from_boxscore_import(
-                            aggregator,
-                            batch.imported_game_ids,
-                            import_export_dir=(
-                                self.settings.import_export_dir
-                                or self.settings.initial_stats_dir
-                            ),
-                        )
+                    note_players_from_boxscore_import(
+                        aggregator,
+                        batch.imported_game_ids,
+                        import_export_dir=(
+                            self.settings.import_export_dir
+                            or self.settings.initial_stats_dir
+                        ),
+                    )
 
             self.finished.emit(
                 ImportFinishedPayload(

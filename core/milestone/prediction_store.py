@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from core.i18n import tr
 from core.milestone.checker import CAREER_BATTING_STATS, CAREER_PITCHING_STATS, MilestoneChecker
 from core.milestone.definitions import MilestoneDefinition, MilestoneDefinitions
 from core.milestone.predictor import is_near, qualifies_for_watch
@@ -378,19 +379,35 @@ class PredictionStore:
             col = _SEASON_PITCHING_COL.get(stat_key, stat_key)
 
         if not season_stats:
-            return "시즌 전 — 달성 가능성 미정"
+            return "pre_season"
 
         games_played = int(
             season_stats.get("games_played") or season_stats.get("games") or 0
         )
         if games_played == 0:
-            return "시즌 전 — 달성 가능성 미정"
+            return "pre_season"
 
         current_val = float(season_stats.get(col, 0) or 0)
         per_game = current_val / games_played
         games_remaining = max(self.season_games_total - games_played, 0)
         projected_add = per_game * games_remaining
         if projected_add >= remaining:
-            return f"가능 (+{projected_add:.0f})"
+            return f"achievable|{projected_add:.0f}"
         after = max(remaining - projected_add, 0)
-        return f"불가 (+{projected_add:.0f}, 시즌 후 {after:.0f} 남음)"
+        return f"not_achievable|{projected_add:.0f}|{after:.0f}"
+
+
+def render_season_note(note: str) -> str:
+    """Translate a stored language-neutral season_note code for display."""
+    if note == "pre_season":
+        return tr("Pre-season — achievability unknown")
+    if note.startswith("achievable|"):
+        amount = note[len("achievable|"):]
+        return tr("Achievable (+{amount})").format(amount=amount)
+    if note.startswith("not_achievable|"):
+        parts = note.split("|")
+        if len(parts) == 3:
+            return tr("Not achievable (+{amount}, {after} remaining after season)").format(
+                amount=parts[1], after=parts[2]
+            )
+    return tr(note) if note else ""

@@ -19,6 +19,7 @@ from core.parser.boxscore_html import (
     GAME_BOX_GLOB,
     peek_is_mlb_boxscore,
 )
+from core.i18n import tr
 from core.parser.common import ParserError
 from core.parser.pitching_notes import get_player_pitching_counts
 from core.stats.ip_utils import ip_to_outs, outs_to_ip_float, outs_to_ip_str
@@ -128,7 +129,7 @@ class Aggregator:
                 error=f"File not found: {path}",
             )
         if mlb_only and not peek_is_mlb_boxscore(path):
-            return ImportResult(game_id=game_id, error="MLB 박스스코어가 아닙니다.")
+            return ImportResult(game_id=game_id, error=tr("Not an MLB boxscore."))
 
         if self.game_exists(game_id):
             self.delete_game_import_data(game_id)

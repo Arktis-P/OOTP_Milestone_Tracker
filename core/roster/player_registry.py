@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from core.i18n import tr
 from core.stats.aggregator import Aggregator
 from core.stats.player_display import looks_abbreviated
 
@@ -76,12 +77,12 @@ class PlayerRegistry:
     def add_manual_player(self, full_name: str) -> int:
         cleaned = normalize_player_name(full_name)
         if not cleaned:
-            raise ValueError("선수 이름을 입력하세요.")
+            raise ValueError(tr("Please enter a player name."))
 
         display_name = _NAME_PREFIX_RE.sub("", full_name.strip())
         display_name = _NAME_SUFFIX_RE.sub("", display_name).strip()
         if not display_name:
-            raise ValueError("선수 이름을 입력하세요.")
+            raise ValueError(tr("Please enter a player name."))
 
         existing = self._find_existing_player(display_name)
         if existing is not None:
