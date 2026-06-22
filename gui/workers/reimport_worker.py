@@ -12,6 +12,7 @@ from core.milestone.definitions import MilestoneDefinitions
 from core.milestone.prediction_store import PredictionStore
 from core.roster.korean_names import note_players_from_boxscore_import
 from core.streak.tracker import StreakTracker
+from core.i18n import tr
 from core.stats.aggregator import Aggregator
 from core.stats.models import BatchImportResult, ImportResult
 from gui.workers.import_worker import ImportFinishedPayload
@@ -45,7 +46,7 @@ class ReimportBoxscoreWorker(QThread):
     def run(self) -> None:
         try:
             filename = self.filepath.name
-            self.progress.emit(f"박스스코어 다시 불러오기: {filename}")
+            self.progress.emit(tr("Re-importing boxscore: {filename}").format(filename=filename))
 
             with Aggregator(self.db_path) as aggregator:
                 import_result = aggregator.reimport_boxscore_file(
@@ -66,7 +67,7 @@ class ReimportBoxscoreWorker(QThread):
                 achievements: list[MilestoneAchievement] = []
                 recorded = 0
                 if batch.imported_game_ids:
-                    self.progress.emit("마일스톤 확인 중...")
+                    self.progress.emit(tr("Checking milestones..."))
                     checker = MilestoneChecker(
                         aggregator,
                         self.milestones,
@@ -84,7 +85,7 @@ class ReimportBoxscoreWorker(QThread):
                         game_logs_dir=self.settings.game_logs_dir or None,
                     )
 
-                    self.progress.emit("연속 기록 처리 중...")
+                    self.progress.emit(tr("Processing streak records..."))
                     streak_tracker = StreakTracker(
                         aggregator,
                         tracked_teams=self.settings.tracked_teams,
@@ -96,7 +97,7 @@ class ReimportBoxscoreWorker(QThread):
                     )
                     aggregator.conn.commit()
 
-                    self.progress.emit("예측 목록 갱신 중...")
+                    self.progress.emit(tr("Updating prediction list..."))
                     PredictionStore(
                         aggregator,
                         self.milestones,

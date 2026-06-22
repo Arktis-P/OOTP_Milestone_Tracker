@@ -10,7 +10,10 @@ from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
     QHBoxLayout,
+    QLabel,
     QMainWindow,
+    QPushButton,
+    QRadioButton,
     QStackedWidget,
     QStatusBar,
     QVBoxLayout,
@@ -18,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings, SettingsManager, get_bundle_root, resolve_data_path
+from core.i18n import tr
 from core.db.validation import format_overlap_warning, validate_no_overlap
 from core.milestone.definitions import load_milestones
 from core.stats.aggregator import Aggregator
@@ -151,7 +155,7 @@ class MainWindow(QMainWindow):
         setup_tab.save_database_reset_prepare.connect(self._prepare_save_database_reset)
         setup_tab.save_database_reset.connect(self._on_save_database_reset)
         setup_tab.boxscore_reimported.connect(self._on_boxscore_reimported)
-        setup_tab.confirm_button.setText("설정 저장")
+        setup_tab.confirm_button.setText(tr("Settings saved"))
         setup_tab.confirm_button.setObjectName("primaryButton")
         self._setup_tab = setup_tab
         self._stack.addWidget(setup_tab)
@@ -311,7 +315,7 @@ class MainWindow(QMainWindow):
         if pending > 0:
             self._sidebar.set_setup_badge_visible(
                 True,
-                f"받을 수 있는 기준 파일 업데이트 {pending}건",
+                tr("Bundle update available") + f" ({pending})",
             )
         else:
             self._sidebar.set_setup_badge_visible(False)
@@ -332,20 +336,26 @@ class MainWindow(QMainWindow):
             self._stats_view.banner.show_warning(format_overlap_warning(overlaps))
 
     def _update_status_message(self) -> None:
-        league = self.settings.active_save or "(리그 미선택)"
+        league = self.settings.active_save or tr("(No league selected)")
         summary = self._aggregator.get_db_summary()
         last_import = self.settings.import_state.get("last_import_at", "")
         last_label = last_import[:10] if last_import else "-"
         teams = (
             ", ".join(self.settings.tracked_teams)
             if self.settings.tracked_teams
-            else "전체"
+            else tr("All")
         )
         self._status.showMessage(
-            f"리그: {league} · 시즌 {self.settings.current_season} · "
-            f"추적팀: {teams} · 마지막 가져오기: {last_label} · "
-            f"DB: {summary['games']}경기 / 선수 {summary['players']}명 "
-            f"(클릭하여 설정)"
+            tr(
+                "League: {league} · Season {season} · Tracked: {teams} · Last import: {last} · DB: {games} games / {players} players (click to configure)"
+            ).format(
+                league=league,
+                season=self.settings.current_season,
+                teams=teams,
+                last=last_label,
+                games=summary["games"],
+                players=summary["players"],
+            )
         )
 
     def _on_status_clicked(self, event) -> None:
@@ -354,7 +364,7 @@ class MainWindow(QMainWindow):
 
     def open_setup_dialog(self) -> None:
         dialog = QDialog(self)
-        dialog.setWindowTitle("리그 설정")
+        dialog.setWindowTitle(tr("League Settings"))
         dialog.resize(*SETUP_WINDOW_SIZE)
 
         setup = SetupView(self.settings_manager, self.settings, dialog, embedded=True)
@@ -373,6 +383,55 @@ class MainWindow(QMainWindow):
         dialog.accept()
 
 
+class _LanguageSelectDialog(QDialog):
+    """Language picker shown before first-run setup."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("OOTP Milestone Tracker")
+        self.setWindowFlags(
+            Qt.WindowType.Dialog
+            | Qt.WindowType.CustomizeWindowHint
+            | Qt.WindowType.WindowTitleHint
+        )
+        self.setFixedWidth(380)
+
+        title = QLabel("OOTP Milestone Tracker")
+        title.setObjectName("pageTitle")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        subtitle = QLabel("언어를 선택하세요  /  Select a language")
+        subtitle.setObjectName("mutedLabel")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._ko_radio = QRadioButton("한국어 (Korean)")
+        self._ko_radio.setChecked(True)
+        self._en_radio = QRadioButton("English")
+
+        btn_ok = QPushButton("계속  /  Continue")
+        btn_ok.setObjectName("primaryButton")
+        btn_ok.setDefault(True)
+        btn_ok.clicked.connect(self.accept)
+
+        radio_col = QVBoxLayout()
+        radio_col.setSpacing(10)
+        radio_col.addWidget(self._ko_radio)
+        radio_col.addWidget(self._en_radio)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(16)
+        layout.setContentsMargins(40, 36, 40, 36)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+        layout.addSpacing(8)
+        layout.addLayout(radio_col)
+        layout.addSpacing(8)
+        layout.addWidget(btn_ok, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    def selected_language(self) -> str:
+        return "en" if self._en_radio.isChecked() else "ko"
+
+
 class _SetupWindow(QMainWindow):
     """Standalone window shown on first run."""
 
@@ -383,7 +442,7 @@ class _SetupWindow(QMainWindow):
         self.settings_manager = settings_manager
         self._confirmed = False
 
-        self.setWindowTitle("OOTP Milestone Tracker — 설정")
+        self.setWindowTitle(tr("OOTP Milestone Tracker — Settings"))
         self.resize(*SETUP_WINDOW_SIZE)
 
         setup = SetupView(settings_manager, parent=self)
@@ -434,6 +493,19 @@ def run_app() -> None:
     if settings_manager.is_setup_complete():
         show_main()
     else:
+        first_run_settings = settings_manager.load()
+        if not first_run_settings.language_selected:
+            lang_dlg = _LanguageSelectDialog()
+            if lang_dlg.exec() != QDialog.DialogCode.Accepted:
+                sys.exit(0)
+            chosen = lang_dlg.selected_language()
+            first_run_settings.language = chosen
+            first_run_settings.language_selected = True
+            settings_manager.save(first_run_settings)
+            if chosen != "ko":
+                import subprocess
+                subprocess.Popen([sys.executable] + sys.argv)
+                sys.exit(0)
         setup_window = _SetupWindow(settings_manager)
         setup_window.setup_finished.connect(show_main)
         setup_window.show()

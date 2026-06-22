@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.i18n import tr
 from core.roster.korean_names import KoreanNameStore, PendingName, pending_full_name_label
 from core.roster.korean_name_suggest import suggest_korean_name
 from gui.theme import TEXT_MUTED, TEXT_PRIMARY
@@ -39,35 +40,37 @@ SUGGESTION_ROLE = Qt.ItemDataRole.UserRole + 1
 class KoreanNameMappingDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("한글 이름 매핑")
+        self.setWindowTitle(tr("Korean Name Mapping"))
         self.resize(*scale_size(1440, 1300))
         self._store = KoreanNameStore.load()
         self._updating_table = False
 
         intro = muted_label(
-            "박스스코어·스탯 불러오기 중 등록되지 않은 성/이름이 여기에 쌓입니다.\n"
-            "OOTP 풀 네임(First Last) 기준으로 성·이름을 나눠 매핑합니다. "
-            "한국인은 성+이름, 그 외는 이름+성 순으로 표시됩니다.\n"
-            "회색 추천 표기는 번들·사용자 매핑 CSV와 MLB 중계식 규칙을 바탕으로 자동 제안합니다. "
-            "그대로 두고 저장하면 매핑에 반영되며, 지우면 저장에서 제외됩니다."
+            tr(
+                "Unregistered names from boxscore/stats imports accumulate here.\n"
+                "Maps first/last names based on OOTP full name (First Last) format. "
+                "Korean players show in Last+First order; others in First+Last.\n"
+                "Gray suggestions are auto-proposed from bundle/user CSV mappings and "
+                "MLB transliteration rules. Leave as-is and save to apply; delete to exclude."
+            )
         )
 
         self.summary_label = summary_label()
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("로마자 검색...")
+        self.search_input.setPlaceholderText(tr("Search romanized..."))
         self.search_input.textChanged.connect(self._reload_table)
 
-        self.refresh_button = QPushButton("목록 새로고침")
+        self.refresh_button = QPushButton(tr("Refresh List"))
         self.refresh_button.clicked.connect(self._reload_table)
 
         csv_row = QHBoxLayout()
         csv_row.setSpacing(8)
-        csv_row.addWidget(muted_label("CSV 편집:", wrap=False))
+        csv_row.addWidget(muted_label(tr("Edit CSV:"), wrap=False))
         self._csv_buttons: list[tuple[str, Path]] = []
         for label, filename in (
-            ("성 매핑 CSV", "korean_last_names.csv"),
-            ("이름 매핑 CSV", "korean_first_names.csv"),
-            ("대기 목록 CSV", "korean_names_pending.csv"),
+            (tr("Last Name CSV"), "korean_last_names.csv"),
+            (tr("First Name CSV"), "korean_first_names.csv"),
+            (tr("Pending List CSV"), "korean_names_pending.csv"),
         ):
             button = QPushButton(label)
             path = self._store.data_dir / filename
@@ -78,7 +81,7 @@ class KoreanNameMappingDialog(QDialog):
 
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(
-            ["구분", "풀 네임(참고)", "로마자", "한글 표기 (추천)", "출처"]
+            [tr("Type"), tr("Full Name (Ref)"), tr("Romanized"), tr("Korean Name (Suggestion)"), tr("Source")]
         )
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setColumnWidth(0, 60)
@@ -88,7 +91,7 @@ class KoreanNameMappingDialog(QDialog):
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.itemChanged.connect(self._on_item_changed)
 
-        save_button = QPushButton("입력한 항목 저장")
+        save_button = QPushButton(tr("Save Entered Items"))
         save_button.clicked.connect(self._save_entries)
         style_primary_button(save_button)
 
@@ -101,7 +104,7 @@ class KoreanNameMappingDialog(QDialog):
         top_row.addWidget(self.search_input, stretch=1)
         top_row.addWidget(self.refresh_button)
 
-        table_panel = table_card("매핑 대기 목록", self.table)
+        table_panel = table_card(tr("Pending Mappings"), self.table)
 
         footer = QHBoxLayout()
         footer.addStretch()
@@ -121,16 +124,15 @@ class KoreanNameMappingDialog(QDialog):
         if not path.is_file():
             QMessageBox.warning(
                 self,
-                "파일 없음",
-                f"CSV 파일을 찾을 수 없습니다.\n{path}",
+                tr("File Not Found"),
+                tr("CSV file not found.\n{path}").format(path=path),
             )
             return
         if not open_path_in_default_app(path):
             QMessageBox.warning(
                 self,
-                "열기 실패",
-                "기본 프로그램으로 CSV를 열지 못했습니다.\n"
-                f"경로: {path}",
+                tr("Open Failed"),
+                tr("Could not open CSV with default app.\nPath: {path}").format(path=path),
             )
 
     def _reload_table(self) -> None:
@@ -168,11 +170,11 @@ class KoreanNameMappingDialog(QDialog):
             self.table.blockSignals(False)
             self._updating_table = False
 
-        summary = f"한글 표기 필요: {self._store.pending_count():,}건"
+        summary = tr("Korean name needed: {count:,}").format(count=self._store.pending_count())
         if suggested_count:
-            summary += f" · 추천 {suggested_count:,}건"
+            summary += tr(" · Suggested: {count:,}").format(count=suggested_count)
         if needle:
-            summary += f" · 표시 {len(rows):,}건"
+            summary += tr(" · Showing: {count:,}").format(count=len(rows))
         self.summary_label.setText(summary)
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
@@ -192,15 +194,15 @@ class KoreanNameMappingDialog(QDialog):
         if is_recommendation:
             item.setForeground(QColor(TEXT_MUTED))
             item.setToolTip(
-                "자동 추천 표기입니다. 수정·삭제하지 않고 저장하면 매핑에 반영됩니다."
+                tr("Auto-suggested. Save without editing to apply to mappings.")
             )
         else:
             item.setForeground(QColor(TEXT_PRIMARY))
-            item.setToolTip("직접 입력한 표기입니다.")
+            item.setToolTip(tr("Manually entered."))
 
     @staticmethod
     def _part_label(part: str) -> str:
-        return "성" if part == "last" else "이름"
+        return tr("Last") if part == "last" else tr("First")
 
     @staticmethod
     def _read_only_item(text: str) -> QTableWidgetItem:
@@ -229,13 +231,17 @@ class KoreanNameMappingDialog(QDialog):
             except ValueError as exc:
                 errors.append(str(exc))
             except OSError as exc:
-                errors.append(str(exc) or "한글 매핑 파일을 저장하지 못했습니다.")
+                errors.append(str(exc) or tr("Failed to save Korean name mapping file."))
                 break
 
         if errors:
-            QMessageBox.warning(self, "저장 오류", "\n".join(errors[:5]))
+            QMessageBox.warning(self, tr("Save Error"), "\n".join(errors[:5]))
         if saved:
-            QMessageBox.information(self, "저장 완료", f"{saved:,}건의 한글 표기를 저장했습니다.")
+            QMessageBox.information(
+                self,
+                tr("Saved"),
+                tr("{count:,} Korean name(s) saved.").format(count=saved),
+            )
             self._reload_table()
         elif not errors:
-            QMessageBox.information(self, "변경 없음", "저장할 한글 표기가 없습니다.")
+            QMessageBox.information(self, tr("No Changes"), tr("No Korean names to save."))

@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 
 from core.config import AppSettings
 from core.config.settings_manager import SettingsManager
+from core.i18n import tr
 from core.db.meta import get_init_season_coverage
 from core.milestone.definitions import MilestoneDefinitions
 from core.stats.aggregator import Aggregator
@@ -79,13 +80,13 @@ class StatsView(QWidget):
         self._career_mode = False
 
         self.banner = ErrorBanner(self)
-        self.import_button = QPushButton("📥  박스스코어 가져오기")
+        self.import_button = QPushButton(tr("📥  Import Boxscores"))
         self.import_button.setObjectName("primaryButton")
         self.import_button.clicked.connect(self.start_import)
-        self.mlb_only_checkbox = QCheckBox("MLB만")
+        self.mlb_only_checkbox = QCheckBox(tr("MLB Only"))
         self.mlb_only_checkbox.setChecked(self.settings.import_mlb_only)
         self.mlb_only_checkbox.setToolTip(
-            "메이저리그 박스스코어만 가져옵니다. KBO·WBC 등은 건너뜁니다."
+            tr("Imports Major League boxscores only. KBO, WBC, etc. are skipped.")
         )
         self.mlb_only_checkbox.toggled.connect(self._on_mlb_only_toggled)
         self.progress_label = QLabel("")
@@ -94,7 +95,7 @@ class StatsView(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
 
-        self.career_toggle = QPushButton("통산 기록 보기")
+        self.career_toggle = QPushButton(tr("View Career Records"))
         self.career_toggle.setCheckable(True)
         self.career_toggle.toggled.connect(self._on_career_toggled)
 
@@ -102,8 +103,8 @@ class StatsView(QWidget):
         mode_layout = QHBoxLayout(mode_wrap)
         mode_layout.setContentsMargins(0, 0, 0, 0)
         mode_layout.setSpacing(0)
-        self.mode_season_btn = QPushButton("시즌")
-        self.mode_career_btn = QPushButton("통산")
+        self.mode_season_btn = QPushButton(tr("Season"))
+        self.mode_career_btn = QPushButton(tr("Career"))
         for btn in (self.mode_season_btn, self.mode_career_btn):
             btn.setCheckable(True)
             btn.setFlat(True)
@@ -124,10 +125,10 @@ class StatsView(QWidget):
         self.position_combo.currentIndexChanged.connect(self._apply_player_filter)
 
         self.player_search = QLineEdit()
-        self.player_search.setPlaceholderText("선수 검색...")
+        self.player_search.setPlaceholderText(tr("Search player..."))
         self.player_search.setClearButtonEnabled(True)
         self.player_search.setToolTip(
-            "이름·ID로 목록을 필터합니다. 입력마다 DB를 다시 읽지 않습니다."
+            tr("Filter list by name or ID. Does not re-query DB on each input.")
         )
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
@@ -145,8 +146,8 @@ class StatsView(QWidget):
         self.info_label = QLabel()
         self.info_label.setWordWrap(True)
 
-        self.batting_table = SortableTable(["항목"] + self.BATTING_COLUMNS)
-        self.pitching_table = SortableTable(["항목"] + self.PITCHING_COLUMNS)
+        self.batting_table = SortableTable([tr("Stat")] + self.BATTING_COLUMNS)
+        self.pitching_table = SortableTable([tr("Stat")] + self.PITCHING_COLUMNS)
         self.batting_table.cellDoubleClicked.connect(self._open_game_logs)
         self.pitching_table.cellDoubleClicked.connect(self._open_game_logs)
 
@@ -163,9 +164,9 @@ class StatsView(QWidget):
         pitching_layout = QVBoxLayout(pitching_page)
         pitching_layout.setContentsMargins(4, 4, 4, 4)
         pitching_layout.addWidget(self.pitching_table)
-        self.stats_tabs.addTab(batting_page, "타격")
-        self.stats_tabs.addTab(pitching_page, "투구")
-        self.stats_tabs.addTab(self.milestone_timeline, "마일스톤")
+        self.stats_tabs.addTab(batting_page, tr("Batting"))
+        self.stats_tabs.addTab(pitching_page, tr("Pitching"))
+        self.stats_tabs.addTab(self.milestone_timeline, tr("Milestones"))
 
         import_row = QHBoxLayout()
         import_row.addWidget(self.import_button)
@@ -177,9 +178,9 @@ class StatsView(QWidget):
 
         filter_row = QHBoxLayout()
         filter_row.setSpacing(10)
-        filter_row.addWidget(section_label("시즌"))
+        filter_row.addWidget(section_label(tr("Season")))
         filter_row.addWidget(self.season_combo)
-        filter_row.addWidget(section_label("포지션"))
+        filter_row.addWidget(section_label(tr("Position")))
         filter_row.addWidget(self.position_combo)
         filter_row.addWidget(self.player_search, stretch=1)
 
@@ -187,7 +188,7 @@ class StatsView(QWidget):
         toolbar_card.content_layout.addLayout(import_row)
         toolbar_card.content_layout.addLayout(filter_row)
 
-        list_card = CardPanel("추적 대상 선수")
+        list_card = CardPanel(tr("Tracked Players"))
         list_card.add_widget(self.player_list)
 
         detail_card = CardPanel()
@@ -250,7 +251,7 @@ class StatsView(QWidget):
         index = self.season_combo.findData(self.settings.current_season)
         if index >= 0:
             self.season_combo.setCurrentIndex(index)
-        self.season_combo.addItem("통산", "career")
+        self.season_combo.addItem(tr("Career"), "career")
         self.season_combo.blockSignals(False)
 
     def on_data_refreshed(self, kind: str) -> None:
@@ -270,13 +271,17 @@ class StatsView(QWidget):
             self.player_list.clear()
             if self.settings.tracked_teams:
                 self.banner.show_info(
-                    "표시할 선수가 없습니다. 초기값 설정( stats 파일 )을 했는지, "
-                    "커스텀 팀은 설정에서 약칭·팀 이름을 등록했는지 확인하세요."
+                    tr(
+                        "No players to display. Check that initial stats (stats file) are imported "
+                        "and that custom teams have their abbreviation and name registered in Settings."
+                    )
                 )
             else:
                 self.banner.show_info(
-                    "표시할 선수가 없습니다. 초기값 설정 또는 박스스코어 가져오기 후 "
-                    "다시 확인하세요."
+                    tr(
+                        "No players to display. Run initial setup or import boxscores, "
+                        "then check again."
+                    )
                 )
             return
         self.banner.hide()
@@ -317,7 +322,7 @@ class StatsView(QWidget):
         if self.player_list.currentRow() >= 0:
             self._refresh_player_stats()
         else:
-            self.player_header.setText("선수를 선택하세요.")
+            self.player_header.setText(tr("Please select a player."))
             self.info_label.setText("")
             self.batting_table.setRowCount(0)
             self.pitching_table.setRowCount(0)
@@ -343,7 +348,7 @@ class StatsView(QWidget):
         player = self._selected_player()
         player_id = self._selected_player_id()
         if player_id is None or player is None:
-            self.player_header.setText("선수를 선택하세요.")
+            self.player_header.setText(tr("Please select a player."))
             self.info_label.setText("")
             self.batting_table.setRowCount(0)
             self.pitching_table.setRowCount(0)
@@ -369,10 +374,12 @@ class StatsView(QWidget):
             has_init = self.aggregator.player_has_init_stats(player_id)
             if has_init:
                 self.info_label.setText(
-                    f"통산 기록 (init {coverage}시즌까지 + 박스스코어)"
+                    tr("Career stats (init through {coverage} season + boxscores)").format(
+                        coverage=coverage
+                    )
                 )
             else:
-                self.info_label.setText("초기값 없음 — 박스스코어 기록만 집계")
+                self.info_label.setText(tr("No initial stats — boxscore records only"))
             self._fill_career_tables(player_id)
         else:
             season = int(self.season_combo.currentData())
@@ -384,10 +391,16 @@ class StatsView(QWidget):
             )
             if from_init:
                 self.info_label.setText(
-                    f"{season}시즌 기록 (초기값 — stats 파일, 박스스코어 없음)"
+                    tr("{season} season stats (initial value — stats file, no boxscores)").format(
+                        season=season
+                    )
                 )
             else:
-                self.info_label.setText(f"{season}시즌 기록 (더블클릭: 경기별 기록)")
+                self.info_label.setText(
+                    tr("{season} season stats (double-click: game-by-game log)").format(
+                        season=season
+                    )
+                )
             self._fill_season_tables(player_id, season)
 
     def _fill_season_tables(self, player_id: int, season: int) -> None:
@@ -480,7 +493,7 @@ class StatsView(QWidget):
         if not data:
             table.setRowCount(0)
             return
-        row = ["기록"] + [data.get(mapping[col], "") for col in mapping]
+        row = [tr("Stats")] + [data.get(mapping[col], "") for col in mapping]
         table.populate([row])
 
     def _open_game_logs(self, _row: int, _col: int) -> None:
@@ -512,7 +525,7 @@ class StatsView(QWidget):
         boxscore_dir = self.settings.boxscore_dir
         if not boxscore_dir:
             self.banner.show_warning(
-                "박스스코어 폴더가 설정되지 않았습니다. 하단 상태바를 클릭해 리그를 선택하세요."
+                tr("Boxscore folder not configured. Click the status bar at the bottom to select a league.")
             )
             return
 
@@ -546,11 +559,15 @@ class StatsView(QWidget):
         self.progress_bar.setValue(current)
         if phase == "milestone":
             self.progress_label.setText(
-                f"마일스톤 확인 중... ({current}/{total}) {filename}"
+                tr("Checking milestones... ({current}/{total}) {filename}").format(
+                    current=current, total=total, filename=filename
+                )
             )
         else:
             self.progress_label.setText(
-                f"박스스코어 가져오는 중... ({current}/{total}) {filename}"
+                tr("Importing boxscores... ({current}/{total}) {filename}").format(
+                    current=current, total=total, filename=filename
+                )
             )
 
     def _on_import_finished(self, payload: ImportFinishedPayload) -> None:
@@ -561,9 +578,9 @@ class StatsView(QWidget):
         self.reload_players()
 
         result = payload.batch
-        parts = [f"{result.imported}경기 추가됨"]
+        parts = [tr("{count} games added").format(count=result.imported)]
         if result.skipped_non_mlb:
-            parts.append(f"MLB 외 {result.skipped_non_mlb}건 스킵")
+            parts.append(tr("{count} non-MLB skipped").format(count=result.skipped_non_mlb))
         if payload.milestones_recorded:
             team_count = sum(
                 1
@@ -573,28 +590,28 @@ class StatsView(QWidget):
             personal_count = payload.milestones_recorded - team_count
             milestone_parts = []
             if personal_count:
-                milestone_parts.append(f"개인 {personal_count}")
+                milestone_parts.append(tr("Personal: {count}").format(count=personal_count))
             if team_count:
-                milestone_parts.append(f"팀 {team_count}")
+                milestone_parts.append(tr("Team: {count}").format(count=team_count))
             label = " · ".join(milestone_parts) if milestone_parts else str(
                 payload.milestones_recorded
             )
-            parts.append(f"마일스톤 {label}건 달성")
+            parts.append(tr("{count} milestones achieved").format(count=label))
         message = " · ".join(parts)
         self.import_finished.emit(message)
 
         if result.errors:
             self.banner.show_warning(
-                f"일부 오류: {len(result.errors)}건 — "
-                f"{result.errors[0].error if result.errors else ''}"
+                tr("Some errors: {count} — ").format(count=len(result.errors))
+                + (result.errors[0].error if result.errors else "")
             )
         elif result.imported == 0 and not payload.milestones:
-            self.banner.show_info(message or "새 경기 없음")
+            self.banner.show_info(message or tr("No new games"))
         elif payload.milestones:
             box = QMessageBox(self)
-            box.setWindowTitle("가져오기 완료")
+            box.setWindowTitle(tr("Import Complete"))
             box.setText(message)
-            detail_button = box.addButton("자세히 보기", QMessageBox.ButtonRole.ActionRole)
+            detail_button = box.addButton(tr("Details"), QMessageBox.ButtonRole.ActionRole)
             box.addButton(QMessageBox.StandardButton.Ok)
             box.exec()
             if box.clickedButton() == detail_button:
@@ -604,4 +621,4 @@ class StatsView(QWidget):
         self.import_button.setEnabled(True)
         self.progress_bar.setVisible(False)
         self.progress_label.setVisible(False)
-        self.banner.show_error(f"가져오기 실패: {message}")
+        self.banner.show_error(tr("Import failed: {message}").format(message=message))

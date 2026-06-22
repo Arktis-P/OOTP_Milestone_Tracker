@@ -12,6 +12,7 @@ from core.db.meta import get_meta, set_meta
 from core.milestone.checker import MilestoneAchievement, MilestoneChecker
 from core.milestone.prediction_store import PredictionStore
 from core.milestone.definitions import MilestoneDefinitions
+from core.i18n import tr
 from core.roster.korean_names import note_players_from_boxscore_import
 from core.streak.tracker import StreakTracker
 from core.stats.aggregator import Aggregator
@@ -73,7 +74,7 @@ class ImportWorker(QThread):
                     get_meta(aggregator.conn, BATTING_NOTES_MULTI_INNING_META) != "1"
                     and self.boxscore_dir
                 ):
-                    self.progress.emit(0, 1, "BATTING 노트 재파싱", "import")
+                    self.progress.emit(0, 1, tr("Re-parsing BATTING notes"), "import")
                     backfilled = aggregator.refresh_all_batting_events_from_dir(
                         self.boxscore_dir,
                         self.season,

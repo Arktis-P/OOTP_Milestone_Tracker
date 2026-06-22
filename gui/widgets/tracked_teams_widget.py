@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings
+from core.i18n import tr
 from core.stats.team_filter import CANONICAL_MLB_TEAMS, sorted_team_items
 from gui.widgets.app_dialog import add_dialog_footer, init_dialog_layout, make_button_box
 from gui.widgets.card_panel import CardPanel
@@ -29,20 +30,20 @@ from gui.widgets.card_panel import CardPanel
 class _AddCustomTeamDialog(QDialog):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("팀 수동 추가")
+        self.setWindowTitle(tr("Add Custom Team"))
         self.abbr_input = QLineEdit()
-        self.abbr_input.setPlaceholderText("예: ATH")
+        self.abbr_input.setPlaceholderText("e.g.: ATH")
         self.abbr_input.setMaxLength(6)
         self.name_input = QLineEdit()
-        self.name_input.setPlaceholderText("예: Athletics")
+        self.name_input.setPlaceholderText("e.g.: Athletics")
         form = QFormLayout()
-        form.addRow("약칭:", self.abbr_input)
-        form.addRow("팀 이름:", self.name_input)
-        buttons = make_button_box(ok=True, ok_text="추가")
+        form.addRow(tr("Abbreviation:"), self.abbr_input)
+        form.addRow(tr("Team Name:"), self.name_input)
+        buttons = make_button_box(ok=True, ok_text="Add")
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
 
-        form_card = CardPanel("팀 정보")
+        form_card = CardPanel(tr("Team Info"))
         form_card.add_layout(form)
 
         layout = init_dialog_layout(self)
@@ -74,7 +75,7 @@ class TrackedTeamsWidget(QWidget):
         self._selected: list[str] = []
         self._team_checkboxes: dict[str, QCheckBox] = {}
 
-        self.track_all_checkbox = QCheckBox("전체 선수 (팀 필터 없음)")
+        self.track_all_checkbox = QCheckBox(tr("All Players (no team filter)"))
         self.track_all_checkbox.toggled.connect(self._on_track_all_toggled)
 
         if checkbox_mode:
@@ -84,9 +85,9 @@ class TrackedTeamsWidget(QWidget):
 
     def _build_combo_ui(self) -> None:
         self.team_combo = QComboBox()
-        self.add_button = QPushButton("추가")
+        self.add_button = QPushButton(tr("Add"))
         self.add_button.clicked.connect(self._add_from_combo)
-        self.custom_button = QPushButton("팀 수동 추가…")
+        self.custom_button = QPushButton(tr("Add Custom Team..."))
         self.custom_button.clicked.connect(self._add_custom_team)
 
         combo_row = QHBoxLayout()
@@ -96,14 +97,14 @@ class TrackedTeamsWidget(QWidget):
 
         self.selected_list = QListWidget()
         self.selected_list.setMaximumHeight(90)
-        self.remove_button = QPushButton("선택 제거")
+        self.remove_button = QPushButton(tr("Remove Selected"))
         self.remove_button.clicked.connect(self._remove_selected)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.track_all_checkbox)
         layout.addLayout(combo_row)
-        layout.addWidget(QLabel("추적 중인 팀:"))
+        layout.addWidget(QLabel(tr("Tracked Teams:")))
         layout.addWidget(self.selected_list)
         layout.addWidget(self.remove_button)
 
@@ -264,18 +265,18 @@ class TrackedTeamsWidget(QWidget):
             return
         values = dialog.values()
         if not values:
-            QMessageBox.warning(self, "입력 필요", "약칭과 팀 이름을 모두 입력하세요.")
+            QMessageBox.warning(self, tr("Input Required"), tr("Please enter both an abbreviation and a team name."))
             return
         abbr, name = values
         if abbr in CANONICAL_MLB_TEAMS:
             QMessageBox.information(
                 self,
-                "이미 등록됨",
-                f"{abbr}는 기본 MLB 30개 팀에 포함되어 있습니다.",
+                tr("Already Registered"),
+                tr("{abbr} is already in the standard 30 MLB teams.").format(abbr=abbr),
             )
             return
         if abbr in self._custom_teams:
-            QMessageBox.warning(self, "중복", f"{abbr}는 이미 추가된 팀입니다.")
+            QMessageBox.warning(self, tr("Duplicate"), tr("{abbr} has already been added.").format(abbr=abbr))
             return
         self.add_custom_team(abbr, name)
 

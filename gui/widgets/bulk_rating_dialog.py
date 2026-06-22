@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.i18n import tr
 from core.roster.age import age_from_row, get_reference_date
 from core.roster.bulk_rating import (
     PlayerBulkSettings,
@@ -73,16 +74,18 @@ class BulkRatingDialog(QDialog):
         super().__init__(parent)
         self.aggregator = aggregator
         self.settings = settings
-        self.setWindowTitle("레이팅 일괄 편집")
+        self.setWindowTitle(tr("Bulk Rating Editor"))
         self.resize(*scale_size(2200, 1400))
 
         mlb_path, kbo_path = resolve_combined_paths(import_export_dir)
         if not mlb_path and not kbo_path:
-            raise FileNotFoundError("mlb_rosters / kbo_rosters 파일을 찾을 수 없습니다.")
+            raise FileNotFoundError(
+                tr("mlb_rosters / kbo_rosters files not found.")
+            )
 
         self.combined = load_combined_roster(mlb_path, kbo_path)
         if not self.combined.players:
-            raise ValueError("로스터에 선수 데이터가 없습니다.")
+            raise ValueError(tr("No player data in roster."))
 
         self.reference_date = get_reference_date(aggregator, settings)
         self._original_rows: dict[int, list[str]] = {}
@@ -125,17 +128,20 @@ class BulkRatingDialog(QDialog):
                 )
             )
 
-        self.prospect_boost = QCheckBox("유망주 레이팅 증가 적용 (국가 필터 선택 시 해당 국가만)")
+        self.prospect_boost = QCheckBox(
+            tr("Apply prospect rating boost (nation filter: applies to that nation only)")
+        )
         self.prospect_boost.setChecked(True)
 
         self.ref_label = muted_label(
-            f"기준일: {self.reference_date.isoformat()} "
-            f"(마지막 가져오기 날짜 우선)"
+            tr("Reference date: {date} (last import date takes priority)").format(
+                date=self.reference_date.isoformat()
+            )
         )
         self.count_label = summary_label()
 
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("이름 검색...")
+        self.search_input.setPlaceholderText(tr("Search by name..."))
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(250)
@@ -143,13 +149,13 @@ class BulkRatingDialog(QDialog):
         self.search_input.textChanged.connect(lambda: self._search_timer.start())
 
         self.league_filter = QComboBox()
-        self.league_filter.addItem("전체", "")
+        self.league_filter.addItem(tr("All"), "")
         self.league_filter.addItem("MLB", "mlb")
         self.league_filter.addItem("KBO", "kbo")
         self.league_filter.currentIndexChanged.connect(self._apply_filters)
 
         self.nation_filter = QComboBox()
-        self.nation_filter.addItem("전체", "")
+        self.nation_filter.addItem(tr("All"), "")
         for nation in self._collect_nations():
             self.nation_filter.addItem(nation, nation)
         kr_index = self.nation_filter.findData("South Korea")
@@ -162,18 +168,18 @@ class BulkRatingDialog(QDialog):
             self.position_filter.addItem(label, key)
         self.position_filter.currentIndexChanged.connect(self._apply_filters)
 
-        self.prospect_only = QCheckBox("유망주만 보기")
+        self.prospect_only = QCheckBox(tr("Prospects only"))
         self.prospect_only.toggled.connect(self._apply_filters)
 
         filter_row = QHBoxLayout()
         filter_row.setSpacing(10)
-        filter_row.addWidget(section_label("검색"))
+        filter_row.addWidget(section_label(tr("Search")))
         filter_row.addWidget(self.search_input, stretch=1)
-        filter_row.addWidget(section_label("리그"))
+        filter_row.addWidget(section_label(tr("League")))
         filter_row.addWidget(self.league_filter)
-        filter_row.addWidget(section_label("국가"))
+        filter_row.addWidget(section_label(tr("Nation")))
         filter_row.addWidget(self.nation_filter)
-        filter_row.addWidget(section_label("포지션"))
+        filter_row.addWidget(section_label(tr("Position")))
         filter_row.addWidget(self.position_filter)
         filter_row.addWidget(self.prospect_only)
 
@@ -214,18 +220,18 @@ class BulkRatingDialog(QDialog):
         self.progress_label = QLabel("")
         self.progress_label.setVisible(False)
 
-        buttons = make_button_box(save=True, save_text="적용 후 저장")
+        buttons = make_button_box(save=True, save_text="Apply and Save")
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
 
-        options_card = CardPanel("옵션")
+        options_card = CardPanel(tr("Options"))
         options_card.add_widget(self.prospect_boost)
         options_card.add_widget(self.ref_label)
 
-        filter_card = CardPanel("필터")
+        filter_card = CardPanel(tr("Filter"))
         filter_card.add_layout(filter_row)
 
-        table_panel = table_card("선수 목록", self.table)
+        table_panel = table_card(tr("Player List"), self.table)
         table_panel.content_layout.insertWidget(0, self.count_label)
 
         layout = init_dialog_layout(self)
@@ -267,7 +273,9 @@ class BulkRatingDialog(QDialog):
         self.model.set_visible_rows(visible_positions)
         total = len(self._player_indices)
         shown = len(visible_positions)
-        self.count_label.setText(f"표시 {shown:,}명 / 전체 {total:,}명")
+        self.count_label.setText(
+            tr("Showing {shown:,} / {total:,} players").format(shown=shown, total=total)
+        )
 
     def _snapshot_original(self, player_id: int) -> list[str]:
         cached = self._original_rows.get(player_id)
@@ -292,7 +300,9 @@ class BulkRatingDialog(QDialog):
             )
         ]
         if not to_modify:
-            QMessageBox.information(self, "변경 없음", "적용할 레이팅 변경이 없습니다.")
+            QMessageBox.information(
+                self, tr("No Changes"), tr("No rating changes to apply.")
+            )
             return
 
         self.progress.setVisible(True)
@@ -310,7 +320,9 @@ class BulkRatingDialog(QDialog):
                 prospect_nation=prospect_nation,
             )
             self.progress.setValue(index)
-            self.progress_label.setText(f"적용 중... {index}/{len(to_modify)}")
+            self.progress_label.setText(
+                tr("Applying... {index}/{total}").format(index=index, total=len(to_modify))
+            )
 
         sync_player_rows_to_sources(self.combined)
         mlb_out, kbo_out = save_modified_rosters(self.combined)
@@ -319,15 +331,15 @@ class BulkRatingDialog(QDialog):
         kbo_count = len(self.combined.kbo.rows) if self.combined.kbo else 0
         parts = []
         if mlb_out:
-            parts.append(f"MLB {mlb_count:,}명 → {mlb_out.name}")
+            parts.append(f"MLB {mlb_count:,} → {mlb_out.name}")
         if kbo_out:
-            parts.append(f"KBO {kbo_count:,}명 → {kbo_out.name}")
+            parts.append(f"KBO {kbo_count:,} → {kbo_out.name}")
 
         self.progress.setVisible(False)
         self.progress_label.setVisible(False)
         QMessageBox.information(
             self,
-            "저장 완료",
-            " · ".join(parts) if parts else "저장 완료",
+            tr("Saved"),
+            " · ".join(parts) if parts else tr("Saved"),
         )
         self.accept()

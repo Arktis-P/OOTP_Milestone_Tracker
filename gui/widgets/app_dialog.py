@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.i18n import tr
 from gui.widgets.card_panel import CardPanel
 
 
@@ -58,9 +59,9 @@ def style_primary_button(button: QPushButton) -> QPushButton:
 def make_button_box(
     *,
     save: bool = False,
-    save_text: str = "저장",
+    save_text: str = "Save",
     ok: bool = False,
-    ok_text: str = "확인",
+    ok_text: str = "OK",
     close: bool = False,
     cancel: bool = True,
     custom_accept: tuple[str, QDialogButtonBox.ButtonRole] | None = None,
@@ -69,16 +70,16 @@ def make_button_box(
     if cancel:
         box.addButton(QDialogButtonBox.StandardButton.Cancel)
     if save:
-        btn = box.addButton(save_text, QDialogButtonBox.ButtonRole.AcceptRole)
+        btn = box.addButton(tr(save_text), QDialogButtonBox.ButtonRole.AcceptRole)
         style_primary_button(btn)
     elif ok:
-        btn = box.addButton(ok_text, QDialogButtonBox.ButtonRole.AcceptRole)
+        btn = box.addButton(tr(ok_text), QDialogButtonBox.ButtonRole.AcceptRole)
         style_primary_button(btn)
     elif close:
         box.addButton(QDialogButtonBox.StandardButton.Close)
     if custom_accept is not None:
         label, role = custom_accept
-        btn = box.addButton(label, role)
+        btn = box.addButton(tr(label), role)
         style_primary_button(btn)
     return box
 

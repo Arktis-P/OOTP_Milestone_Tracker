@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.i18n import tr
 from core.roster.ootp_format import PlayerRow, player_display_name
 from core.roster.position_filter import position_label
 from core.roster.rating_fields import RATING_SECTIONS, RatingSection
@@ -39,7 +40,7 @@ class PlayerRatingDialog(QDialog):
         self._value_items: dict[tuple[str, int], QTableWidgetItem] = {}
 
         name = player_display_name(row, fieldnames)
-        self.setWindowTitle(f"레이팅 편집 — {name}")
+        self.setWindowTitle(tr("Rating Editor — {name}").format(name=name))
         self.resize(*scale_size(960, 620))
 
         scroll = QScrollArea()
@@ -58,11 +59,11 @@ class PlayerRatingDialog(QDialog):
 
         scroll.setWidget(body)
 
-        buttons = make_button_box(save=True, save_text="저장")
+        buttons = make_button_box(save=True)
         buttons.accepted.connect(self._apply_and_accept)
         buttons.rejected.connect(self.reject)
 
-        ratings_card = CardPanel("레이팅")
+        ratings_card = CardPanel(tr("Ratings"))
         ratings_card.add_widget(scroll)
 
         layout = init_dialog_layout(self)

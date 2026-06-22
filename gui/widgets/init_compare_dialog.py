@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem,
 )
 
+from core.i18n import tr
 from core.stats.initial_import import StatDiff
 from gui.ui_compact import scale_size
 from gui.widgets.app_dialog import init_dialog_layout, make_button_box, muted_label, table_card
@@ -22,7 +23,7 @@ class InitCompareDialog(QDialog):
         diffs: list[StatDiff],
         *,
         allow_save: bool,
-        save_label: str = "파일 기준으로 갱신",
+        save_label: str = "Update based on file",
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -33,7 +34,7 @@ class InitCompareDialog(QDialog):
         if diffs:
             table = QTableWidget(len(diffs), 5)
             table.setHorizontalHeaderLabels(
-                ["선수", "항목", "박스스코어 집계", "파일값", "차이"]
+                [tr("Player"), tr("Stat"), tr("Boxscore Total"), tr("File Value"), tr("Diff")]
             )
             for row_idx, item in enumerate(diffs):
                 table.setItem(row_idx, 0, QTableWidgetItem(item.player_name))
@@ -47,7 +48,8 @@ class InitCompareDialog(QDialog):
             table = None
 
         note = muted_label(
-            "차이가 없습니다." if not diffs else "박스스코어에 없는 경기가 파일에 포함됐을 수 있습니다."
+            tr("No differences.") if not diffs
+            else tr("File may contain games not yet in boxscore DB.")
         )
 
         if allow_save:
@@ -63,7 +65,7 @@ class InitCompareDialog(QDialog):
 
         layout = init_dialog_layout(self)
         if table is not None:
-            layout.addWidget(table_card("통계 차이", table), stretch=1)
+            layout.addWidget(table_card(tr("Stat Differences"), table), stretch=1)
         layout.addWidget(note)
         layout.addWidget(buttons, alignment=Qt.AlignmentFlag.AlignRight)
 

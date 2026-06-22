@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings
+from core.i18n import tr
 from core.milestone.checker import MilestoneChecker
 from core.milestone.definitions import MilestoneDefinitions
 from core.stats.aggregator import Aggregator
@@ -41,7 +42,7 @@ class TeamMilestoneDialog(QDialog):
         self.aggregator = aggregator
         self.milestones = milestones
         self.settings = settings
-        self.setWindowTitle("팀 마일스톤 수동 입력")
+        self.setWindowTitle(tr("Manual Team Milestone Entry"))
         self.resize(*scale_size(420, 280))
 
         self.team_combo = QComboBox()
@@ -73,22 +74,22 @@ class TeamMilestoneDialog(QDialog):
         self.notes_edit = QLineEdit()
 
         form = QFormLayout()
-        form.addRow("팀", self.team_combo)
-        form.addRow("마일스톤", self.milestone_combo)
-        form.addRow("시즌", self.season_edit)
-        form.addRow("날짜", self.date_edit)
-        form.addRow("메모", self.notes_edit)
+        form.addRow(tr("Team"), self.team_combo)
+        form.addRow(tr("Milestone"), self.milestone_combo)
+        form.addRow(tr("Season"), self.season_edit)
+        form.addRow(tr("Date"), self.date_edit)
+        form.addRow(tr("Notes"), self.notes_edit)
 
-        buttons = make_button_box(ok=True, ok_text="기록 추가")
+        buttons = make_button_box(ok=True, ok_text="Add Record")
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
 
-        form_card = CardPanel("팀 마일스톤")
+        form_card = CardPanel(tr("Team Milestone"))
         form_card.add_layout(form)
 
         layout = init_dialog_layout(self)
         layout.addWidget(
-            muted_label("포스트시즌·우승 등 수동 기록 항목만 표시됩니다.")
+            muted_label(tr("Only manual entry items (postseason, championships, etc.) are shown."))
         )
         layout.addWidget(form_card, stretch=1)
         add_dialog_footer(layout, buttons)
@@ -97,12 +98,12 @@ class TeamMilestoneDialog(QDialog):
         team = str(self.team_combo.currentData() or "")
         milestone_key = str(self.milestone_combo.currentData() or "")
         if not team or not milestone_key:
-            QMessageBox.warning(self, "입력 필요", "팀과 마일스톤을 선택하세요.")
+            QMessageBox.warning(self, tr("Input Required"), tr("Please select a team and milestone."))
             return
         try:
             season = int(self.season_edit.text().strip())
         except ValueError:
-            QMessageBox.warning(self, "입력 오류", "시즌은 숫자여야 합니다.")
+            QMessageBox.warning(self, tr("Input Error"), tr("Season must be a number."))
             return
 
         checker = MilestoneChecker(
@@ -123,8 +124,8 @@ class TeamMilestoneDialog(QDialog):
         if not recorded:
             QMessageBox.warning(
                 self,
-                "중복",
-                "이미 해당 시즌에 기록된 마일스톤입니다.",
+                tr("Duplicate"),
+                tr("This milestone has already been recorded for this season."),
             )
             return
         self.accept()
