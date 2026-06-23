@@ -5,6 +5,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import QMessageBox, QWidget
 
 from core.config import AppSettings
+from core.i18n import tr
 from core.stats.initial_import import InitialImporter
 from core.stats.team_filter import sorted_team_items
 
@@ -31,11 +32,12 @@ def prompt_unknown_mlb_teams(
     )
     reply = QMessageBox.question(
         parent,
-        "새 MLB 팀 발견",
-        "player stats export에서 기존 MLB 30개 팀에 없는 "
-        "신규 MLB 구단(확장 팀 등)이 발견되었습니다.\n\n"
-        f"{lines}\n\n"
-        "추적 팀 선택 목록에 추가할까요?",
+        tr("New MLB Teams Discovered"),
+        tr(
+            "New MLB teams (expansion teams, etc.) not in the standard 30 were found in the player stats export.\n\n"
+            "{teams}\n\n"
+            "Add to the tracked team selection list?"
+        ).format(teams=lines),
         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         QMessageBox.StandardButton.Yes,
     )

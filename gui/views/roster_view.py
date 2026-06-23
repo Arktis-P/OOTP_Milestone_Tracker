@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings, resolve_data_path
+from core.i18n import tr
 from core.stats.aggregator import Aggregator
 from core.roster.editor import RosterEditor, RosterFilter
 from core.roster.korean_names import KoreanNameMapper, load_korean_name_mapper
@@ -41,7 +42,9 @@ _LEAGUE_ITEMS: list[tuple[str, RosterLeague]] = [
     ("KBO", "kbo"),
 ]
 
-_TABLE_COLUMNS = ["이름", "한글명", "팀", "리그", "포지션", "나이", "CON", "POW", "STU"]
+def _table_columns() -> list[str]:
+    return [tr("Name"), tr("Korean Name"), tr("Team"), tr("League"), tr("Position"), tr("Age"), "CON", "POW", "STU"]
+
 _NUMERIC_COLUMNS = {5, 6, 7, 8}
 
 
@@ -60,8 +63,8 @@ class RosterView(QWidget):
             self.league_combo.addItem(label, league)
         self.league_combo.currentIndexChanged.connect(self._on_league_changed)
 
-        self.path_label = QLabel("파일: (없음)")
-        self.reload_button = QPushButton("불러오기")
+        self.path_label = QLabel(tr("File: (none)"))
+        self.reload_button = QPushButton(tr("Load"))
         self.reload_button.clicked.connect(lambda: self._reload_file(show_warning=True))
 
         self.position_combo = QComboBox()
@@ -72,45 +75,47 @@ class RosterView(QWidget):
         self.max_age_input = QSpinBox()
         for spin in (self.min_age_input, self.max_age_input):
             spin.setRange(0, 60)
-            spin.setSpecialValueText("전체")
+            spin.setSpecialValueText(tr("All"))
             spin.setValue(0)
 
-        self.bulk_button = QPushButton("일괄 편집...")
+        self.bulk_button = QPushButton(tr("Bulk Edit..."))
         self.bulk_button.clicked.connect(self._open_bulk_dialog)
 
-        self.backup_button = QPushButton("원본 복사본 저장")
-        self.save_button = QPushButton("저장")
+        self.backup_button = QPushButton(tr("Save Backup"))
+        self.save_button = QPushButton(tr("Save"))
         self.save_button.setObjectName("primaryButton")
         self.save_button.setEnabled(False)
         self.backup_button.clicked.connect(self.save_backup)
         self.save_button.clicked.connect(self.save_file)
 
-        filter_button = QPushButton("필터 적용")
+        filter_button = QPushButton(tr("Apply Filter"))
         filter_button.clicked.connect(self.apply_filter)
 
         self.table_panel = TablePanel(
-            _TABLE_COLUMNS,
-            placeholder="선수 검색...",
+            _table_columns(),
+            placeholder=tr("Search player..."),
         )
         self.table_panel.table.cellDoubleClicked.connect(self._on_row_double_clicked)
         self.info_label = QLabel(
-            "세이브의 import_export 폴더에서 로스터를 불러옵니다. "
-            "선수 더블클릭으로 레이팅을 편집하세요."
+            tr(
+                "Loads roster from the save's import_export folder. "
+                "Double-click a player to edit ratings."
+            )
         )
         self.info_label.setObjectName("mutedLabel")
         self.info_label.setWordWrap(True)
 
         source_row = QHBoxLayout()
         source_row.setSpacing(10)
-        source_row.addWidget(section_label("리그"))
+        source_row.addWidget(section_label(tr("League")))
         source_row.addWidget(self.league_combo)
         source_row.addWidget(self.path_label, stretch=1)
         source_row.addWidget(self.reload_button)
 
         filter_form = QFormLayout()
-        filter_form.addRow("포지션", self.position_combo)
-        filter_form.addRow("최소 나이", self.min_age_input)
-        filter_form.addRow("최대 나이", self.max_age_input)
+        filter_form.addRow(tr("Position"), self.position_combo)
+        filter_form.addRow(tr("Min Age"), self.min_age_input)
+        filter_form.addRow(tr("Max Age"), self.max_age_input)
 
         action_row = QHBoxLayout()
         action_row.addWidget(filter_button)
@@ -119,13 +124,13 @@ class RosterView(QWidget):
         action_row.addWidget(self.backup_button)
         action_row.addWidget(self.save_button)
 
-        toolbar_card = CardPanel("레이팅 편집")
+        toolbar_card = CardPanel(tr("Rating Editor"))
         toolbar_card.content_layout.addLayout(source_row)
         toolbar_card.content_layout.addLayout(filter_form)
         toolbar_card.content_layout.addLayout(action_row)
         toolbar_card.content_layout.addWidget(self.info_label)
 
-        table_card = CardPanel("로스터 목록")
+        table_card = CardPanel(tr("Roster List"))
         table_card.add_widget(self.table_panel)
 
         layout = QVBoxLayout(self)
@@ -155,7 +160,7 @@ class RosterView(QWidget):
     def _expected_path_display(self) -> str:
         export_dir = self._import_export_dir()
         if export_dir is None:
-            return "(세이브 미설정)"
+            return tr("(No save configured)")
         return str(expected_roster_path(export_dir, self._current_league))
 
     def _optional_age(self, spin: QSpinBox) -> int | None:
@@ -173,18 +178,20 @@ class RosterView(QWidget):
         export_dir = self._import_export_dir()
         if export_dir is None:
             self._loaded_path = None
-            self.path_label.setText("파일: (세이브 미설정)")
+            self.path_label.setText(tr("File: (no save configured)"))
             if show_warning:
                 QMessageBox.warning(
                     self,
-                    "파일 없음",
-                    "활성 세이브가 설정되지 않았습니다.\n설정 탭에서 리그를 선택하세요.",
+                    tr("File Not Found"),
+                    tr("No active save is configured.\nSelect a league in the Settings tab."),
                 )
             return
 
         path = self._resolve_roster_path()
         self.path_label.setText(
-            f"파일: {path}" if path else f"파일: {self._expected_path_display()}"
+            tr("File: {path}").format(path=path)
+            if path
+            else tr("File: {path}").format(path=self._expected_path_display())
         )
         if path is None:
             self._loaded_path = None
@@ -192,10 +199,15 @@ class RosterView(QWidget):
                 label = roster_export_label(self._current_league)
                 QMessageBox.warning(
                     self,
-                    "파일 없음",
-                    f"로스터 파일을 찾을 수 없습니다.\n\n"
-                    f"경로: {expected_roster_path(export_dir, self._current_league)}\n"
-                    f"({label} — import_export 폴더에 OOTP 로스터 export 필요)",
+                    tr("File Not Found"),
+                    tr(
+                        "Roster file not found.\n\n"
+                        "Path: {path}\n"
+                        "({label} — OOTP roster export required in import_export folder)"
+                    ).format(
+                        path=expected_roster_path(export_dir, self._current_league),
+                        label=label,
+                    ),
                 )
             return
 
@@ -204,23 +216,27 @@ class RosterView(QWidget):
             self.editor.load(path)
         except Exception as exc:
             self._loaded_path = None
-            QMessageBox.critical(self, "로드 실패", str(exc))
+            QMessageBox.critical(self, tr("Load Failed"), str(exc))
             return
 
         self._loaded_path = path
         self.save_button.setEnabled(False)
         self.info_label.setText(
-            f"로드됨: {path.name} ({self.editor.row_count:,}명)"
+            tr("Loaded: {name} ({count:,} players)").format(
+                name=path.name, count=self.editor.row_count
+            )
         )
         self._filtered_rows = self.editor.filter_rows(self._build_filter())
         self._show_rows(self._filtered_rows)
 
     def apply_filter(self) -> None:
         if not self.editor.row_count:
-            QMessageBox.warning(self, "데이터 없음", "먼저 로스터를 불러오세요.")
+            QMessageBox.warning(self, tr("No Data"), tr("Please load the roster first."))
             return
         self._filtered_rows = self.editor.filter_rows(self._build_filter())
-        self.info_label.setText(f"필터 결과: {len(self._filtered_rows):,}명")
+        self.info_label.setText(
+            tr("Filter result: {count:,} players").format(count=len(self._filtered_rows))
+        )
         self._show_rows(self._filtered_rows)
 
     def _open_bulk_dialog(self) -> None:
@@ -228,8 +244,8 @@ class RosterView(QWidget):
         if export_dir is None:
             QMessageBox.warning(
                 self,
-                "세이브 미설정",
-                "활성 세이브가 설정되지 않았습니다.",
+                tr("No Save Configured"),
+                tr("No active save is configured."),
             )
             return
         try:
@@ -241,10 +257,10 @@ class RosterView(QWidget):
                     parent=self,
                 )
         except FileNotFoundError as exc:
-            QMessageBox.warning(self, "파일 없음", str(exc))
+            QMessageBox.warning(self, tr("File Not Found"), str(exc))
             return
         except ValueError as exc:
-            QMessageBox.warning(self, "로스터 오류", str(exc))
+            QMessageBox.warning(self, tr("Roster Error"), str(exc))
             return
         dialog.exec()
 
@@ -270,22 +286,24 @@ class RosterView(QWidget):
 
     def save_backup(self) -> None:
         if not self._loaded_path:
-            QMessageBox.warning(self, "파일 없음", "저장할 원본 파일이 없습니다.")
+            QMessageBox.warning(self, tr("File Not Found"), tr("No original file to back up."))
             return
         try:
             backup = self.editor.save_copy(self._loaded_path)
         except Exception as exc:
-            QMessageBox.critical(self, "백업 실패", str(exc))
+            QMessageBox.critical(self, tr("Backup Failed"), str(exc))
             return
         self.save_button.setEnabled(True)
-        QMessageBox.information(self, "백업 완료", f"복사본 저장:\n{backup}")
+        QMessageBox.information(
+            self, tr("Backup Complete"), tr("Copy saved:\n{path}").format(path=backup)
+        )
 
     def save_file(self) -> None:
         if not self.editor.backup_saved:
             reply = QMessageBox.question(
                 self,
-                "백업 확인",
-                "원본 복사본을 먼저 저장하지 않았습니다.\n지금 백업을 만든 뒤 저장할까요?",
+                tr("Confirm Backup"),
+                tr("No backup has been saved yet.\nCreate a backup now before saving?"),
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
@@ -296,9 +314,11 @@ class RosterView(QWidget):
         try:
             saved = self.editor.save(target)
         except Exception as exc:
-            QMessageBox.critical(self, "저장 실패", str(exc))
+            QMessageBox.critical(self, tr("Save Failed"), str(exc))
             return
-        QMessageBox.information(self, "저장 완료", f"저장 위치: {saved}")
+        QMessageBox.information(
+            self, tr("Saved"), tr("Saved to: {path}").format(path=saved)
+        )
 
     def _show_rows(self, rows: list[list[str]]) -> None:
         fieldnames = self.editor.fieldnames
@@ -349,5 +369,5 @@ class RosterView(QWidget):
         table.setSortingEnabled(True)
         if len(rows) > 5000:
             self.info_label.setText(
-                f"{self.info_label.text()} (표시 상한 5,000명)"
+                f"{self.info_label.text()} {tr('(display limit: 5,000 players)')}"
             )

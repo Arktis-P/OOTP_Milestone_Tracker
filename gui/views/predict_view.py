@@ -16,8 +16,9 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings
+from core.i18n import tr
 from core.milestone.definitions import MilestoneDefinitions
-from core.milestone.prediction_store import PredictionStore
+from core.milestone.prediction_store import PredictionStore, render_season_note
 from core.roster.korean_names import (
     korean_display_for_player,
     load_korean_name_mapper,
@@ -47,35 +48,37 @@ class PredictView(QWidget):
         self._initial_load_done = False
 
         self.banner = ErrorBanner(self)
-        self.refresh_button = QPushButton("🔄 목록 재생성")
+        self.refresh_button = QPushButton(tr("🔄 Regenerate List"))
         self.refresh_button.setToolTip(
-            "추적 대상 통산 마일스톤 목록을 처음부터 다시 만듭니다.\n"
-            "평소에는 박스스코어 가져오기 시 자동으로 갱신됩니다."
+            tr(
+                "Rebuilds the career milestone tracking list from scratch.\n"
+                "Normally updated automatically when boxscores are imported."
+            )
         )
         self.refresh_button.clicked.connect(lambda: self.refresh(force_reseed=True))
 
         self.player_filter = QComboBox()
-        self.player_filter.addItem("전체 선수", None)
+        self.player_filter.addItem(tr("All Players"), None)
         self.grade_filter = QComboBox()
-        self.grade_filter.addItem("전체 등급", "")
+        self.grade_filter.addItem(tr("All Grades"), "")
         for grade in ("common", "uncommon", "rare", "epic", "legendary"):
             self.grade_filter.addItem(grade, grade)
         self.player_filter.currentIndexChanged.connect(self.refresh)
         self.grade_filter.currentIndexChanged.connect(self.refresh)
 
-        self.near_only_checkbox = QCheckBox("🔥 임박만 보기")
+        self.near_only_checkbox = QCheckBox(tr("🔥 Near Only"))
         self.near_only_checkbox.toggled.connect(self.refresh)
 
-        title = QLabel("마일스톤 예측 (통산)")
+        title = QLabel(tr("Milestone Predictions (Career)"))
         title.setObjectName("pageTitle")
 
         controls = QHBoxLayout()
         controls.setSpacing(10)
         controls.addWidget(title)
         controls.addStretch()
-        controls.addWidget(section_label("선수"))
+        controls.addWidget(section_label(tr("Player")))
         controls.addWidget(self.player_filter)
-        controls.addWidget(section_label("등급"))
+        controls.addWidget(section_label(tr("Grade")))
         controls.addWidget(self.grade_filter)
         controls.addWidget(self.near_only_checkbox)
         controls.addWidget(self.refresh_button)
@@ -85,19 +88,19 @@ class PredictView(QWidget):
 
         self.table = SortableTable(
             [
-                "선수",
-                "한글명",
-                "마일스톤",
-                "등급",
-                "현재값",
-                "목표값",
-                "남은 수치",
-                "달성률",
-                "상태",
-                "이번 시즌",
+                tr("Player"),
+                tr("Korean Name"),
+                tr("Milestone"),
+                tr("Grade"),
+                tr("Current"),
+                tr("Target"),
+                tr("Remaining"),
+                tr("Progress"),
+                tr("Status"),
+                tr("This Season"),
             ]
         )
-        table_card = CardPanel("통산 마일스톤 예측 목록")
+        table_card = CardPanel(tr("Career Milestone Predictions"))
         table_card.add_widget(self.table)
 
         layout = QVBoxLayout(self)
@@ -134,7 +137,7 @@ class PredictView(QWidget):
         current = self.player_filter.currentData()
         self.player_filter.blockSignals(True)
         self.player_filter.clear()
-        self.player_filter.addItem("전체 선수", None)
+        self.player_filter.addItem(tr("All Players"), None)
         for player in self.aggregator.get_tracked_players(
             self.settings.tracked_teams,
             custom_teams=self.settings.custom_mlb_teams,
@@ -167,8 +170,10 @@ class PredictView(QWidget):
 
         if not predictions:
             self.banner.show_info(
-                "표시할 통산 마일스톤 예측이 없습니다.\n"
-                "남은 수치가 추적 시작 기준 이하인 선수가 없거나, 추적 팀·박스스코어를 확인하세요."
+                tr(
+                    "No career milestone predictions to display.\n"
+                    "No players are within tracking range, or check your tracked teams and boxscores."
+                )
             )
         else:
             self.banner.hide()
@@ -186,7 +191,7 @@ class PredictView(QWidget):
         self.table.setRowCount(len(predictions))
         for row_idx, item in enumerate(predictions):
             grade = item.milestone.grade if item.milestone else item.grade
-            status = "🔥 임박" if item.is_near else ""
+            status = tr("🔥 Near") if item.is_near else ""
             korean_name = korean_display_for_player(
                 mapper,
                 full_name=full_names.get(item.player_id),
@@ -203,7 +208,7 @@ class PredictView(QWidget):
                 f"{item.remaining:,.0f}",
                 f"{item.progress_pct:.1f}%",
                 status,
-                item.season_note,
+                render_season_note(item.season_note),
             ]
             for col_idx, value in enumerate(values):
                 cell = QTableWidgetItem(str(value))

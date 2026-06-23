@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from core.i18n import tr
 from core.milestone.definitions import (
     DESCRIPTION_TEMPLATES,
     MilestoneDefinition,
@@ -41,7 +42,7 @@ class MilestoneDefinitionFormDialog(QDialog):
         self._editing_key = item.key if item else None
         self._result: MilestoneDefinition | None = None
 
-        self.setWindowTitle("마일스톤 기준 수정" if item else "마일스톤 기준 추가")
+        self.setWindowTitle(tr("Edit Milestone Definition") if item else tr("Add Milestone Definition"))
         self.resize(*scale_size(460, 420))
 
         self.category_combo = QComboBox()
@@ -49,7 +50,7 @@ class MilestoneDefinitionFormDialog(QDialog):
             self.category_combo.addItem(value, value)
 
         self.key_edit = QLineEdit()
-        self.key_edit.setPlaceholderText("예: career_hr_500")
+        self.key_edit.setPlaceholderText("e.g.: career_hr_500")
         if item:
             self.key_edit.setText(item.key)
             self.key_edit.setReadOnly(True)
@@ -75,54 +76,52 @@ class MilestoneDefinitionFormDialog(QDialog):
         self.track_from_spin = QDoubleSpinBox()
         self.track_from_spin.setRange(0, 1_000_000)
         self.track_from_spin.setDecimals(2)
-        self.track_from_spin.setSpecialValueText("(없음)")
+        self.track_from_spin.setSpecialValueText(tr("(none)"))
         self.track_from_spin.setToolTip(
-            "목표까지 남은 수치가 이 값 이하일 때 예측 목록에 표시합니다. "
-            "비우면 threshold의 15%입니다."
+            tr("Displays in the prediction list when remaining is at or below this value. Default: 15% of threshold.")
         )
         self.track_from_spin.setValue(0)
 
         self.near_n_spin = QDoubleSpinBox()
         self.near_n_spin.setRange(0, 1_000_000)
         self.near_n_spin.setDecimals(2)
-        self.near_n_spin.setSpecialValueText("(없음)")
+        self.near_n_spin.setSpecialValueText(tr("(none)"))
         self.near_n_spin.setToolTip(
-            "목표까지 남은 수치가 이 값 이하일 때 임박으로 강조합니다. "
-            "비우면 threshold의 5%입니다."
+            tr("Highlighted as near when remaining is at or below this value. Default: 5% of threshold.")
         )
         self.near_n_spin.setValue(0)
 
         self.template_combo = QComboBox()
         self.template_combo.setEditable(True)
         for value in DESCRIPTION_TEMPLATES:
-            label = "(없음)" if not value else value
+            label = tr("(none)") if not value else value
             self.template_combo.addItem(label, value)
 
-        self.active_check = QCheckBox("활성 (체커·예측에 사용)")
+        self.active_check = QCheckBox(tr("Active (used in checker & predictions)"))
         self.active_check.setChecked(True)
 
         if item:
             self._load_item(item)
 
         form = QFormLayout()
-        form.addRow("분류:", self.category_combo)
+        form.addRow(tr("Category:"), self.category_combo)
         form.addRow("key:", self.key_edit)
-        form.addRow("표시 이름:", self.label_edit)
+        form.addRow(tr("Display Name:"), self.label_edit)
         form.addRow("scope:", self.scope_combo)
         form.addRow("stat:", self.stat_edit)
         form.addRow("threshold:", self.threshold_spin)
         form.addRow("direction:", self.direction_combo)
         form.addRow("grade:", self.grade_combo)
-        form.addRow("추적 시작 (남은 수):", self.track_from_spin)
-        form.addRow("임박 (남은 수):", self.near_n_spin)
-        form.addRow("설명 템플릿:", self.template_combo)
+        form.addRow(tr("Track from (remaining):"), self.track_from_spin)
+        form.addRow(tr("Near (remaining):"), self.near_n_spin)
+        form.addRow(tr("Description Template:"), self.template_combo)
         form.addRow("", self.active_check)
 
-        buttons = make_button_box(save=True, save_text="확인")
+        buttons = make_button_box(ok=True)
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
 
-        form_card = CardPanel("기준 정보")
+        form_card = CardPanel(tr("Definition Info"))
         form_card.add_layout(form)
 
         layout = init_dialog_layout(self)
@@ -203,7 +202,7 @@ class MilestoneDefinitionFormDialog(QDialog):
             editing_key=self._editing_key,
         )
         if errors:
-            QMessageBox.warning(self, "입력 오류", "\n".join(errors))
+            QMessageBox.warning(self, tr("Input Error"), "\n".join(errors))
             return
         self._result = item
         self.accept()

@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings
+from core.i18n import tr
 from core.stats.aggregator import Aggregator
 from gui.ui_compact import scale_size
 from gui.widgets.app_dialog import add_dialog_footer, init_dialog_layout, make_button_box, muted_label
@@ -40,18 +41,22 @@ class PlayerGameLogDialog(QDialog):
         self.player_id = player_id
         self.season = season
 
-        self.setWindowTitle(f"{player_name} — {season}시즌 경기별 기록")
+        self.setWindowTitle(
+            tr("{player_name} — Season {season} Game Log").format(
+                player_name=player_name, season=season
+            )
+        )
         self.resize(*scale_size(900, 520))
 
         tabs = QTabWidget()
         self._batting_table = SortableTable(
-            ["날짜", "상대", "AB", "H", "HR", "RBI", "BB", "K", "AVG"]
+            [tr("Date"), tr("Opponent"), "AB", "H", "HR", "RBI", "BB", "K", "AVG"]
         )
         self._pitching_table = SortableTable(
-            ["날짜", "상대", "IP", "H", "ER", "BB", "K", "HR", "결과"]
+            [tr("Date"), tr("Opponent"), "IP", "H", "ER", "BB", "K", "HR", tr("Result")]
         )
-        tabs.addTab(self._batting_table, "타격")
-        tabs.addTab(self._pitching_table, "투구")
+        tabs.addTab(self._batting_table, tr("Batting"))
+        tabs.addTab(self._pitching_table, tr("Pitching"))
 
         self._batting_rows: list[dict] = []
         self._pitching_rows: list[dict] = []
@@ -62,14 +67,14 @@ class PlayerGameLogDialog(QDialog):
         self._batting_table.cellDoubleClicked.connect(self._open_log)
         self._pitching_table.cellDoubleClicked.connect(self._open_log)
 
-        log_card = CardPanel("경기별 기록")
+        log_card = CardPanel(tr("Game-by-Game Log"))
         log_card.add_widget(tabs)
 
         buttons = make_button_box(close=True, cancel=False)
         buttons.rejected.connect(self.accept)
 
         layout = init_dialog_layout(self)
-        layout.addWidget(muted_label("날짜 더블클릭: 게임 로그 HTML 열기", wrap=False))
+        layout.addWidget(muted_label(tr("Double-click date: open game log HTML"), wrap=False))
         layout.addWidget(log_card, stretch=1)
         add_dialog_footer(layout, buttons)
 

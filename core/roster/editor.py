@@ -16,6 +16,7 @@ from core.roster.ootp_format import (
     player_age,
     save_ootp_roster,
 )
+from core.i18n import tr
 from core.roster.position_filter import matches_position_group
 from core.roster.row_access import row_as_dict, row_get
 
@@ -69,7 +70,7 @@ class RosterEditor:
             self._fieldnames = self._ootp.fieldnames
             self._rows = self._ootp.rows
         else:
-            raise ValueError("지원하지 않는 로스터 형식입니다. OOTP export (.txt) 파일이 필요합니다.")
+            raise ValueError(tr("Unsupported roster format. An OOTP export (.txt) file is required."))
         self._source_path = path
         self._backup_saved = False
 

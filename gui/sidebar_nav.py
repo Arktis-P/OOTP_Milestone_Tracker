@@ -12,27 +12,30 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.i18n import tr
 from gui.theme import ACCENT_TEXT, BG_PANEL, BORDER, TEXT_MUTED, TEXT_SECONDARY
 
-_NAV_SECTIONS: list[tuple[str | None, list[tuple[int, str, str]]]] = [
-    (
-        "기록 검사기",
-        [
-            (0, "📊", "대시보드"),
-            (1, "🏆", "마일스톤 기록"),
-            (2, "👤", "선수 기록"),
-            (3, "🔮", "마일스톤 예측"),
-        ],
-    ),
-    (
-        "도구 및 설정",
-        [
-            (4, "📂", "초기값 설정"),
-            (5, "✍️", "레이팅 편집"),
-            (6, "⚙️", "설정"),
-        ],
-    ),
-]
+
+def _nav_sections() -> list[tuple[str | None, list[tuple[int, str, str]]]]:
+    return [
+        (
+            tr("Record Inspector"),
+            [
+                (0, "📊", tr("Dashboard")),
+                (1, "🏆", tr("Milestone Records")),
+                (2, "👤", tr("Player Stats")),
+                (3, "🔮", tr("Milestone Predictions")),
+            ],
+        ),
+        (
+            tr("Tools & Settings"),
+            [
+                (4, "📂", tr("Initial Setup")),
+                (5, "✍️", tr("Rating Editor")),
+                (6, "⚙️", tr("Settings")),
+            ],
+        ),
+    ]
 
 
 class SidebarNav(QWidget):
@@ -55,7 +58,7 @@ class SidebarNav(QWidget):
         root.setContentsMargins(8, 10, 8, 10)
         root.setSpacing(2)
 
-        for section_title, items in _NAV_SECTIONS:
+        for section_title, items in _nav_sections():
             if section_title:
                 if root.count() > 0:
                     line = QFrame()
@@ -86,7 +89,7 @@ class SidebarNav(QWidget):
                     self._setup_badge = QLabel("●")
                     self._setup_badge.setStyleSheet("color: #f14c4c; font-size: 10px;")
                     self._setup_badge.setVisible(False)
-                    self._setup_badge.setToolTip("받을 수 있는 기준 파일 업데이트")
+                    self._setup_badge.setToolTip(tr("Bundle update available"))
                     row_layout.addWidget(self._setup_badge)
                     root.addWidget(row)
                 else:
@@ -99,13 +102,13 @@ class SidebarNav(QWidget):
         footer_layout = QVBoxLayout(footer)
         footer_layout.setContentsMargins(8, 8, 8, 8)
         footer_layout.setSpacing(2)
-        cap = QLabel("배포 정보")
+        cap = QLabel(tr("App Info"))
         cap.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
         cap.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        store = QLabel("%APPDATA% 저장")
+        store = QLabel(tr("%APPDATA% Storage"))
         store.setStyleSheet(f"color: {ACCENT_TEXT}; font-size: 11px; font-weight: 700;")
         store.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sub = QLabel("SQLite DB 연동")
+        sub = QLabel(tr("SQLite DB Connected"))
         sub.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9px;")
         sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         footer_layout.addWidget(cap)

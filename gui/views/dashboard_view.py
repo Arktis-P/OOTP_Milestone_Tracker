@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings, SettingsManager
+from core.i18n import tr
 from core.milestone.definitions import MilestoneDefinitions
 from core.milestone.prediction_store import CachedPrediction, PredictionStore
 from core.stats.aggregator import Aggregator
@@ -57,18 +58,18 @@ class DashboardView(QWidget):
 
         self.banner = ErrorBanner(self)
 
-        title = QLabel("⚡ OOTP 시뮬레이션 제어판")
+        title = QLabel(tr("⚡ OOTP Simulation Control Panel"))
         title.setObjectName("pageTitle")
         self.status_label = QLabel()
         self.status_label.setObjectName("mutedLabel")
 
-        self.import_button = QPushButton("📥  박스스코어 가져오기")
+        self.import_button = QPushButton(tr("📥  Import Boxscores"))
         self.import_button.setObjectName("primaryButton")
         self.import_button.clicked.connect(self.start_import)
-        self.mlb_only_checkbox = QCheckBox("MLB만")
+        self.mlb_only_checkbox = QCheckBox(tr("MLB Only"))
         self.mlb_only_checkbox.setChecked(self.settings.import_mlb_only)
         self.mlb_only_checkbox.toggled.connect(self._on_mlb_only_toggled)
-        self.init_tab_button = QPushButton("초기값 설정으로 →")
+        self.init_tab_button = QPushButton(tr("→ Initial Setup"))
         self.init_tab_button.setObjectName("linkButton")
 
         self.init_tab_button.clicked.connect(self.navigate_to_initial_import.emit)
@@ -107,22 +108,22 @@ class DashboardView(QWidget):
         self.recent_list = QListWidget()
         self.recent_list.setObjectName("dashboardMilestoneList")
         self.recent_list.itemClicked.connect(self._on_recent_clicked)
-        self.recent_more = QPushButton("마일스톤 기록 전체 보기 →")
+        self.recent_more = QPushButton(tr("View All Milestone Records →"))
         self.recent_more.setObjectName("linkButton")
         self.recent_more.clicked.connect(self._show_all_milestones)
         recent_card = CardPanel(
-            "🏆  최근 달성한 마일스톤 (10건)",
+            tr("🏆  Recent Milestones (last 10)"),
             trailing=self.recent_more,
         )
         recent_card.add_widget(self.recent_list)
 
         self.near_list = QListWidget()
         self.near_list.itemClicked.connect(self._on_near_clicked)
-        self.near_more = QPushButton("예측 탭에서 전체 보기 →")
+        self.near_more = QPushButton(tr("View All Predictions →"))
         self.near_more.setObjectName("linkButton")
         self.near_more.clicked.connect(self._show_all_predictions)
         near_card = CardPanel(
-            "🔥  곧 달성 예정 (임박)",
+            tr("🔥  Upcoming (Near)"),
             trailing=self.near_more,
         )
         near_card.add_widget(self.near_list)
@@ -161,19 +162,20 @@ class DashboardView(QWidget):
         self.update_status_summary()
 
     def update_status_summary(self) -> None:
-        league = self.settings.active_save or "(리그 미선택)"
+        league = self.settings.active_save or tr("(No league selected)")
         last_import = self.settings.import_state.get("last_import_at", "")
         last_label = last_import[:10] if last_import else "-"
         self.status_label.setText(
-            f"활성 리그: {league}  ·  시즌 {self.settings.current_season}  ·  "
-            f"마지막 가져오기: {last_label}"
+            tr("Active League: {league}  ·  Season {season}  ·  Last import: {last}").format(
+                league=league, season=self.settings.current_season, last=last_label
+            )
         )
 
     def refresh_recent_achievements(self) -> None:
         self._recent_records = self.aggregator.get_recent_milestone_records(10)
         self.recent_list.clear()
         if not self._recent_records:
-            item = QListWidgetItem("최근 달성 기록이 없습니다.")
+            item = QListWidgetItem(tr("No recent milestone records."))
             item.setFlags(Qt.ItemFlag.NoItemFlags)
             item.setForeground(Qt.GlobalColor.lightGray)
             self.recent_list.addItem(item)
@@ -216,7 +218,7 @@ class DashboardView(QWidget):
         self._near_predictions = store.list_near_cached(limit=10)
         self.near_list.clear()
         if not self._near_predictions:
-            item = QListWidgetItem("임박한 통산 마일스톤이 없습니다.")
+            item = QListWidgetItem(tr("No near career milestones."))
             item.setFlags(Qt.ItemFlag.NoItemFlags)
             self.near_list.addItem(item)
             return
@@ -224,7 +226,9 @@ class DashboardView(QWidget):
             remaining = int(pred.remaining)
             text = (
                 f"🔥 {pred.player_name}\n"
-                f"   {pred.milestone_label} — {remaining:,}개 남음"
+                + tr("   {label} — {remaining:,} remaining").format(
+                    label=pred.milestone_label, remaining=remaining
+                )
             )
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, pred)
@@ -254,9 +258,7 @@ class DashboardView(QWidget):
         self.settings.import_mlb_only = self.mlb_only_checkbox.isChecked()
         boxscore_dir = self.settings.boxscore_dir
         if not boxscore_dir:
-            self.banner.show_warning(
-                "박스스코어 폴더가 설정되지 않았습니다. 설정 탭에서 리그를 선택하세요."
-            )
+            self.banner.show_warning(tr("Boxscore folder not configured. Select a league in Settings."))
             return
 
         self.import_button.setEnabled(False)
@@ -290,15 +292,21 @@ class DashboardView(QWidget):
         self.progress_bar.setValue(current)
         if phase == "milestone":
             self.progress_label.setText(
-                f"마일스톤 확인 중... ({current}/{total}) {filename}"
+                tr("Checking milestones... ({current}/{total}) {filename}").format(
+                    current=current, total=total, filename=filename
+                )
             )
         elif phase == "streak":
             self.progress_label.setText(
-                f"연속기록 확인 중... ({current}/{total}) {filename}"
+                tr("Checking streaks... ({current}/{total}) {filename}").format(
+                    current=current, total=total, filename=filename
+                )
             )
         else:
             self.progress_label.setText(
-                f"박스스코어 가져오는 중... ({current}/{total}) {filename}"
+                tr("Importing boxscores... ({current}/{total}) {filename}").format(
+                    current=current, total=total, filename=filename
+                )
             )
 
     def _on_import_finished(self, payload: ImportFinishedPayload) -> None:
@@ -308,11 +316,11 @@ class DashboardView(QWidget):
         self.progress_label.setVisible(False)
 
         result = payload.batch
-        parts = [f"{result.imported}경기 추가됨"]
+        parts = [tr("{count} games added").format(count=result.imported)]
         if result.skipped_non_mlb:
-            parts.append(f"MLB 외 {result.skipped_non_mlb}건 스킵")
+            parts.append(tr("{count} non-MLB skipped").format(count=result.skipped_non_mlb))
         if payload.milestones_recorded:
-            parts.append(f"마일스톤 {payload.milestones_recorded}건 달성")
+            parts.append(tr("{count} milestones achieved").format(count=payload.milestones_recorded))
         message = " · ".join(parts)
         self.import_finished.emit(message)
         self.update_status_summary()
@@ -320,14 +328,14 @@ class DashboardView(QWidget):
 
         if result.errors:
             self.banner.show_warning(
-                f"일부 오류: {len(result.errors)}건 — "
-                f"{result.errors[0].error if result.errors else ''}"
+                tr("Some errors: {count} — ").format(count=len(result.errors))
+                + (result.errors[0].error if result.errors else "")
             )
         elif payload.milestones:
             box = QMessageBox(self)
-            box.setWindowTitle("가져오기 완료")
+            box.setWindowTitle(tr("Import Complete"))
             box.setText(message)
-            detail_button = box.addButton("자세히 보기", QMessageBox.ButtonRole.ActionRole)
+            detail_button = box.addButton(tr("Details"), QMessageBox.ButtonRole.ActionRole)
             box.addButton(QMessageBox.StandardButton.Ok)
             box.exec()
             if box.clickedButton() == detail_button:
@@ -338,4 +346,4 @@ class DashboardView(QWidget):
         self.progress_card.setVisible(False)
         self.progress_bar.setVisible(False)
         self.progress_label.setVisible(False)
-        self.banner.show_error(f"가져오기 실패: {message}")
+        self.banner.show_error(tr("Import failed: {message}").format(message=message))

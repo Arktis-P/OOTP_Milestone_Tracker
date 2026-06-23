@@ -33,6 +33,8 @@ class AppSettings:
     custom_mlb_teams: dict[str, str] = field(default_factory=dict)
     import_mlb_only: bool = True
     season_games_total: int = 162
+    language: str = "ko"
+    language_selected: bool = False
     ratio_qualifiers: dict[str, float] = field(
         default_factory=lambda: {
             "batting_ab_per_game": 3.1,
@@ -133,6 +135,8 @@ class SettingsManager:
             "import_mlb_only": settings.import_mlb_only,
             "season_games_total": settings.season_games_total,
             "ratio_qualifiers": dict(settings.ratio_qualifiers),
+            "language": settings.language,
+            "language_selected": settings.language_selected,
         }
         self.path.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
@@ -212,6 +216,8 @@ class SettingsManager:
             },
             import_mlb_only=bool(raw.get("import_mlb_only", True)),
             season_games_total=int(raw.get("season_games_total", 162)),
+            language=str(raw.get("language", "ko")),
+            language_selected=bool(raw.get("language_selected", False)),
             ratio_qualifiers=dict(
                 raw.get(
                     "ratio_qualifiers",

@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings
+from core.i18n import tr
 from core.milestone.definitions import MilestoneDefinitions
 from core.stats.aggregator import Aggregator
 from gui.widgets.grade_styles import apply_grade_to_list_item
@@ -35,7 +36,7 @@ class PlayerMilestoneTimeline(QWidget):
         self.settings = settings
         self._records: list[dict] = []
 
-        self.empty_label = QLabel("아직 달성한 마일스톤이 없습니다.")
+        self.empty_label = QLabel(tr("No milestones achieved yet."))
         self.empty_label.setStyleSheet("color: #94a3b8; padding: 6px;")
         self.empty_label.setVisible(False)
 
@@ -51,14 +52,14 @@ class PlayerMilestoneTimeline(QWidget):
         self._records.clear()
         self.list_widget.clear()
         if player_id is None:
-            self.empty_label.setText("선수를 선택하세요.")
+            self.empty_label.setText(tr("Please select a player."))
             self.empty_label.setVisible(True)
             self.list_widget.setVisible(False)
             return
 
         self._records = self.aggregator.get_player_milestone_records(player_id)
         if not self._records:
-            self.empty_label.setText("아직 달성한 마일스톤이 없습니다.")
+            self.empty_label.setText(tr("No milestones achieved yet."))
             self.empty_label.setVisible(True)
             self.list_widget.setVisible(False)
             return
@@ -89,14 +90,14 @@ class PlayerMilestoneTimeline(QWidget):
             return
         logs_dir = self.settings.game_logs_dir
         if not logs_dir:
-            QMessageBox.information(self, "게임 로그", "게임 로그 경로가 설정되지 않았습니다.")
+            QMessageBox.information(self, tr("Game Log"), tr("Game log directory is not configured."))
             return
         log_path = Path(logs_dir) / f"log_{game_id}.html"
         if not log_path.is_file():
             QMessageBox.information(
                 self,
-                "게임 로그",
-                f"파일을 찾을 수 없습니다:\n{log_path}",
+                tr("Game Log"),
+                tr("File not found:\n{path}").format(path=log_path),
             )
             return
         webbrowser.open(log_path.resolve().as_uri())

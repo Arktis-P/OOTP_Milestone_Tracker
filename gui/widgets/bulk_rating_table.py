@@ -8,16 +8,17 @@ from PyQt6.QtCore import QAbstractTableModel, QEvent, QModelIndex, QRect, Qt, py
 from PyQt6.QtGui import QMouseEvent, QPainter
 from PyQt6.QtWidgets import QStyle, QStyleOptionButton, QStyleOptionViewItem, QStyledItemDelegate, QWidget
 
+from core.i18n import tr
 from core.roster.bulk_rating import FameLevel, PlayerBulkSettings
 
 _FAME_OPTIONS: list[tuple[str, FameLevel]] = [
-    ("미선택", FameLevel.NONE),
-    ("지역구", FameLevel.REGIONAL),
-    ("전국구", FameLevel.NATIONAL),
-    ("슈퍼스타", FameLevel.SUPERSTAR),
+    (tr("None"), FameLevel.NONE),
+    (tr("Regional"), FameLevel.REGIONAL),
+    (tr("National"), FameLevel.NATIONAL),
+    (tr("Superstar"), FameLevel.SUPERSTAR),
 ]
 
-_FAME_SHORT_LABELS = ("—", "지역", "전국", "슈퍼")
+_FAME_SHORT_LABELS = ("—", tr("Reg"), tr("Nat"), tr("Super"))
 _FAME_LEVELS = tuple(level for _label, level in _FAME_OPTIONS)
 _FAME_LABEL_BY_LEVEL = {level: label for label, level in _FAME_OPTIONS}
 
@@ -29,7 +30,7 @@ COL_PROSPECT = 4
 COL_BASE = 5
 COL_PROSPECT_FAME = 6
 
-HEADERS = ["영문명", "한글명", "소속팀", "나이", "유망주", "기본 인지도", "유망주 인지도"]
+HEADERS = [tr("English Name"), tr("Korean Name"), tr("Team"), tr("Age"), tr("Prospect"), tr("Base Fame"), tr("Prospect Fame")]
 FAME_COLUMNS = (COL_BASE, COL_PROSPECT_FAME)
 
 
@@ -124,7 +125,7 @@ class BulkRatingTableModel(QAbstractTableModel):
             return HEADERS[section]
         if role == Qt.ItemDataRole.ToolTipRole and orientation == Qt.Orientation.Horizontal:
             if section in FAME_COLUMNS:
-                return "클릭으로 선택 · 같은 항목을 다시 클릭하면 미선택"
+                return tr("Click to select · Click again to deselect")
         return None
 
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:
@@ -376,7 +377,7 @@ class FameRadioDelegate(QStyledItemDelegate):
             if isinstance(level, FameLevel):
                 from PyQt6.QtWidgets import QToolTip
 
-                full = _FAME_LABEL_BY_LEVEL.get(level, "미선택")
+                full = _FAME_LABEL_BY_LEVEL.get(level, tr("None"))
                 QToolTip.showText(event.globalPos(), full, view)
                 return True
         return super().helpEvent(event, view, option, index)

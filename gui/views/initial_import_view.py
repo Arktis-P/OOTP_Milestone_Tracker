@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings, SettingsManager
+from core.i18n import tr
 from core.stats.aggregator import Aggregator
 from core.stats.initial_import import ImportMode, InitialImporter, InitImportResult
 from gui.widgets.init_compare_dialog import InitCompareDialog
@@ -57,9 +58,9 @@ class InitialImportView(QWidget):
         self.batting_path = QLineEdit()
         self.pitching_path = QLineEdit()
 
-        self.mode_first = QRadioButton("최초 설정 — 완료 시즌까지 전체 적재")
-        self.mode_refresh = QRadioButton("비시즌 갱신 — 직전 시즌 추가 + 비교")
-        self.mode_mid = QRadioButton("시즌 중 비교 — 저장 없이 차이만 확인")
+        self.mode_first = QRadioButton(tr("Initial setup — load all data through completed season"))
+        self.mode_refresh = QRadioButton(tr("Off-season update — add previous season + compare"))
+        self.mode_mid = QRadioButton(tr("Mid-season compare — check differences without saving"))
         self.mode_first.setChecked(True)
         if self.importer.is_init_empty():
             self.mode_first.setChecked(True)
@@ -70,9 +71,9 @@ class InitialImportView(QWidget):
         for button in (self.mode_first, self.mode_refresh, self.mode_mid):
             mode_group.addButton(button)
 
-        batting_button = QPushButton("타격")
-        pitching_button = QPushButton("투구")
-        all_button = QPushButton("📥  데이터베이스 적재")
+        batting_button = QPushButton(tr("Batting"))
+        pitching_button = QPushButton(tr("Pitching"))
+        all_button = QPushButton(tr("📥  Load Database"))
         all_button.setObjectName("primaryButton")
         self._import_buttons = (batting_button, pitching_button, all_button)
         batting_button.clicked.connect(lambda: self._run_import("batting"))
@@ -85,26 +86,28 @@ class InitialImportView(QWidget):
         button_row.addWidget(all_button)
         button_row.addStretch()
 
-        files_group = QGroupBox("파일 선택")
+        files_group = QGroupBox(tr("File Selection"))
         files_layout = QVBoxLayout(files_group)
         files_layout.addLayout(
-            self._path_row("타격", self.batting_path, "player_batting_stats.txt")
+            self._path_row(tr("Batting"), self.batting_path, "player_batting_stats.txt")
         )
         files_layout.addLayout(
-            self._path_row("투구", self.pitching_path, "player_pitching_stats.txt")
+            self._path_row(tr("Pitching"), self.pitching_path, "player_pitching_stats.txt")
         )
 
-        mode_group_box = QGroupBox("임포트 모드")
+        mode_group_box = QGroupBox(tr("Import Mode"))
         mode_layout = QVBoxLayout(mode_group_box)
         mode_layout.addWidget(self.mode_first)
         mode_layout.addWidget(self.mode_refresh)
         mode_layout.addWidget(self.mode_mid)
 
-        title = QLabel("과거 통산 및 시즌 Baseline 초기값 등록")
+        title = QLabel(tr("Register Historical Career & Season Baseline Stats"))
         title.setObjectName("pageTitle")
         subtitle = QLabel(
-            "OOTP에서 export한 player_batting_stats.txt · player_pitching_stats.txt "
-            "파일로 통산 베이스라인을 적재합니다."
+            tr(
+                "Loads career baseline data from player_batting_stats.txt · "
+                "player_pitching_stats.txt exported from OOTP."
+            )
         )
         subtitle.setObjectName("mutedLabel")
         subtitle.setWordWrap(True)
@@ -142,7 +145,7 @@ class InitialImportView(QWidget):
 
     def _path_row(self, label: str, field: QLineEdit, default_name: str) -> QHBoxLayout:
         row = QHBoxLayout()
-        browse = QPushButton("찾아보기")
+        browse = QPushButton(tr("Browse"))
 
         def pick() -> None:
             start = (
@@ -153,7 +156,7 @@ class InitialImportView(QWidget):
             )
             selected, _ = QFileDialog.getOpenFileName(
                 self,
-                f"{default_name} 선택",
+                tr("Select {filename}").format(filename=default_name),
                 start,
                 "Text files (*.txt);;All files (*)",
             )
@@ -182,9 +185,11 @@ class InitialImportView(QWidget):
         if mode == "mid_season":
             reply = QMessageBox.warning(
                 self,
-                "시즌 중 임포트",
-                f"현재 시즌({season}) 데이터는 DB에 저장되지 않습니다.\n"
-                "박스스코어 집계값과 비교만 실행합니다.\n\n계속하시겠습니까?",
+                tr("Mid-season Import"),
+                tr(
+                    "Data for the current season ({season}) will not be saved to the DB.\n"
+                    "Only a comparison with boxscore totals will be run.\n\nContinue?"
+                ).format(season=season),
                 QMessageBox.StandardButton.Cancel | QMessageBox.StandardButton.Ok,
             )
             if reply != QMessageBox.StandardButton.Ok:
@@ -193,13 +198,13 @@ class InitialImportView(QWidget):
         batting_path = self.batting_path.text().strip() or None
         pitching_path = self.pitching_path.text().strip() or None
         if kind == "batting" and not batting_path:
-            QMessageBox.warning(self, "파일 필요", "타격 파일을 선택하세요.")
+            QMessageBox.warning(self, tr("File Required"), tr("Please select a batting file."))
             return
         if kind == "pitching" and not pitching_path:
-            QMessageBox.warning(self, "파일 필요", "투구 파일을 선택하세요.")
+            QMessageBox.warning(self, tr("File Required"), tr("Please select a pitching file."))
             return
         if kind == "all" and not batting_path and not pitching_path:
-            QMessageBox.warning(self, "파일 필요", "타격 또는 투구 파일을 선택하세요.")
+            QMessageBox.warning(self, tr("File Required"), tr("Please select a batting or pitching file."))
             return
 
         preview = kind == "all"
@@ -281,19 +286,23 @@ class InitialImportView(QWidget):
     def _on_import_progress(self, current: int, total: int, filename: str) -> None:
         self.progress_bar.setMaximum(max(total, 1))
         self.progress_bar.setValue(current)
-        self.progress_label.setText(f"저장 중... ({current}/{total}) {filename}")
+        self.progress_label.setText(
+            tr("Saving... ({current}/{total}) {filename}").format(
+                current=current, total=total, filename=filename
+            )
+        )
 
     def _on_import_finished(self, _results: object) -> None:
         self._pending_import = None
         self._finish_import_worker()
         self._update_status()
         self.import_finished.emit()
-        QMessageBox.information(self, "완료", "임포트가 완료되었습니다.")
+        QMessageBox.information(self, tr("Done"), tr("Import completed successfully."))
 
     def _on_import_error(self, message: str) -> None:
         self._pending_import = None
         self._finish_import_worker()
-        QMessageBox.critical(self, "임포트 실패", message)
+        QMessageBox.critical(self, tr("Import Failed"), message)
 
     def _should_persist_after_preview(
         self, results: list[InitImportResult], mode: ImportMode, season: int
@@ -303,7 +312,7 @@ class InitialImportView(QWidget):
             if result.errors:
                 QMessageBox.warning(
                     self,
-                    "오류",
+                    tr("Error"),
                     "\n".join(result.errors[:8]),
                 )
                 return False
@@ -311,7 +320,9 @@ class InitialImportView(QWidget):
 
         if mode == "refresh" and all_diffs:
             dialog = InitCompareDialog(
-                f"비시즌 갱신 — {season - 1}시즌 비교 결과",
+                tr("Off-season update — {prev_season} season comparison results").format(
+                    prev_season=season - 1
+                ),
                 all_diffs,
                 allow_save=True,
                 parent=self,
@@ -321,7 +332,7 @@ class InitialImportView(QWidget):
 
         if mode == "mid_season":
             dialog = InitCompareDialog(
-                f"시즌 중 비교 — {season}시즌 (저장되지 않음)",
+                tr("Mid-season compare — {season} season (not saved)").format(season=season),
                 [d for d in all_diffs if d.season == season],
                 allow_save=False,
                 parent=self,
@@ -330,10 +341,10 @@ class InitialImportView(QWidget):
             gap_diffs = [d for d in all_diffs if d.season < season]
             if gap_diffs:
                 gap_dialog = InitCompareDialog(
-                    "이전 시즌 갱신 비교",
+                    tr("Previous season update comparison"),
                     gap_diffs,
                     allow_save=True,
-                    save_label="파일 기준으로 추가",
+                    save_label=tr("Add based on file"),
                     parent=self,
                 )
                 gap_dialog.exec()
@@ -343,8 +354,11 @@ class InitialImportView(QWidget):
         if mode == "refresh" and not all_diffs:
             reply = QMessageBox.question(
                 self,
-                "비교 결과",
-                f"{season - 1}시즌: 박스스코어와 파일값 차이가 없습니다.\n파일 기준으로 갱신할까요?",
+                tr("Comparison Result"),
+                tr(
+                    "{prev_season} season: no differences between boxscores and file values.\n"
+                    "Update based on file?"
+                ).format(prev_season=season - 1),
             )
             return reply == QMessageBox.StandardButton.Yes
 
@@ -356,6 +370,14 @@ class InitialImportView(QWidget):
         pitching_at = summary["pitching_imported_at"][:10] if summary["pitching_imported_at"] else "-"
         coverage = summary["season_coverage"]
         self.status_label.setText(
-            f"타격: {summary['batting_players']:,}명 · {coverage}시즌까지 (갱신 {batting_at})\n"
-            f"투구: {summary['pitching_players']:,}명 · {coverage}시즌까지 (갱신 {pitching_at})"
+            tr(
+                "Batting: {batting_players:,} players · through {coverage} season (updated {batting_at})\n"
+                "Pitching: {pitching_players:,} players · through {coverage} season (updated {pitching_at})"
+            ).format(
+                batting_players=summary["batting_players"],
+                pitching_players=summary["pitching_players"],
+                coverage=coverage,
+                batting_at=batting_at,
+                pitching_at=pitching_at,
+            )
         )

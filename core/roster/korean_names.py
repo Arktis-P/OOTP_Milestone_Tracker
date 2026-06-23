@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Literal
 
 from core.config import ensure_user_data_dir
+from core.i18n import tr
 from core.stats.player_display import looks_abbreviated
 
 NamePart = Literal["last", "first"]
@@ -28,9 +29,7 @@ class KoreanNameStoreError(OSError):
 
 def _format_store_io_error(path: Path, exc: OSError) -> KoreanNameStoreError:
     return KoreanNameStoreError(
-        f"「{path.name}」 파일을 저장할 수 없습니다.\n"
-        "OneDrive 동기화 중이거나 Excel·메모장 등 다른 프로그램에서 "
-        "해당 파일을 열어 두었을 수 있습니다. 파일을 닫은 뒤 다시 시도하세요."
+        tr("Cannot save 「{name}」.\nThe file may be open in OneDrive sync or another program (Excel, Notepad, etc.). Close the file and try again.").format(name=path.name)
     )
 
 
@@ -227,7 +226,7 @@ class KoreanNameStore:
         key = name.strip()
         value = korean.strip()
         if not key or not value:
-            raise ValueError("이름과 한글 표기를 모두 입력하세요.")
+            raise ValueError(tr("Please enter both the name and Korean notation."))
         table = self.last_names if part == "last" else self.first_names
         table[key] = value
         self._save_part(part)

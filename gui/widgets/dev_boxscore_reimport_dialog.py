@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings, SettingsManager, resolve_data_path
+from core.i18n import tr
 from core.milestone.definitions import load_milestones
 from core.parser.boxscore_html import (
     BoxscoreFileSummary,
@@ -60,22 +61,24 @@ class DevBoxscoreReimportDialog(QDialog):
         self._worker: ReimportBoxscoreWorker | None = None
         self.result_message = ""
 
-        self.setWindowTitle("박스스코어 다시 불러오기 (개발용)")
+        self.setWindowTitle(tr("Re-import Boxscores (Dev)"))
         self.resize(*scale_size(820, 1300))
 
         intro = muted_label(
-            "박스스코어 HTML을 선택해 다시 불러옵니다. "
-            "이미 DB에 있는 경기도 삭제 후 재파싱·마일스톤 기록합니다. "
-            "(연속 기록 상태는 시즌 전체 재처리와 다를 수 있습니다.)"
+            tr(
+                "Select a boxscore HTML file to re-import. "
+                "Games already in the DB will be deleted and re-parsed. "
+                "(Streak state may differ from a full season reprocess.)"
+            )
         )
 
         self.dir_label = muted_label("", wrap=True)
 
-        self.load_button = QPushButton("목록 불러오기")
+        self.load_button = QPushButton(tr("Load List"))
         self.load_button.clicked.connect(self._load_from_current_dir)
-        self.browse_dir_button = QPushButton("폴더 선택...")
+        self.browse_dir_button = QPushButton(tr("Select Folder..."))
         self.browse_dir_button.clicked.connect(self._browse_directory)
-        self.add_file_button = QPushButton("파일 추가...")
+        self.add_file_button = QPushButton(tr("Add Files..."))
         self.add_file_button.clicked.connect(self._add_files)
         load_row = toolbar_row(
             self.load_button,
@@ -85,7 +88,7 @@ class DevBoxscoreReimportDialog(QDialog):
 
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(
-            ["날짜", "원정 @ 홈", "게임 ID", "파일명", "DB"]
+            [tr("Date"), tr("Away @ Home"), tr("Game ID"), tr("Filename"), "DB"]
         )
         self.table.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
@@ -103,7 +106,7 @@ class DevBoxscoreReimportDialog(QDialog):
 
         self.status_label = muted_label("", wrap=True)
 
-        self.reimport_button = QPushButton("선택 경기 다시 불러오기")
+        self.reimport_button = QPushButton(tr("Re-import Selected Game"))
         self.reimport_button.setEnabled(False)
         self.reimport_button.clicked.connect(self._reimport_selected)
         style_primary_button(self.reimport_button)
@@ -114,7 +117,7 @@ class DevBoxscoreReimportDialog(QDialog):
 
         buttons = make_button_box(close=True, cancel=False)
 
-        table_panel = table_card("박스스코어 파일", self.table)
+        table_panel = table_card(tr("Boxscore Files"), self.table)
 
         layout = init_dialog_layout(self)
         layout.addWidget(intro)
@@ -132,10 +135,10 @@ class DevBoxscoreReimportDialog(QDialog):
 
     def _refresh_dir_label(self) -> None:
         if self._scan_dir and str(self._scan_dir):
-            self.dir_label.setText(f"스캔 폴더: {self._scan_dir}")
+            self.dir_label.setText(tr("Scan folder: {path}").format(path=self._scan_dir))
         else:
             self.dir_label.setText(
-                "스캔 폴더: (설정된 박스스코어 폴더 없음 — 폴더 또는 파일을 선택하세요)"
+                tr("Scan folder: (no boxscore folder configured — select a folder or file)")
             )
 
     def _known_game_ids(self) -> set[int]:
@@ -150,7 +153,7 @@ class DevBoxscoreReimportDialog(QDialog):
         self.table.setRowCount(len(summaries))
         for row, item in enumerate(summaries):
             match = self._format_match(item)
-            db_status = "불러옴" if item.already_imported else "—"
+            db_status = tr("Imported") if item.already_imported else "—"
             values = (
                 item.date or "—",
                 match,
@@ -169,7 +172,7 @@ class DevBoxscoreReimportDialog(QDialog):
                 Qt.ItemDataRole.UserRole, str(item.path)
             )
         self.table.setSortingEnabled(True)
-        self.status_label.setText(f"{len(summaries)}개 파일")
+        self.status_label.setText(tr("{count} files").format(count=len(summaries)))
 
     @staticmethod
     def _format_match(item: BoxscoreFileSummary) -> str:
@@ -193,8 +196,8 @@ class DevBoxscoreReimportDialog(QDialog):
         if not self._scan_dir or not self._scan_dir.is_dir():
             QMessageBox.warning(
                 self,
-                "폴더 없음",
-                "박스스코어 폴더를 먼저 선택하거나 설정에서 리그 경로를 확인하세요.",
+                tr("Folder Not Found"),
+                tr("Select a boxscore folder first, or verify the league path in settings."),
             )
             return
         known = self._known_game_ids()
@@ -206,7 +209,7 @@ class DevBoxscoreReimportDialog(QDialog):
         start = str(self._scan_dir) if self._scan_dir else ""
         chosen = QFileDialog.getExistingDirectory(
             self,
-            "박스스코어 폴더 선택",
+            tr("Select Boxscore Folder"),
             start,
         )
         if not chosen:
@@ -219,7 +222,7 @@ class DevBoxscoreReimportDialog(QDialog):
         start = str(self._scan_dir) if self._scan_dir else ""
         paths, _ = QFileDialog.getOpenFileNames(
             self,
-            "박스스코어 HTML 선택",
+            tr("Select Boxscore HTML"),
             start,
             "Box score (*.html);;All files (*)",
         )
@@ -232,8 +235,10 @@ class DevBoxscoreReimportDialog(QDialog):
             if item is None:
                 QMessageBox.warning(
                     self,
-                    "파일 형식",
-                    f"game_box_*.html 형식이 아닙니다: {Path(path_str).name}",
+                    tr("File Format"),
+                    tr("Not a game_box_*.html file: {filename}").format(
+                        filename=Path(path_str).name
+                    ),
                 )
                 continue
             items.append(item)
@@ -279,12 +284,18 @@ class DevBoxscoreReimportDialog(QDialog):
 
         answer = QMessageBox.question(
             self,
-            "다시 불러오기 확인",
-            f"다음 경기를 다시 불러옵니다.\n\n"
-            f"{self._format_match(selected)}\n"
-            f"날짜: {selected.date or '—'}\n"
-            f"파일: {selected.path.name}\n\n"
-            f"기존 DB 데이터와 해당 경기 마일스톤 기록이 삭제된 뒤 다시 처리됩니다.",
+            tr("Confirm Re-import"),
+            tr(
+                "The following game will be re-imported.\n\n"
+                "{match}\n"
+                "Date: {date}\n"
+                "File: {filename}\n\n"
+                "Existing DB data and milestone records for this game will be deleted and reprocessed."
+            ).format(
+                match=self._format_match(selected),
+                date=selected.date or "—",
+                filename=selected.path.name,
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -295,7 +306,7 @@ class DevBoxscoreReimportDialog(QDialog):
         milestones = load_milestones(milestones_path)
 
         self._set_busy(True)
-        self.status_label.setText(f"처리 중: {selected.path.name}")
+        self.status_label.setText(tr("Processing: {filename}").format(filename=selected.path.name))
 
         self._worker = ReimportBoxscoreWorker(
             db_path=self.db_path,
@@ -320,20 +331,22 @@ class DevBoxscoreReimportDialog(QDialog):
             err = batch.errors[0]
             QMessageBox.critical(
                 self,
-                "다시 불러오기 실패",
-                err.error or "알 수 없는 오류",
+                tr("Re-import Failed"),
+                err.error or tr("Unknown error"),
             )
-            self.status_label.setText("다시 불러오기 실패")
+            self.status_label.setText(tr("Re-import failed"))
             return
 
         parts: list[str] = []
         if batch.imported:
-            parts.append("경기 다시 불러오기 완료")
+            parts.append(tr("Game re-imported successfully"))
         elif batch.skipped:
-            parts.append("스킵됨 (예상치 못한 상태)")
+            parts.append(tr("Skipped (unexpected state)"))
         if payload.milestones_recorded:
-            parts.append(f"마일스톤 {payload.milestones_recorded}건 기록")
-        self.result_message = " · ".join(parts) or "다시 불러오기 완료"
+            parts.append(
+                tr("{count} milestone(s) recorded").format(count=payload.milestones_recorded)
+            )
+        self.result_message = " · ".join(parts) or tr("Re-import complete")
         self.status_label.setText(self.result_message)
 
         known = self._known_game_ids()
@@ -351,10 +364,10 @@ class DevBoxscoreReimportDialog(QDialog):
         ]
         self._populate_table(self._summaries)
 
-        QMessageBox.information(self, "다시 불러오기 완료", self.result_message)
+        QMessageBox.information(self, tr("Re-import Complete"), self.result_message)
 
     def _on_reimport_error(self, message: str) -> None:
         self._worker = None
         self._set_busy(False)
-        self.status_label.setText("다시 불러오기 실패")
-        QMessageBox.critical(self, "다시 불러오기 실패", message)
+        self.status_label.setText(tr("Re-import failed"))
+        QMessageBox.critical(self, tr("Re-import Failed"), message)

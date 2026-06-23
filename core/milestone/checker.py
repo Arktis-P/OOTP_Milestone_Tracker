@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from core.i18n import tr
 from core.milestone.composite_stats import composite_crossed
 from core.milestone.definitions import (
     ACTIVE_SCOPES,
@@ -375,7 +376,7 @@ class MilestoneChecker:
         if errors:
             raise ValueError("\n".join(errors))
         if not records:
-            raise ValueError("기록할 선수가 없습니다.")
+            raise ValueError(tr("No players to record."))
 
         conn = self.aggregator.conn
         ids: list[int] = []
@@ -423,7 +424,7 @@ class MilestoneChecker:
 
         names = parse_player_name_list(form.player_name)
         if not names:
-            raise ValueError("선수를 입력하세요.")
+            raise ValueError(tr("Please enter a player."))
         player_id = PlayerRegistry(self.aggregator).ensure_player(names[0])
 
         description = form.description.strip() or build_injury_description(

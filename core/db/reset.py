@@ -9,6 +9,7 @@ from pathlib import Path
 from core.db.meta import ensure_meta_defaults, get_init_season_coverage
 from core.db.schema import init_database
 from core.db.sqlite_config import configure_sqlite_connection
+from core.i18n import tr
 
 
 @dataclass(frozen=True)
@@ -118,15 +119,15 @@ def reset_save_database(db_path: str | Path) -> None:
 
 def format_save_data_summary(summary: SaveDataSummary) -> str:
     lines = [
-        f"MLB 경기: {summary.games:,}건",
-        f"기록 선수: {summary.players:,}명",
-        f"마일스톤 기록: {summary.milestone_records:,}건",
-        f"통산 초기값 (타격): {summary.career_batting_init_players:,}명",
-        f"통산 초기값 (투구): {summary.career_pitching_init_players:,}명",
-        f"통산 마일스톤 예측: {summary.milestone_predictions:,}건",
+        tr("MLB games: {games}").format(games=f"{summary.games:,}"),
+        tr("Recorded players: {players}").format(players=f"{summary.players:,}"),
+        tr("Milestone records: {count}").format(count=f"{summary.milestone_records:,}"),
+        tr("Career batting init players: {count}").format(count=f"{summary.career_batting_init_players:,}"),
+        tr("Career pitching init players: {count}").format(count=f"{summary.career_pitching_init_players:,}"),
+        tr("Career milestone predictions: {count}").format(count=f"{summary.milestone_predictions:,}"),
     ]
     if summary.init_season_coverage:
-        lines.append(f"초기값 시즌 커버리지: {summary.init_season_coverage}시즌까지")
+        lines.append(tr("Init coverage: through {season} season").format(season=summary.init_season_coverage))
     return "\n".join(lines)
 
 
