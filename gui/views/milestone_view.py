@@ -46,7 +46,8 @@ from gui.widgets.edit_milestone_record_dialog import EditMilestoneRecordDialog
 from gui.widgets.manual_milestone_dialog import ManualMilestoneDialog
 from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.widgets.card_panel import CardPanel, section_label
-from gui.theme import AMBER_TEXT, TEXT_SECONDARY, hint_style, meta_panel_style
+from gui.theme import AMBER_TEXT, RED_TEXT, TEXT_SECONDARY, hint_style, meta_panel_style
+from gui.widgets.grade_styles import GRADE_COLORS
 from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
 
 def _table_columns() -> list[str]:
@@ -413,16 +414,36 @@ class MilestoneView(QWidget):
                 record.get("description") or "",
                 record.get("notes") or "",
             ]
+            grade = milestone.grade if milestone else "common"
+            is_injury = record.get("milestone_key") == "manual_injury"
+            is_highlighted = (
+                self._highlight_id is not None and record.get("id") == self._highlight_id
+            )
             record_id = record.get("id")
             for col_idx, value in enumerate(values):
                 item = QTableWidgetItem("" if value is None else str(value))
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 if record_id is not None:
                     item.setData(Qt.ItemDataRole.UserRole, int(record_id))
-                if bool(record.get("is_manual")) and col_idx == 4:
-                    item.setForeground(QColor(AMBER_TEXT))
-                if self._highlight_id is not None and record.get("id") == self._highlight_id:
+
+                if is_injury:
+                    item.setForeground(QColor(RED_TEXT))
+                    f = item.font()
+                    f.setBold(True)
+                    item.setFont(f)
+                else:
+                    if grade in ("legendary", "epic", "rare"):
+                        colors = GRADE_COLORS[grade]
+                        if colors.get("bg"):
+                            item.setBackground(QColor(colors["bg"]))
+                        if colors.get("fg"):
+                            item.setForeground(QColor(colors["fg"]))
+                    if bool(record.get("is_manual")) and col_idx == 4:
+                        item.setForeground(QColor(AMBER_TEXT))
+
+                if is_highlighted:
                     item.setBackground(QColor("#3a2f00"))
+
                 self.table_panel.table.setItem(row_idx, col_idx, item)
         self.table_panel.table.setSortingEnabled(True)
         if self._highlight_id is not None:

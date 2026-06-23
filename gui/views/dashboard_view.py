@@ -25,7 +25,7 @@ from core.milestone.definitions import MilestoneDefinitions
 from core.milestone.prediction_store import CachedPrediction, PredictionStore
 from core.stats.aggregator import Aggregator
 from core.stats.player_display import best_display_name
-from gui.theme import TEXT_SECONDARY, hint_style
+from gui.theme import RED_TEXT, TEXT_SECONDARY, hint_style
 from gui.widgets.card_panel import CardPanel
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.grade_styles import dashboard_milestone_color
@@ -197,12 +197,19 @@ class DashboardView(QWidget):
                 )
             if not name:
                 name = record.get("team") or "—"
+            is_injury = record.get("milestone_key") == "manual_injury"
             text = f"{name}  ·  {label}"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, record)
             item.setToolTip(text)
             item.setSizeHint(QSize(0, 32))
-            item.setForeground(QColor(dashboard_milestone_color(grade)))
+            if is_injury:
+                item.setForeground(QColor(RED_TEXT))
+                f = item.font()
+                f.setBold(True)
+                item.setFont(f)
+            else:
+                item.setForeground(QColor(dashboard_milestone_color(grade)))
             self.recent_list.addItem(item)
 
     def refresh_near_predictions(self) -> None:
