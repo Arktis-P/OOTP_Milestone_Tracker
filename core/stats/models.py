@@ -194,6 +194,8 @@ class BatchImportResult:
     candidates: int = 0
     imported_game_ids: list[int] = field(default_factory=list)
     refreshed_game_ids: list[int] = field(default_factory=list)
+    scan_elapsed_s: float = 0.0
+    import_elapsed_s: float = 0.0
 
 
 @dataclass

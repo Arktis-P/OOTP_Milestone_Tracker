@@ -151,6 +151,13 @@ CREATE TABLE IF NOT EXISTS career_pitching_init (
     PRIMARY KEY (player_id, season)
 );
 
+CREATE TABLE IF NOT EXISTS processed_boxscores (
+    filename    TEXT PRIMARY KEY,
+    game_id     INTEGER NOT NULL,
+    mtime       REAL    NOT NULL DEFAULT 0.0,
+    is_mlb      INTEGER NOT NULL DEFAULT 1
+);
+
 CREATE TABLE IF NOT EXISTS milestone_records (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     player_id       INTEGER NOT NULL REFERENCES players(player_id),
@@ -224,6 +231,7 @@ def _migrate_post_schema(conn: sqlite3.Connection) -> None:
     _ensure_streak_schema(conn)
     _ensure_team_registry(conn)
     _backfill_milestone_games_at_achievement(conn)
+    _ensure_processed_boxscores(conn)
 
 
 def _ensure_db_meta(conn: sqlite3.Connection) -> None:
@@ -595,6 +603,32 @@ def _ensure_milestone_records_manual_columns(conn: sqlite3.Connection) -> None:
             conn.execute(
                 f"ALTER TABLE milestone_records ADD COLUMN {name} {col_type}"
             )
+
+
+def _ensure_processed_boxscores(conn: sqlite3.Connection) -> None:
+    """Create processed_boxscores table and one-time-migrate existing games into it."""
+    from core.db.meta import get_meta, set_meta
+
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS processed_boxscores (
+            filename    TEXT PRIMARY KEY,
+            game_id     INTEGER NOT NULL,
+            mtime       REAL    NOT NULL DEFAULT 0.0,
+            is_mlb      INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+    if get_meta(conn, "processed_boxscores_migrated_v1") == "1":
+        return
+    conn.execute(
+        """
+        INSERT OR IGNORE INTO processed_boxscores (filename, game_id, mtime, is_mlb)
+        SELECT 'game_box_' || game_id || '.html', game_id, 0.0, is_mlb
+        FROM games
+        """
+    )
+    set_meta(conn, "processed_boxscores_migrated_v1", "1")
 
 
 def _ensure_milestone_predictions(conn: sqlite3.Connection) -> None:

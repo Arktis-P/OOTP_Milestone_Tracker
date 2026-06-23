@@ -123,19 +123,22 @@ def test_import_mlb_only_filter(aggregator: Aggregator, tmp_path: Path) -> None:
     assert mlb_only.imported == 1
     assert mlb_only.skipped_non_mlb == 1
 
+    # Second run: both files are now cached in processed_boxscores — no I/O for either.
     again = aggregator.import_all_new(tmp_path, season=2026, mlb_only=True)
     assert again.imported == 0
-    assert again.skipped_existing == 1
-    assert again.skipped_non_mlb == 1
+    assert again.skipped_existing == 2   # MLB game + non-MLB file both cached
+    assert again.skipped_non_mlb == 0   # not re-peeked
 
 
-def test_import_mtime_filter(aggregator: Aggregator) -> None:
-    import time
+def test_import_cache_skips_all_on_second_run(aggregator: Aggregator) -> None:
+    result = aggregator.import_all_new(SAMPLES_BOX, season=2026)
+    first_scanned = result.total_scanned
+    assert first_scanned > 0
 
-    future = time.time() + 3600
-    result = aggregator.import_all_new(SAMPLES_BOX, season=2026, since_mtime=future)
-    assert result.imported == 0
-    assert result.skipped_mtime == result.total_scanned
+    again = aggregator.import_all_new(SAMPLES_BOX, season=2026)
+    assert again.imported == 0
+    assert again.skipped_existing == first_scanned
+    assert again.skipped_mtime == 0
 
 
 def test_reimport_boxscore_file(aggregator: Aggregator) -> None:

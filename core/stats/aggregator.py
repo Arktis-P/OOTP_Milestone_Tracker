@@ -102,6 +102,9 @@ class Aggregator:
                 "DELETE FROM streak_processed_games WHERE game_id = ?", (game_id,)
             )
             self._conn.execute("DELETE FROM games WHERE game_id = ?", (game_id,))
+            self._conn.execute(
+                "DELETE FROM processed_boxscores WHERE game_id = ?", (game_id,)
+            )
             self._conn.commit()
             return True
         except Exception:
@@ -136,7 +139,21 @@ class Aggregator:
 
         try:
             data = BoxscoreHTMLParser(path).parse()
-            return self.import_boxscore(data, season, is_mlb=mlb_only)
+            result = self.import_boxscore(data, season, is_mlb=mlb_only)
+            if not result.error:
+                try:
+                    mtime = path.stat().st_mtime
+                except OSError:
+                    mtime = 0.0
+                self._conn.execute(
+                    """
+                    INSERT OR REPLACE INTO processed_boxscores (filename, game_id, mtime, is_mlb)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (path.name, game_id, mtime, 1),
+                )
+                self._conn.commit()
+            return result
         except ParserError as exc:
             return ImportResult(game_id=game_id, error=str(exc))
         except Exception as exc:
@@ -208,6 +225,10 @@ class Aggregator:
     def get_known_game_ids(self) -> set[int]:
         rows = self._conn.execute("SELECT game_id FROM games").fetchall()
         return {int(row["game_id"]) for row in rows}
+
+    def _get_processed_filenames(self) -> set[str]:
+        rows = self._conn.execute("SELECT filename FROM processed_boxscores").fetchall()
+        return {row[0] for row in rows}
 
     def upsert_player(self, player_id: int, short_name: str, full_name: str | None = None) -> None:
         from core.stats.player_display import looks_abbreviated
@@ -330,74 +351,99 @@ class Aggregator:
         boxscore_dir: str | Path,
         season: int,
         *,
-        since_mtime: float | None = None,
+        since_mtime: float | None = None,  # kept for backward compat; superseded by processed_boxscores
         mlb_only: bool = True,
         progress_callback: Any | None = None,
     ) -> BatchImportResult:
+        import time
+
         directory = Path(boxscore_dir)
         if not directory.is_dir():
             return BatchImportResult(
                 errors=[ImportResult(game_id=-1, error=f"Directory not found: {directory}")]
             )
 
+        t_start = time.monotonic()
+
         files = sorted(directory.glob(GAME_BOX_GLOB))
-        known_ids = self.get_known_game_ids()
+        # Single DB query loads all already-processed filenames into a memory set.
+        processed_filenames = self._get_processed_filenames()
         result = BatchImportResult(total_scanned=len(files))
+        # Collect (filename, game_id, mtime, is_mlb) rows to bulk-insert at the end.
+        new_processed: list[tuple] = []
 
         for index, file_path in enumerate(files, start=1):
             try:
-                if since_mtime is not None and file_path.stat().st_mtime <= since_mtime:
-                    result.skipped_mtime += 1
-                    continue
+                fname = file_path.name
 
-                game_id = _game_id_from_filename(file_path.name)
-                if game_id < 0:
-                    result.errors.append(
-                        ImportResult(
-                            game_id=game_id, error=f"Invalid filename: {file_path.name}"
-                        )
-                    )
-                    continue
-
-                if game_id in known_ids:
-                    if since_mtime is not None and file_path.stat().st_mtime > since_mtime:
-                        if self.refresh_batting_events_from_file(file_path, season):
-                            result.refreshed_game_ids.append(game_id)
+                # Fast path: file is known — no stat(), no read(), no parsing.
+                if fname in processed_filenames:
                     result.skipped_existing += 1
                     continue
 
+                # New file: extract game_id from filename (regex, no I/O).
+                game_id = _game_id_from_filename(fname)
+                if game_id < 0:
+                    result.errors.append(
+                        ImportResult(game_id=game_id, error=f"Invalid filename: {fname}")
+                    )
+                    continue
+
+                # stat() only for new files to record mtime.
+                try:
+                    file_mtime = file_path.stat().st_mtime
+                except OSError as exc:
+                    result.errors.append(ImportResult(game_id=game_id, error=str(exc)))
+                    continue
+
+                # MLB check reads up to 8 KB; only done for new files.
                 if mlb_only and not peek_is_mlb_boxscore(file_path):
                     result.skipped_non_mlb += 1
+                    new_processed.append((fname, game_id, file_mtime, 0))
                     continue
 
                 result.candidates += 1
+                t_parse = time.monotonic()
                 try:
                     data = BoxscoreHTMLParser(file_path).parse()
-                    import_result = self.import_boxscore(
-                        data, season, is_mlb=mlb_only
-                    )
+                    import_result = self.import_boxscore(data, season, is_mlb=mlb_only)
                 except ParserError as exc:
                     result.errors.append(ImportResult(game_id=game_id, error=str(exc)))
                     continue
                 except Exception as exc:
                     result.errors.append(ImportResult(game_id=game_id, error=str(exc)))
                     continue
+                result.import_elapsed_s += time.monotonic() - t_parse
 
                 if import_result.error:
                     result.errors.append(import_result)
                 elif import_result.skipped:
                     result.skipped += 1
-                    known_ids.add(game_id)
+                    new_processed.append((fname, game_id, file_mtime, 1))
                 else:
                     result.imported += 1
                     result.imported_game_ids.append(game_id)
-                    known_ids.add(game_id)
+                    new_processed.append((fname, game_id, file_mtime, 1))
+
             finally:
                 if progress_callback:
                     progress_callback(index, len(files), file_path.name)
 
+        result.scan_elapsed_s = time.monotonic() - t_start - result.import_elapsed_s
+
+        if new_processed:
+            self._conn.executemany(
+                """
+                INSERT OR REPLACE INTO processed_boxscores (filename, game_id, mtime, is_mlb)
+                VALUES (?, ?, ?, ?)
+                """,
+                new_processed,
+            )
+
         if result.imported:
             self.update_primary_positions()
+
+        if new_processed or result.imported:
             self._conn.commit()
 
         return result
