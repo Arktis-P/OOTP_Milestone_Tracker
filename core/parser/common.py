@@ -94,7 +94,7 @@ def normalize_result(raw: str) -> str:
     text = raw.strip()
     upper = text.upper()
 
-    if "SOLO HOME RUN" in upper or "GRAND SLAM" in upper or upper == "HOME RUN":
+    if "HOME RUN" in upper or "GRAND SLAM" in upper:
         return "Home Run"
     if upper == "SINGLE":
         return "Single"

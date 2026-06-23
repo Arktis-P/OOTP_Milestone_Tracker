@@ -146,3 +146,24 @@ def test_opponent_player_from_game_log_hr(
         aggregator, item, game_logs_dir=SAMPLES_LOG
     )
     assert item.opponent_player
+
+
+def test_situational_description_for_career_hr(
+    aggregator: Aggregator, checker: MilestoneChecker
+) -> None:
+    """Situational desc: Grichuk 2-RUN HR in 6th TOP, 1 out, runner on 1st."""
+    InitialImporter(aggregator).import_batting(
+        SAMPLES_STATS / "player_batting_stats.txt",
+        "first_time",
+        current_season=2026,
+    )
+    game_id = _import_game(aggregator, "game_box_13.html")
+    achievements = checker.check_new_games([game_id], season=2026)
+    career = [a for a in achievements if a.milestone.key == "bat_career_hr_500"]
+    assert career
+    item = career[0]
+    enrich_achievement_for_record(aggregator, item, game_logs_dir=SAMPLES_LOG)
+    # Expected: "6회초 1사 1루에서 2점 홈런"
+    assert item.description is not None
+    assert "홈런" in item.description
+    assert "회" in item.description

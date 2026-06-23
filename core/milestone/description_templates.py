@@ -2,12 +2,34 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from collections.abc import Callable
 from typing import Any
 
 from core.milestone.definitions import MilestoneDefinition
 from core.stats.ip_utils import outs_to_ip_str
+from core.stats.models import AtBatData
+
+_BATTING_GAME_TEMPLATES: frozenset[str] = frozenset({
+    "batting_cumulative",
+    "batting_event",
+    "season_batting_stat",
+    "season_batting_rate",
+    "season_batting_composite",
+    "season_batting_title",
+    "career_batting_stat",
+    "career_batting_honor",
+})
+
+_PITCHING_FULL_TEMPLATES: frozenset[str] = frozenset({
+    "pitching_full",
+    "season_pitching_stat",
+    "season_pitching_rate",
+    "season_pitching_title",
+    "career_pitching_stat",
+    "career_pitching_honor",
+})
 
 TEAM_GAME_TEMPLATE_MAP: dict[str, tuple[str, str]] = {
     "team_game_starter_all_hit": ("선발", "안타"),
@@ -33,18 +55,17 @@ def fill_description(
     if not template or template == "situational":
         return None
 
-    if template == "batting_cumulative":
+    if template in _BATTING_GAME_TEMPLATES:
         row = context.get("batting_row")
         return build_template_a(row) if row else None
 
-    if template in ("pitching_full", "pitching_k_only"):
+    if template in _PITCHING_FULL_TEMPLATES:
         row = context.get("pitching_row")
-        if not row:
-            return None
-        return build_template_b(
-            row,
-            simplified=template == "pitching_k_only",
-        )
+        return build_template_b(row) if row else None
+
+    if template == "pitching_k_only":
+        row = context.get("pitching_row")
+        return build_template_b(row, simplified=True) if row else None
 
     if template == "team_game":
         game_id = context.get("game_id")
@@ -59,7 +80,7 @@ def fill_description(
             name_resolver=name_resolver,
         )
 
-    if template == "team_season":
+    if template in ("team_season", "team_season_event"):
         game_id = context.get("game_id")
         team = context.get("team")
         if not conn or not game_id or not team:
@@ -254,3 +275,101 @@ def _cell(row: Any, column: str, index: int) -> Any:
     if hasattr(row, "keys"):
         return row[column]
     return row[index]
+
+
+# ---------------------------------------------------------------------------
+# Template E — situational (inning / outs / runners / result)
+# ---------------------------------------------------------------------------
+
+_PITCH_LINE_RE = re.compile(r"^\d+-\d+:")
+
+
+def build_template_situational(at_bat: AtBatData) -> str | None:
+    """Generate a Korean situational description from at-bat data."""
+    result_kr = _format_result_kr(at_bat)
+    if not result_kr:
+        return None
+
+    inning = at_bat.inning
+    half_kr = "초" if at_bat.half.upper() == "TOP" else "말"
+    outs_kr = ("무사", "1사", "2사")[min(at_bat.outs_before, 2)]
+    runners_kr = _format_runners(*at_bat.runners_before)
+
+    if runners_kr:
+        situation = f"{inning}회{half_kr} {outs_kr} {runners_kr}에서"
+    else:
+        situation = f"{inning}회{half_kr} {outs_kr}에서"
+
+    return f"{situation} {result_kr}"
+
+
+def _format_runners(first: bool, second: bool, third: bool) -> str:
+    if first and second and third:
+        return "만루"
+    parts: list[str] = []
+    if first:
+        parts.append("1루")
+    if second:
+        parts.append("2루")
+    if third:
+        parts.append("3루")
+    return "".join(parts)
+
+
+def _count_pitches(pitch_sequence: str) -> int:
+    return sum(1 for line in pitch_sequence.split("\n") if _PITCH_LINE_RE.match(line.strip()))
+
+
+def _count_rbi(at_bat: AtBatData) -> int:
+    """Count RBI: exact for HRs, approximate for hits by counting scoring events."""
+    r = at_bat.result.lower()
+    if "home run" in r:
+        return sum(at_bat.runners_before) + 1
+    # For other hits: count "X scores" and "Runner from 3rd ... SAFE" lines
+    rbi = 0
+    seq = at_bat.pitch_sequence
+    found_result = False
+    for line in seq.split("\n"):
+        stripped = line.strip()
+        if not found_result:
+            if stripped.isupper() or (
+                _PITCH_LINE_RE.match(stripped) and at_bat.result.lower() in stripped.lower()
+            ):
+                found_result = True
+        else:
+            if "scores" in stripped.lower():
+                rbi += 1
+            elif re.search(r"runner from.*tries for home.*safe", stripped, re.I):
+                rbi += 1
+    return rbi
+
+
+def _format_result_kr(at_bat: AtBatData) -> str:
+    r = at_bat.result.lower()
+    seq = at_bat.pitch_sequence
+
+    if r == "single":
+        rbi = _count_rbi(at_bat)
+        return f"{rbi}타점 1루타" if rbi > 0 else "1루타"
+    if r == "double":
+        rbi = _count_rbi(at_bat)
+        return f"{rbi}타점 2루타" if rbi > 0 else "2루타"
+    if r == "triple":
+        rbi = _count_rbi(at_bat)
+        return f"{rbi}타점 3루타" if rbi > 0 else "3루타"
+    if "home run" in r:
+        rbi = _count_rbi(at_bat)
+        if rbi == 1:
+            return "솔로 홈런"
+        return f"{rbi}점 홈런"
+    if r == "strikeout":
+        pitches = _count_pitches(seq)
+        pitch_str = f"{pitches}구 " if pitches > 0 else ""
+        if "swinging" in seq.lower():
+            return f"{pitch_str}헛스윙 삼진"
+        return f"{pitch_str}루킹 삼진"
+    if r in ("walk", "hit by pitch"):
+        pitches = _count_pitches(seq)
+        pitch_str = f"{pitches}구 " if pitches > 0 else ""
+        return f"{pitch_str}볼넷" if r == "walk" else f"{pitch_str}몸맞는 볼"
+    return ""

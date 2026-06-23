@@ -224,6 +224,8 @@ class AtBatData:
     hit_type: str = ""
     exit_velocity: float | None = None
     distance: int | None = None
+    outs_before: int = 0
+    runners_before: tuple[bool, bool, bool] = (False, False, False)
 
 
 @dataclass

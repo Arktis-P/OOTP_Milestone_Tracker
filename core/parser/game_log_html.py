@@ -24,6 +24,188 @@ from core.parser.common import (
 )
 from core.stats.models import AtBatData, GameLogData, InningData, InningSummary
 
+# ---------------------------------------------------------------------------
+# Base / out state tracking helpers
+# ---------------------------------------------------------------------------
+
+_RUNNER_ATTEMPT_RE = re.compile(
+    r"Runner from (1st|2nd|3rd) tries for (Home|3rd|2nd|1st), (SAFE|OUT)", re.I
+)
+_PITCH_LINE_RE = re.compile(r"^\d+-\d+:")
+_ACTION_KEYWORDS = (
+    "scores", "to second", "to third", "to home",
+    "steals 2nd", "steals 3rd", "steals second", "steals third",
+    "is caught stealing", "caught stealing",
+)
+_NON_NAME_PREFIXES = (
+    "Runner from", "Passed Ball", "Wild Pitch", "Balk!",
+    "Pickoff", "Lined into", "Batter ", "Now in", "Pinch ",
+)
+_BASE_MAP = {"1st": "1", "2nd": "2", "3rd": "3"}
+
+
+class _InningState:
+    """Tracks base occupancy and out count within a half-inning."""
+
+    def __init__(self) -> None:
+        self.outs: int = 0
+        self._bases: dict[str, str] = {}  # "1" / "2" / "3" → runner name
+
+    def reset(self) -> None:
+        self.outs = 0
+        self._bases = {}
+
+    def snapshot(self) -> tuple[bool, bool, bool]:
+        return ("1" in self._bases, "2" in self._bases, "3" in self._bases)
+
+    # --- runner helpers ---
+
+    def _base_of(self, name: str) -> str | None:
+        for base, runner in self._bases.items():
+            if runner == name:
+                return base
+        return None
+
+    def _move(self, name: str, to_base: str) -> None:
+        old = self._base_of(name)
+        if old:
+            del self._bases[old]
+        self._bases[to_base] = name
+
+    def _remove(self, name: str) -> None:
+        old = self._base_of(name)
+        if old:
+            del self._bases[old]
+
+    # --- event application ---
+
+    def apply_runner_event(self, player_name: str, action: str) -> None:
+        act = action.lower()
+        if "caught stealing" in act:
+            self._remove(player_name)
+            self.outs += 1
+        elif "scores" in act or "to home" in act:
+            self._remove(player_name)
+        elif "to second" in act or "steals 2nd" in act or "steals second" in act:
+            self._move(player_name, "2")
+        elif "to third" in act or "steals 3rd" in act or "steals third" in act:
+            self._move(player_name, "3")
+        elif "to first" in act:
+            self._move(player_name, "1")
+
+    def apply_runner_attempt(self, event_line: str) -> None:
+        m = _RUNNER_ATTEMPT_RE.search(event_line)
+        if not m:
+            return
+        from_base = _BASE_MAP.get(m.group(1).lower(), "")
+        to_place = m.group(2).lower()
+        outcome = m.group(3).lower()
+        runner_name = self._bases.pop(from_base, "")
+        if outcome == "out":
+            self.outs += 1
+        else:  # safe
+            to_base_map = {"home": None, "3rd": "3", "2nd": "2", "1st": "1"}
+            to_base = to_base_map.get(to_place)
+            if to_base and runner_name:
+                self._bases[to_base] = runner_name
+        # "trailing runner, OUT!" → one additional out + clear lowest base
+        if "trailing runner" in event_line.lower() and "out!" in event_line.lower():
+            for b in ("1", "2", "3"):
+                if b in self._bases and b != from_base:
+                    del self._bases[b]
+                    break
+            self.outs += 1
+
+    def apply_pinch_runner(self, runner_name: str, base: str) -> None:
+        self._bases[base] = runner_name
+
+    def _apply_force(self, batter_name: str) -> None:
+        """Force-advance all runners for walk/HBP, then put batter on 1st."""
+        if "1" in self._bases:
+            if "2" in self._bases:
+                if "3" in self._bases:
+                    del self._bases["3"]  # forced home, scores
+                self._bases["3"] = self._bases["2"]
+            self._bases["2"] = self._bases["1"]
+        self._bases["1"] = batter_name
+
+    def apply_result(self, result: str, batter_name: str) -> None:
+        r = result.lower()
+        if r == "single":
+            self._bases["1"] = batter_name
+        elif r == "double":
+            self._bases["2"] = batter_name
+        elif r == "triple":
+            self._bases["3"] = batter_name
+        elif r == "home run":
+            self._bases.clear()
+        elif r in ("walk", "hit by pitch", "error"):
+            self._apply_force(batter_name)
+        elif r == "fielders choice":
+            for b in ("1", "2", "3"):
+                if b in self._bases:
+                    del self._bases[b]
+                    break
+            self._bases["1"] = batter_name
+            self.outs += 1
+        elif r == "double play" or "lined into" in r:
+            if "1" in self._bases:
+                del self._bases["1"]
+            self.outs += 2
+        elif "caught stealing" in r or "is caught stealing" in r:
+            pass  # out already counted by runner event
+        else:
+            self.outs += 1  # strikeout, fly out, ground out, etc.
+
+
+def _is_non_name_line(line: str) -> bool:
+    if _PITCH_LINE_RE.match(line):
+        return True
+    if line.startswith("("):
+        return True
+    if line.isupper():
+        return True
+    return any(line.startswith(p) for p in _NON_NAME_PREFIXES)
+
+
+def _parse_runner_events(lines: list[str]) -> list[tuple[str, str]]:
+    """Return (player_name, action) pairs and ("", special_event_line) entries."""
+    events: list[tuple[str, str]] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line:
+            i += 1
+            continue
+        if _RUNNER_ATTEMPT_RE.search(line):
+            events.append(("", line))
+            i += 1
+            continue
+        if _is_non_name_line(line):
+            i += 1
+            continue
+        # Check if next line is an action
+        if i + 1 < len(lines):
+            next_line = lines[i + 1].strip()
+            if next_line and any(kw in next_line.lower() for kw in _ACTION_KEYWORDS):
+                events.append((line, next_line))
+                i += 2
+                continue
+        i += 1
+    return events
+
+
+def _update_state(state: _InningState, at_bat: AtBatData) -> None:
+    """Apply runner events and batter result to advance state."""
+    lines = at_bat.pitch_sequence.split("\n")
+    events = _parse_runner_events(lines)
+    for player_name, action in events:
+        if player_name:
+            state.apply_runner_event(player_name, action)
+        else:
+            state.apply_runner_attempt(action)
+    state.apply_result(at_bat.result, at_bat.batter_name)
+
 
 class GameLogHTMLParser:
     def __init__(self, filepath: str | Path) -> None:
@@ -83,6 +265,9 @@ class GameLogHTMLParser:
 
     def _parse_innings(self, soup: BeautifulSoup) -> list[InningData]:
         innings: list[InningData] = []
+        state = _InningState()
+        _PINCH_RUNNER_RE = re.compile(r"Pinch Runner at (1st|2nd|3rd)", re.I)
+
         for table in soup.find_all("table", class_="data"):
             header_th = table.find("th", class_="boxtitle")
             if not header_th:
@@ -95,6 +280,7 @@ class GameLogHTMLParser:
             half = header_match.group(1).upper()
             inning_num = int(header_match.group(2))
             batting_team, pitching_team = self._parse_inning_teams(table)
+            state.reset()
 
             inning = InningData(
                 inning_num=inning_num,
@@ -126,9 +312,25 @@ class GameLogHTMLParser:
                 if left_text.startswith("Pitching:"):
                     self._update_current_pitcher(cells[0])
                     continue
+
+                # Pinch runner substitution → update base state
+                pr_match = _PINCH_RUNNER_RE.match(left_text)
+                if pr_match:
+                    base = _BASE_MAP.get(pr_match.group(1).lower(), "")
+                    link = cells[0].find("a", href=re.compile(r"player_\d+"))
+                    runner_name = link.get_text(strip=True) if link else ""
+                    if base and runner_name:
+                        state.apply_pinch_runner(runner_name, base)
+                    continue
+
                 if left_text.startswith("Batting:"):
+                    outs_snap = state.outs
+                    runners_snap = state.snapshot()
                     at_bat = self._parse_at_bat(row, inning_num, half)
                     if at_bat:
+                        at_bat.outs_before = outs_snap
+                        at_bat.runners_before = runners_snap
+                        _update_state(state, at_bat)
                         inning.at_bats.append(at_bat)
 
             innings.append(inning)

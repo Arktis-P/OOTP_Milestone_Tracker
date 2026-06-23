@@ -428,7 +428,6 @@ class ManualMilestoneDialog(QDialog):
 
     def _fill_tracked_team_combo(self, combo: QComboBox) -> None:
         combo.clear()
-        combo.addItem("", "")
         for name in self._tracked_team_names():
             combo.addItem(name, name)
 

@@ -14,6 +14,7 @@ from core.milestone.checker import (
 from core.milestone.definitions import MilestoneDefinition
 from core.milestone.description_templates import (
     build_description_context,
+    build_template_situational,
     fill_description,
 )
 from core.parser.game_log_html import GameLogHTMLParser
@@ -61,16 +62,29 @@ def enrich_achievement_for_record(
     else:
         achievement.opponent_player = None
 
-    achievement.description = _fill_achievement_description(aggregator, achievement)
+    achievement.description = _fill_achievement_description(
+        aggregator, achievement, game_logs_dir=game_logs_dir
+    )
+
+
+_SITUATIONAL_PITCHING_STATS = frozenset({"k_pit", "career_k_pit", "season_k_pit"})
 
 
 def _fill_achievement_description(
     aggregator: Aggregator,
     achievement: MilestoneAchievement,
+    *,
+    game_logs_dir: str | Path | None = None,
 ) -> str | None:
     milestone = achievement.milestone
     if not milestone.description_template or milestone.description_template == "situational":
         return None
+
+    # Try situational (play-by-play) description when game log is available
+    if game_logs_dir and achievement.game_id and _should_use_situational(milestone):
+        sit = _build_situational_description(aggregator, achievement, game_logs_dir)
+        if sit:
+            return sit
 
     team = achievement.team
     if not team and achievement.game_id and achievement.player_id:
@@ -101,6 +115,62 @@ def _fill_achievement_description(
         conn=aggregator.conn,
         name_resolver=name_resolver,
     )
+
+
+def _should_use_situational(milestone: MilestoneDefinition) -> bool:
+    if milestone.category == "batting":
+        return True
+    return milestone.stat in _SITUATIONAL_PITCHING_STATS
+
+
+def _build_situational_description(
+    aggregator: Aggregator,
+    achievement: MilestoneAchievement,
+    game_logs_dir: str | Path,
+) -> str | None:
+    game_id = achievement.game_id
+    log_path = Path(game_logs_dir) / f"log_{game_id}.html"
+    if not log_path.is_file():
+        return None
+    try:
+        game_log = GameLogHTMLParser(log_path).parse()
+    except Exception:
+        return None
+    prior = _prior_value(aggregator, achievement)
+    at_bat = _find_milestone_at_bat(game_log, achievement, prior)
+    if at_bat is None:
+        return None
+    return build_template_situational(at_bat)
+
+
+def _find_milestone_at_bat(
+    game_log: GameLogData,
+    achievement: MilestoneAchievement,
+    prior: float,
+) -> AtBatData | None:
+    """Return the specific at-bat where the milestone threshold was crossed."""
+    milestone = achievement.milestone
+    player_id = achievement.player_id
+    threshold = float(milestone.threshold)
+
+    if milestone.category == "batting":
+        running = prior
+        for at_bat in _iter_at_bats(game_log):
+            if at_bat.batter_id != player_id:
+                continue
+            running += _batting_contribution(milestone.stat, at_bat)
+            if _crossed(running, threshold, milestone.direction):
+                return at_bat
+        return None
+
+    running = prior
+    for at_bat in _iter_at_bats(game_log):
+        if at_bat.pitcher_id != player_id:
+            continue
+        running += _pitching_contribution(milestone.stat, at_bat)
+        if _crossed(running, threshold, milestone.direction):
+            return at_bat
+    return None
 
 
 def _games_at_achievement(
