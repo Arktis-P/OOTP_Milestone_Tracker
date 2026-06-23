@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from pathlib import Path
 from typing import Any, Callable
@@ -21,6 +20,7 @@ from core.streak.game_log import batting_log_from_row, pitching_log_from_row
 from core.streak.memory_store import InMemoryStreakStore
 from core.streak.policies import (
     batting_policies,
+    format_streak_description,
     load_streak_policies,
     pitching_policies,
 )
@@ -563,6 +563,8 @@ class StreakTracker:
                 run_index=int(row["run_index"]),
                 current=int(row["current_value"]),
                 ip_outs_accum=int(row["ip_outs_accum"]),
+                first_success_game_id=row["first_success_game_id"],
+                first_success_game_date=row["first_success_game_date"],
                 last_success_game_id=row["last_success_game_id"],
                 last_success_game_date=row["last_success_game_date"],
                 recorded_milestones=recorded,
@@ -575,6 +577,7 @@ class StreakTracker:
         return self.aggregator.conn.execute(
             """
             SELECT run_index, current_value, ip_outs_accum,
+                   first_success_game_id, first_success_game_date,
                    last_success_game_id, last_success_game_date,
                    recorded_milestones
             FROM player_streak_state
@@ -590,13 +593,16 @@ class StreakTracker:
             """
             INSERT INTO player_streak_state (
                 season, player_id, streak_type, run_index, current_value,
-                ip_outs_accum, last_success_game_id, last_success_game_date,
+                ip_outs_accum, first_success_game_id, first_success_game_date,
+                last_success_game_id, last_success_game_date,
                 recorded_milestones
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(season, player_id, streak_type) DO UPDATE SET
                 run_index = excluded.run_index,
                 current_value = excluded.current_value,
                 ip_outs_accum = excluded.ip_outs_accum,
+                first_success_game_id = excluded.first_success_game_id,
+                first_success_game_date = excluded.first_success_game_date,
                 last_success_game_id = excluded.last_success_game_id,
                 last_success_game_date = excluded.last_success_game_date,
                 recorded_milestones = excluded.recorded_milestones
@@ -608,6 +614,8 @@ class StreakTracker:
                 int(row["run_index"]),
                 int(row["current_value"]),
                 int(row["ip_outs_accum"]),
+                row["first_success_game_id"],
+                row["first_success_game_date"],
                 row["last_success_game_id"],
                 row["last_success_game_date"],
                 str(row["recorded_milestones"] or ""),
@@ -637,13 +645,16 @@ class StreakTracker:
                 """
                 INSERT INTO player_streak_state (
                     season, player_id, streak_type, run_index, current_value,
-                    ip_outs_accum, last_success_game_id, last_success_game_date,
+                    ip_outs_accum, first_success_game_id, first_success_game_date,
+                    last_success_game_id, last_success_game_date,
                     recorded_milestones
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(season, player_id, streak_type) DO UPDATE SET
                     run_index = excluded.run_index,
                     current_value = excluded.current_value,
                     ip_outs_accum = excluded.ip_outs_accum,
+                    first_success_game_id = excluded.first_success_game_id,
+                    first_success_game_date = excluded.first_success_game_date,
                     last_success_game_id = excluded.last_success_game_id,
                     last_success_game_date = excluded.last_success_game_date,
                     recorded_milestones = excluded.recorded_milestones
@@ -655,6 +666,8 @@ class StreakTracker:
                     state.run_index,
                     state.current,
                     state.ip_outs_accum,
+                    state.first_success_game_id,
+                    state.first_success_game_date,
                     state.last_success_game_id,
                     state.last_success_game_date,
                     recorded,
@@ -689,13 +702,12 @@ class StreakTracker:
         if existing:
             return
 
-        description = json.dumps(
-            {
-                "streak_run_id": event.streak_run_id,
-                "last_success_game_id": event.last_success_game_id,
-                "last_success_game_date": event.last_success_game_date,
-            },
-            ensure_ascii=False,
+        description = format_streak_description(
+            start_date=event.first_success_game_date,
+            end_date=event.last_success_game_date,
+            value=event.milestone_value,
+            streak_type=event.streak_type,
+            policies=self.policies,
         )
 
         self.aggregator.conn.execute(

@@ -1,4 +1,4 @@
-"""Milestone grade badge colors."""
+"""Milestone grade badge colors (dark-theme friendly)."""
 
 from __future__ import annotations
 
@@ -6,11 +6,20 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QTableWidgetItem
 
 GRADE_COLORS: dict[str, dict[str, str | None]] = {
-    "common": {"bg": None, "fg": None},
-    "uncommon": {"bg": None, "fg": None},
-    "rare": {"bg": "#BAE6FD", "fg": "#0C4A6E"},
-    "epic": {"bg": "#DDD6FE", "fg": "#4C1D95"},
-    "legendary": {"bg": "#FEF08A", "fg": "#854D0E"},
+    "common": {"bg": None, "fg": "#9d9d9d"},
+    "uncommon": {"bg": "#1a3a24", "fg": "#4ec9b0"},
+    "rare": {"bg": "#1a2d4a", "fg": "#75beff"},
+    "epic": {"bg": "#2d1f4a", "fg": "#c586c0"},
+    "legendary": {"bg": "#3a2a10", "fg": "#dcdcaa"},
+}
+
+# Brighter foregrounds for dashboard list rows (dark background)
+DASHBOARD_GRADE_FG: dict[str, str] = {
+    "common": "#e8e8e8",
+    "uncommon": "#6ee7b4",
+    "rare": "#9cdcfe",
+    "epic": "#e0a8ff",
+    "legendary": "#ffe082",
 }
 
 _PLAYER_NAME_SQL = """
@@ -47,3 +56,7 @@ def apply_grade_to_list_item(item, grade: str) -> None:
         item.setBackground(QColor(bg))
     if fg:
         item.setForeground(QColor(fg))
+
+
+def dashboard_milestone_color(grade: str) -> str:
+    return DASHBOARD_GRADE_FG.get(grade, DASHBOARD_GRADE_FG["common"])

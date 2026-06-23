@@ -33,6 +33,8 @@ class AppSettings:
     custom_mlb_teams: dict[str, str] = field(default_factory=dict)
     import_mlb_only: bool = True
     season_games_total: int = 162
+    language: str = "ko"
+    language_selected: bool = False
     ratio_qualifiers: dict[str, float] = field(
         default_factory=lambda: {
             "batting_ab_per_game": 3.1,
@@ -133,6 +135,8 @@ class SettingsManager:
             "import_mlb_only": settings.import_mlb_only,
             "season_games_total": settings.season_games_total,
             "ratio_qualifiers": dict(settings.ratio_qualifiers),
+            "language": settings.language,
+            "language_selected": settings.language_selected,
         }
         self.path.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
@@ -157,6 +161,7 @@ class SettingsManager:
         save_path: str,
         ootp_version: int | None = None,
     ) -> AppSettings:
+        old_boxscore_dir = settings.paths.get("boxscore_dir", "")
         settings.ootp_save_root = save_root
         settings.active_save = save_name
         settings.active_save_path = save_path
@@ -165,6 +170,13 @@ class SettingsManager:
         settings.paths = self._derive_paths(save_path, settings.paths)
         settings.initial_stats_dir = str(Path(save_path) / "import_export")
         settings.db_path = save_db_relative_path(save_path)
+        new_boxscore_dir = settings.paths.get("boxscore_dir", "")
+        if (
+            old_boxscore_dir
+            and new_boxscore_dir
+            and old_boxscore_dir != new_boxscore_dir
+        ):
+            settings.import_state = {}
         migrate_legacy_shared_db(save_path)
         return settings
 
@@ -204,6 +216,8 @@ class SettingsManager:
             },
             import_mlb_only=bool(raw.get("import_mlb_only", True)),
             season_games_total=int(raw.get("season_games_total", 162)),
+            language=str(raw.get("language", "ko")),
+            language_selected=bool(raw.get("language_selected", False)),
             ratio_qualifiers=dict(
                 raw.get(
                     "ratio_qualifiers",

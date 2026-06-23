@@ -65,7 +65,7 @@ def bundle_user_dirs(monkeypatch, tmp_path: Path):
         json.dumps(
             {
                 "labels": {"new_streak": "새 연속"},
-                "batting": {"new_streak": {"fixed_milestones": [5]}},
+                "batting": {"new_streak": {"min_value": 5}},
             },
             ensure_ascii=False,
         ),
@@ -129,7 +129,7 @@ def test_apply_pending_updates_merges_without_overwriting(bundle_user_dirs) -> N
     assert local.get_by_key("new_milestone_key") is not None
 
     streak = json.loads((user_dir / "streak_policies.json").read_text(encoding="utf-8"))
-    assert streak["batting"]["new_streak"]["fixed_milestones"] == [5]
+    assert streak["batting"]["new_streak"]["min_value"] == 5
 
     names = (user_dir / "korean_last_names.csv").read_text(encoding="utf-8")
     assert "NewLast" in names

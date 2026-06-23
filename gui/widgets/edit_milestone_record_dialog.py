@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from core.i18n import tr
 from core.milestone.definitions import MilestoneDefinitions
 from core.milestone.record_edit import (
     normalize_achieved_date,
@@ -20,6 +21,13 @@ from core.milestone.record_edit import (
 )
 from core.stats.aggregator import Aggregator
 from gui.ui_compact import scale_size
+from gui.widgets.app_dialog import (
+    add_dialog_footer,
+    init_dialog_layout,
+    make_button_box,
+    muted_label,
+)
+from gui.widgets.card_panel import CardPanel
 
 
 class EditMilestoneRecordDialog(QDialog):
@@ -38,7 +46,7 @@ class EditMilestoneRecordDialog(QDialog):
         if self._record is None:
             raise ValueError(f"milestone record not found: {record_id}")
 
-        self.setWindowTitle("마일스톤 기록 수정")
+        self.setWindowTitle(tr("Edit Milestone Record"))
         self.resize(*scale_size(480, 420))
 
         milestone = milestones.get_by_key(str(self._record["milestone_key"]))
@@ -50,8 +58,8 @@ class EditMilestoneRecordDialog(QDialog):
         is_team = bool(self._record.get("team"))
         target = str(self._record["team"]) if is_team else str(self._record["player_name"])
         scope = self._record.get("scope") or (milestone.scope if milestone else "")
-        self.summary_label = QLabel(f"{target} · {label} · scope={scope}")
-        self.summary_label.setWordWrap(True)
+        self.summary_label = muted_label(f"{target} · {label} · scope={scope}")
+        self.summary_label.setObjectName("accentLabel")
 
         self.date_edit = QLineEdit(str(self._record.get("achieved_date") or ""))
         self.value_edit = QLineEdit(str(self._record.get("achieved_value") or ""))
@@ -65,32 +73,32 @@ class EditMilestoneRecordDialog(QDialog):
         self.notes_edit = QLineEdit(self._record.get("notes") or "")
 
         form = QFormLayout()
-        form.addRow("날짜:", self.date_edit)
-        form.addRow("달성값:", self.value_edit)
-        form.addRow("시즌:", self.season_edit)
-        form.addRow("경기수:", self.games_edit)
-        form.addRow("상대팀:", self.opponent_team_edit)
-        form.addRow("상대선수:", self.opponent_player_edit)
-        form.addRow("설명:", self.description_edit)
-        form.addRow("비고:", self.notes_edit)
+        form.addRow(tr("Date:"), self.date_edit)
+        form.addRow(tr("Achieved Value:"), self.value_edit)
+        form.addRow(tr("Season:"), self.season_edit)
+        form.addRow(tr("Games:"), self.games_edit)
+        form.addRow(tr("Opponent:"), self.opponent_team_edit)
+        form.addRow(tr("Opp. Player:"), self.opponent_player_edit)
+        form.addRow(tr("Description:"), self.description_edit)
+        form.addRow(tr("Notes:"), self.notes_edit)
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Save
-        )
-        buttons.button(QDialogButtonBox.StandardButton.Save).setText("저장")
+        buttons = make_button_box(save=True)
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
 
-        layout = QVBoxLayout(self)
+        form_card = CardPanel(tr("Record Info"))
+        form_card.add_layout(form)
+
+        layout = init_dialog_layout(self)
         layout.addWidget(self.summary_label)
-        layout.addLayout(form)
-        layout.addWidget(buttons)
+        layout.addWidget(form_card, stretch=1)
+        add_dialog_footer(layout, buttons)
 
     def _on_accept(self) -> None:
         try:
             achieved_value = float(self.value_edit.text().strip())
         except ValueError:
-            QMessageBox.warning(self, "입력 오류", "달성값은 숫자여야 합니다.")
+            QMessageBox.warning(self, tr("Input Error"), tr("Achieved value must be a number."))
             return
 
         try:
@@ -105,19 +113,19 @@ class EditMilestoneRecordDialog(QDialog):
                 notes=self.notes_edit.text(),
             )
         except ValueError:
-            QMessageBox.warning(self, "입력 오류", "시즌·경기수는 정수여야 합니다.")
+            QMessageBox.warning(self, tr("Input Error"), tr("Season and games must be integers."))
             return
 
         scope = str(self._record.get("scope") or "")
         errors = validate_record_update(update, scope=scope)
         if errors:
-            QMessageBox.warning(self, "입력 오류", "\n".join(errors))
+            QMessageBox.warning(self, tr("Input Error"), "\n".join(errors))
             return
 
         try:
             achieved_date = normalize_achieved_date(update.achieved_date)
         except ValueError as exc:
-            QMessageBox.warning(self, "입력 오류", str(exc))
+            QMessageBox.warning(self, tr("Input Error"), str(exc))
             return
 
         if not self.aggregator.update_milestone_record(
@@ -131,6 +139,6 @@ class EditMilestoneRecordDialog(QDialog):
             description=update.description,
             notes=update.notes,
         ):
-            QMessageBox.warning(self, "저장 실패", "기록을 찾을 수 없습니다.")
+            QMessageBox.warning(self, tr("Save Failed"), tr("Record not found."))
             return
         self.accept()

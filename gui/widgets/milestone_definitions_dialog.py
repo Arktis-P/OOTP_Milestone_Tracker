@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.i18n import tr
 from core.milestone.definitions import (
     MilestoneDefinition,
     MilestoneDefinitions,
@@ -26,6 +27,15 @@ from core.milestone.definitions import (
 )
 from gui.widgets.milestone_definition_form_dialog import MilestoneDefinitionFormDialog
 from gui.ui_compact import scale_size
+from gui.widgets.app_dialog import (
+    add_dialog_footer,
+    init_dialog_layout,
+    make_button_box,
+    muted_label,
+    summary_label,
+    table_card,
+    toolbar_row,
+)
 from gui.widgets.table_widgets import FilterBar
 
 
@@ -38,52 +48,55 @@ class MilestoneDefinitionsDialog(QDialog):
         self._definitions = load_milestones(milestones_path)
         self._items: list[MilestoneDefinition] = list(self._definitions.all_milestones)
 
-        self.setWindowTitle("마일스톤 기준 관리")
-        self.resize(*scale_size(980, 560))
+        self.setWindowTitle(tr("Milestone Definition Management"))
+        self.resize(*scale_size(1960, 1400))
 
-        intro = QLabel(
-            f"마일스톤 달성 판정에 사용되는 기준 목록입니다.\n"
-            f"파일: {milestones_path}"
+        intro = muted_label(
+            tr("Milestone definitions used for achievement detection.\nFile: {path}").format(
+                path=milestones_path
+            )
         )
-        intro.setWordWrap(True)
 
-        self.summary_label = QLabel()
-        self.filter_bar = FilterBar("key·이름·scope 검색...")
+        self.summary_label = summary_label()
+        self.filter_bar = FilterBar(tr("Search by key, name, scope..."))
         self.filter_bar.search_input.textChanged.connect(self._reload_table)
 
         self.table = QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels(
-            ["key", "표시 이름", "분류", "scope", "stat", "threshold", "grade", "활성"]
+            ["key", tr("Display Name"), tr("Category"), "scope", "stat", "threshold", "grade", tr("Active")]
         )
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
         self.table.cellDoubleClicked.connect(lambda _r, _c: self._edit_selected())
 
-        self.add_button = QPushButton("추가")
-        self.edit_button = QPushButton("수정")
-        self.delete_button = QPushButton("삭제")
+        self.add_button = QPushButton(tr("Add"))
+        self.edit_button = QPushButton(tr("Edit"))
+        self.delete_button = QPushButton(tr("Delete"))
         self.add_button.clicked.connect(self._add_item)
         self.edit_button.clicked.connect(self._edit_selected)
         self.delete_button.clicked.connect(self._delete_selected)
 
-        button_row = QHBoxLayout()
-        button_row.addWidget(self.add_button)
-        button_row.addWidget(self.edit_button)
-        button_row.addWidget(self.delete_button)
-        button_row.addStretch()
-        button_row.addWidget(QLabel("더블클릭: 수정"))
+        button_row = toolbar_row(
+            self.add_button,
+            self.edit_button,
+            self.delete_button,
+        )
+        hint = muted_label(tr("Double-click to edit"), wrap=False)
 
-        close_buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close_buttons = make_button_box(close=True, cancel=False)
         close_buttons.rejected.connect(self.reject)
 
-        layout = QVBoxLayout(self)
+        table_panel = table_card(tr("Definitions List"), self.table)
+
+        layout = init_dialog_layout(self)
         layout.addWidget(intro)
         layout.addWidget(self.summary_label)
         layout.addWidget(self.filter_bar)
-        layout.addWidget(self.table, stretch=1)
-        layout.addLayout(button_row)
-        layout.addWidget(close_buttons)
+        layout.addWidget(table_panel, stretch=1)
+        layout.addWidget(button_row)
+        layout.addWidget(hint)
+        add_dialog_footer(layout, close_buttons)
 
         self._reload_table()
 
@@ -100,10 +113,12 @@ class MilestoneDefinitionsDialog(QDialog):
             ]
 
         active_count = sum(1 for item in self._items if item.active)
-        self.summary_label.setText(
-            f"전체 {len(self._items)}건 · 활성 {active_count}건"
-            + (f" · 표시 {len(rows)}건" if needle else "")
+        summary = tr("Total {total} · Active {active}").format(
+            total=len(self._items), active=active_count
         )
+        if needle:
+            summary += tr(" · Showing {shown}").format(shown=len(rows))
+        self.summary_label.setText(summary)
 
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(rows))
@@ -154,7 +169,7 @@ class MilestoneDefinitionsDialog(QDialog):
         try:
             save_milestones_csv(self.milestones_path, definitions)
         except (OSError, ValueError) as exc:
-            QMessageBox.critical(self, "저장 실패", str(exc))
+            QMessageBox.critical(self, tr("Save Failed"), str(exc))
             return False
         self._definitions = definitions
         self.definitions_changed.emit()
@@ -177,7 +192,7 @@ class MilestoneDefinitionsDialog(QDialog):
     def _edit_selected(self) -> None:
         key = self._selected_key()
         if not key:
-            QMessageBox.information(self, "수정", "수정할 기준을 선택하세요.")
+            QMessageBox.information(self, tr("Edit"), tr("Please select a definition to edit."))
             return
         index = self._find_index(key)
         if index is None:
@@ -199,7 +214,7 @@ class MilestoneDefinitionsDialog(QDialog):
     def _delete_selected(self) -> None:
         key = self._selected_key()
         if not key:
-            QMessageBox.information(self, "삭제", "삭제할 기준을 선택하세요.")
+            QMessageBox.information(self, tr("Delete"), tr("Please select a definition to delete."))
             return
         index = self._find_index(key)
         if index is None:
@@ -207,9 +222,10 @@ class MilestoneDefinitionsDialog(QDialog):
         item = self._items[index]
         confirm = QMessageBox.question(
             self,
-            "마일스톤 기준 삭제",
-            f"'{item.label}' ({item.key}) 기준을 삭제하시겠습니까?\n\n"
-            "이미 기록된 마일스톤 이력은 삭제되지 않습니다.",
+            tr("Delete Milestone Definition"),
+            tr("'{label}' ({key}) definition will be deleted.\n\nRecorded milestone history will not be deleted.").format(
+                label=item.label, key=item.key
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm != QMessageBox.StandardButton.Yes:

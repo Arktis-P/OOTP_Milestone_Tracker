@@ -193,6 +193,7 @@ class BatchImportResult:
     total_scanned: int = 0
     candidates: int = 0
     imported_game_ids: list[int] = field(default_factory=list)
+    refreshed_game_ids: list[int] = field(default_factory=list)
 
 
 @dataclass

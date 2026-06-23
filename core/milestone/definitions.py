@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import csv
 import json
+
+from core.i18n import tr
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -165,38 +167,38 @@ def validate_milestone_definition(
     errors: list[str] = []
     key = item.key.strip()
     if not key:
-        errors.append("key를 입력하세요.")
+        errors.append(tr("Please enter a key."))
     elif not key.replace("_", "").isalnum():
-        errors.append("key는 영문·숫자·밑줄만 사용할 수 있습니다.")
+        errors.append(tr("Key can only contain letters, numbers, and underscores."))
     elif key in existing_keys and key != editing_key:
-        errors.append(f"이미 사용 중인 key입니다: {key}")
+        errors.append(tr("Key already in use: {key}").format(key=key))
 
     if item.category not in VALID_CATEGORIES:
-        errors.append(f"유효하지 않은 category: {item.category}")
+        errors.append(tr("Invalid category: {category}").format(category=item.category))
     if item.scope not in VALID_SCOPES:
-        errors.append(f"유효하지 않은 scope: {item.scope}")
+        errors.append(tr("Invalid scope: {scope}").format(scope=item.scope))
     if item.direction not in VALID_DIRECTIONS:
-        errors.append(f"유효하지 않은 direction: {item.direction}")
+        errors.append(tr("Invalid direction: {direction}").format(direction=item.direction))
     if item.grade not in VALID_GRADES:
-        errors.append(f"유효하지 않은 grade: {item.grade}")
+        errors.append(tr("Invalid grade: {grade}").format(grade=item.grade))
 
     if not item.label.strip():
-        errors.append("표시 이름(label)을 입력하세요.")
+        errors.append(tr("Please enter a display name (label)."))
 
     if item.scope != "team_manual" and not item.stat.strip():
-        errors.append("stat을 입력하세요.")
+        errors.append(tr("Please enter a stat."))
 
     if item.threshold_spec:
         pass
     elif item.direction == "boolean":
         if item.threshold != 1:
-            errors.append("boolean 기준의 threshold는 1이어야 합니다.")
+            errors.append(tr("Threshold for boolean must be 1."))
     elif item.threshold <= 0 and item.scope not in {"team_manual"}:
-        errors.append("threshold는 0보다 커야 합니다.")
+        errors.append(tr("Threshold must be greater than 0."))
 
     template = (item.description_template or "").strip()
     if template and template not in DESCRIPTION_TEMPLATES:
-        errors.append(f"알 수 없는 description_template: {template}")
+        errors.append(tr("Unknown description_template: {template}").format(template=template))
 
     return errors
 

@@ -19,7 +19,7 @@ def _f(name: str, *, occurrence: int = 0, label: str | None = None) -> RowField:
 
 
 BASIC_INFO_SECTION = RatingSection(
-    title="선수 기본 정보",
+    title="Player Info",
     readonly=True,
     fields=(
         _f("id"),
@@ -44,7 +44,7 @@ BASIC_INFO_SECTION = RatingSection(
 RATING_SECTIONS: tuple[RatingSection, ...] = (
     BASIC_INFO_SECTION,
     RatingSection(
-        title="타자 현재 레이팅",
+        title="Batter Current Ratings",
         fields=(
             _f("Contact vL"),
             _f("Gap vL"),
@@ -61,7 +61,7 @@ RATING_SECTIONS: tuple[RatingSection, ...] = (
         ),
     ),
     RatingSection(
-        title="타자 포텐셜",
+        title="Batter Potential",
         fields=(
             _f("Contact Pot"),
             _f("Gap Pot"),
@@ -72,7 +72,7 @@ RATING_SECTIONS: tuple[RatingSection, ...] = (
         ),
     ),
     RatingSection(
-        title="타자 기타",
+        title="Batter Other",
         fields=(
             _f("HBP", occurrence=0, label="HBP"),
             _f("GB Batter type"),
@@ -80,7 +80,7 @@ RATING_SECTIONS: tuple[RatingSection, ...] = (
         ),
     ),
     RatingSection(
-        title="주루/작전",
+        title="Running / Tactics",
         fields=(
             _f("speed"),
             _f("steal rate"),
@@ -91,7 +91,7 @@ RATING_SECTIONS: tuple[RatingSection, ...] = (
         ),
     ),
     RatingSection(
-        title="수비",
+        title="Defense",
         fields=(
             _f("Infield Range"),
             _f("Infield Error"),
@@ -106,11 +106,11 @@ RATING_SECTIONS: tuple[RatingSection, ...] = (
         ),
     ),
     RatingSection(
-        title="투수 기본",
+        title="Pitcher Basic",
         fields=(_f("ArmSlot"),),
     ),
     RatingSection(
-        title="투수 현재 레이팅",
+        title="Pitcher Current Ratings",
         fields=(
             _f("Move vL"),
             _f("Control vL"),
@@ -121,7 +121,7 @@ RATING_SECTIONS: tuple[RatingSection, ...] = (
         ),
     ),
     RatingSection(
-        title="투수 포텐셜",
+        title="Pitcher Potential",
         fields=(
             _f("Move Pot"),
             _f("Control Pot"),
@@ -130,7 +130,7 @@ RATING_SECTIONS: tuple[RatingSection, ...] = (
         ),
     ),
     RatingSection(
-        title="투구 종류 현재 레이팅",
+        title="Pitch Type Current Ratings",
         fields=(
             _f("Fastball (scale: 0-5)"),
             _f("Slider"),
@@ -147,7 +147,7 @@ RATING_SECTIONS: tuple[RatingSection, ...] = (
         ),
     ),
     RatingSection(
-        title="투구 종류 포텐셜",
+        title="Pitch Type Potential",
         fields=(
             _f("Fastball Pot.(scale: 0-5)"),
             _f("Slider Pot."),
@@ -164,9 +164,9 @@ RATING_SECTIONS: tuple[RatingSection, ...] = (
         ),
     ),
     RatingSection(
-        title="투수 기타",
+        title="Pitcher Other",
         fields=(
-            _f("HBP", occurrence=1, label="HBP (투수)"),
+            _f("HBP", occurrence=1, label="HBP (Pitcher)"),
             _f("WP"),
             _f("Balk"),
             _f("Stamina"),

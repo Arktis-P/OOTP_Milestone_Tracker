@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -21,6 +22,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings
+from core.i18n import tr
 from core.milestone.checker import MilestoneChecker
 from core.milestone.definitions import MilestoneDefinition, MilestoneDefinitions
 from core.milestone.implementation import manual_entry_hint, requires_external_data
@@ -45,6 +47,7 @@ from core.milestone.manual_entry import (
 )
 from core.roster.player_registry import PlayerRegistry
 from core.stats.aggregator import Aggregator
+from core.roster.korean_names import korean_display_for_player, load_korean_name_mapper, load_roster_player_names
 from core.stats.player_display import format_manual_entry_label, format_player_list_label
 from core.stats.team_filter import (
     CANONICAL_MLB_TEAMS,
@@ -52,6 +55,8 @@ from core.stats.team_filter import (
     merge_team_maps,
 )
 from gui.ui_compact import hint_style, scale_size
+from gui.widgets.app_dialog import add_dialog_footer, error_label, init_dialog_layout, make_button_box
+from gui.widgets.card_panel import CardPanel
 
 _TAB_MILESTONE = 0
 _TAB_AWARD = 1
@@ -71,14 +76,14 @@ class ManualMilestoneDialog(QDialog):
         self.aggregator = aggregator
         self.milestones = milestones
         self.settings = settings
-        self.setWindowTitle("수동 입력")
+        self.setWindowTitle(tr("Manual Entry"))
         self.resize(*scale_size(540, 560))
 
         self.tabs = QTabWidget()
-        self.tabs.addTab(QWidget(), "마일스톤")
-        self.tabs.addTab(QWidget(), "수상")
-        self.tabs.addTab(QWidget(), "이적")
-        self.tabs.addTab(QWidget(), "부상")
+        self.tabs.addTab(QWidget(), tr("Milestone"))
+        self.tabs.addTab(QWidget(), tr("Award"))
+        self.tabs.addTab(QWidget(), tr("Transfer"))
+        self.tabs.addTab(QWidget(), tr("Injury"))
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
         self.stack = QStackedWidget()
@@ -86,18 +91,17 @@ class ManualMilestoneDialog(QDialog):
         self.stack.addWidget(self._build_transfer_page())
         self.stack.addWidget(self._build_injury_page())
 
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Cancel
-            | QDialogButtonBox.StandardButton.Save
-        )
-        buttons.button(QDialogButtonBox.StandardButton.Save).setText("기록 추가")
+        buttons = make_button_box(save=True, save_text="Add Record")
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
 
-        layout = QVBoxLayout(self)
-        layout.addWidget(self.tabs)
-        layout.addWidget(self.stack)
-        layout.addWidget(buttons)
+        content_card = CardPanel(tr("Manual Entry"))
+        content_card.add_widget(self.tabs)
+        content_card.add_widget(self.stack)
+
+        layout = init_dialog_layout(self)
+        layout.addWidget(content_card, stretch=1)
+        add_dialog_footer(layout, buttons)
 
         self._on_tab_changed(0)
 
@@ -105,21 +109,20 @@ class ManualMilestoneDialog(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        self.player_radio = QRadioButton("개인")
-        self.team_radio = QRadioButton("팀")
+        self.player_radio = QRadioButton(tr("Personal"))
+        self.team_radio = QRadioButton(tr("Team"))
         self.player_radio.setChecked(True)
         self.player_radio.toggled.connect(self._on_target_changed)
 
         target_row = QHBoxLayout()
-        target_row.addWidget(QLabel("대상:"))
+        target_row.addWidget(QLabel(tr("Target:")))
         target_row.addWidget(self.player_radio)
         target_row.addWidget(self.team_radio)
         target_row.addStretch()
 
         self.date_edit = QLineEdit()
         self.date_edit.setPlaceholderText("2026-03-01")
-        self.date_error = QLabel("")
-        self.date_error.setStyleSheet("color: #dc2626;")
+        self.date_error = error_label()
         self.date_error.hide()
         self.date_edit.textChanged.connect(self._validate_date_field)
 
@@ -129,8 +132,10 @@ class ManualMilestoneDialog(QDialog):
         self._fill_players()
         line = self.player_combo.lineEdit()
         if line is not None:
-            line.setPlaceholderText("풀 네임 입력 또는 목록 선택 (예: Dong-ju Moon)")
-        self.add_player_button = QPushButton("+ 선수 추가")
+            line.setPlaceholderText(
+                tr("Enter full name or select from list (e.g., Dong-ju Moon)")
+            )
+        self.add_player_button = QPushButton(tr("+ Add Player"))
         self.add_player_button.clicked.connect(self._on_add_player)
 
         player_row = QHBoxLayout()
@@ -155,20 +160,22 @@ class ManualMilestoneDialog(QDialog):
         self.manual_hint.setWordWrap(True)
         self.manual_hint.setStyleSheet(hint_style())
         self.manual_hint.setText(
-            "추적 팀 선수는 목록에서 고르고, 아직 DB에 없는 선수는 풀 네임을 "
-            "직접 입력하거나 '+ 선수 추가'로 등록할 수 있습니다."
+            tr(
+                "Select tracked team players from the list, or enter a full name directly "
+                "/ use '+ Add Player' to register players not yet in the DB."
+            )
         )
 
         self.season_edit = QLineEdit(str(self.settings.current_season))
-        self.season_label = QLabel("시즌:")
+        self.season_label = QLabel(tr("Season:"))
         self.season_row_widget = QWidget()
         season_layout = QHBoxLayout(self.season_row_widget)
         season_layout.setContentsMargins(0, 0, 0, 0)
         season_layout.addWidget(self.season_edit)
 
         self.games_edit = QLineEdit()
-        self.games_edit.setPlaceholderText("이 시점까지 출장한 경기수")
-        self.games_label = QLabel("동안 경기수:")
+        self.games_edit.setPlaceholderText(tr("Games played up to this point"))
+        self.games_label = QLabel(tr("Games in:"))
         self.games_row_widget = QWidget()
         games_layout = QHBoxLayout(self.games_row_widget)
         games_layout.setContentsMargins(0, 0, 0, 0)
@@ -184,18 +191,18 @@ class ManualMilestoneDialog(QDialog):
         self.notes_edit = QLineEdit()
 
         self.form = QFormLayout()
-        self.form.addRow("날짜:", self.date_edit)
+        self.form.addRow(tr("Date:"), self.date_edit)
         self.form.addRow("", self.date_error)
-        self.form.addRow("선수:", self.player_row_widget)
-        self.form.addRow("팀:", self.team_row_widget)
-        self.form.addRow("마일스톤:", self.milestone_combo)
+        self.form.addRow(tr("Player:"), self.player_row_widget)
+        self.form.addRow(tr("Team:"), self.team_row_widget)
+        self.form.addRow(tr("Milestone:"), self.milestone_combo)
         self.form.addRow(self.season_label, self.season_row_widget)
         self.form.addRow(self.games_label, self.games_row_widget)
-        self.form.addRow("달성값:", self.value_combo)
-        self.form.addRow("상대팀:", self.opponent_team_edit)
-        self.form.addRow("상대선수:", self.opponent_player_edit)
-        self.form.addRow("설명:", self.description_edit)
-        self.form.addRow("비고:", self.notes_edit)
+        self.form.addRow(tr("Achieved Value:"), self.value_combo)
+        self.form.addRow(tr("Opponent:"), self.opponent_team_edit)
+        self.form.addRow(tr("Opp. Player:"), self.opponent_player_edit)
+        self.form.addRow(tr("Description:"), self.description_edit)
+        self.form.addRow(tr("Notes:"), self.notes_edit)
 
         layout.addLayout(target_row)
         layout.addWidget(self.manual_hint)
@@ -211,16 +218,17 @@ class ManualMilestoneDialog(QDialog):
         layout = QVBoxLayout(page)
 
         self.transfer_hint = QLabel(
-            "계약·트레이드 등 선수 이동 내역을 기록합니다. "
-            "합류·이탈 선수는 쉼표로 구분하세요."
+            tr(
+                "Records player transfer events such as contracts and trades. "
+                "Separate multiple players with commas."
+            )
         )
         self.transfer_hint.setWordWrap(True)
         self.transfer_hint.setStyleSheet(hint_style())
 
         self.transfer_date_edit = QLineEdit()
         self.transfer_date_edit.setPlaceholderText("2026-03-01")
-        self.transfer_date_error = QLabel("")
-        self.transfer_date_error.setStyleSheet("color: #dc2626;")
+        self.transfer_date_error = error_label()
         self.transfer_date_error.hide()
         self.transfer_date_edit.textChanged.connect(self._validate_transfer_date_field)
 
@@ -231,7 +239,7 @@ class ManualMilestoneDialog(QDialog):
 
         self.transfer_type_combo = QComboBox()
         for key, label in TRANSFER_EVENT_LABELS.items():
-            self.transfer_type_combo.addItem(label, key)
+            self.transfer_type_combo.addItem(tr(label), key)
         self.transfer_type_combo.currentIndexChanged.connect(
             self._update_transfer_description
         )
@@ -256,16 +264,16 @@ class ManualMilestoneDialog(QDialog):
         )
 
         transfer_form = QFormLayout()
-        transfer_form.addRow("날짜:", self.transfer_date_edit)
+        transfer_form.addRow(tr("Date:"), self.transfer_date_edit)
         transfer_form.addRow("", self.transfer_date_error)
-        transfer_form.addRow("합류:", self.transfer_joining_combo)
-        transfer_form.addRow("이탈:", self.transfer_leaving_combo)
-        transfer_form.addRow("유형:", self.transfer_type_combo)
-        transfer_form.addRow("합류팀:", self.transfer_join_team_combo)
-        transfer_form.addRow("상대팀:", self.transfer_counterpart_team_combo)
-        transfer_form.addRow("시즌:", self.transfer_season_edit)
-        transfer_form.addRow("설명:", self.transfer_description_edit)
-        transfer_form.addRow("비고:", self.transfer_notes_edit)
+        transfer_form.addRow(tr("Joining:"), self.transfer_joining_combo)
+        transfer_form.addRow(tr("Leaving:"), self.transfer_leaving_combo)
+        transfer_form.addRow(tr("Type:"), self.transfer_type_combo)
+        transfer_form.addRow(tr("Join Team:"), self.transfer_join_team_combo)
+        transfer_form.addRow(tr("Counterpart Team:"), self.transfer_counterpart_team_combo)
+        transfer_form.addRow(tr("Season:"), self.transfer_season_edit)
+        transfer_form.addRow(tr("Description:"), self.transfer_description_edit)
+        transfer_form.addRow(tr("Notes:"), self.transfer_notes_edit)
 
         layout.addWidget(self.transfer_hint)
         layout.addLayout(transfer_form)
@@ -276,14 +284,15 @@ class ManualMilestoneDialog(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        self.injury_hint = QLabel("선수 부상 발생·복귀 등 부상 관련 내역을 기록합니다.")
+        self.injury_hint = QLabel(
+            tr("Records injury events such as player injuries and returns.")
+        )
         self.injury_hint.setWordWrap(True)
         self.injury_hint.setStyleSheet(hint_style())
 
         self.injury_date_edit = QLineEdit()
         self.injury_date_edit.setPlaceholderText("2026-03-01")
-        self.injury_date_error = QLabel("")
-        self.injury_date_error.setStyleSheet("color: #dc2626;")
+        self.injury_date_error = error_label()
         self.injury_date_error.hide()
         self.injury_date_edit.textChanged.connect(self._validate_injury_date_field)
 
@@ -293,9 +302,13 @@ class ManualMilestoneDialog(QDialog):
         self._fill_player_combo(self.injury_player_combo)
 
         self.injury_label_edit = QLineEdit()
-        self.injury_label_edit.setPlaceholderText("예: 햄스트링, 어깨 수술")
+        self.injury_label_edit.setPlaceholderText(
+            tr("e.g., Hamstring, shoulder surgery")
+        )
         self.injury_duration_edit = QLineEdit()
-        self.injury_duration_edit.setPlaceholderText("예: 3일, 3주, 5-6달")
+        self.injury_duration_edit.setPlaceholderText(
+            tr("e.g., 3 days, 3 weeks, 5-6 months")
+        )
         self.injury_team_combo = QComboBox()
         self._fill_tracked_team_combo(self.injury_team_combo)
         self.injury_season_edit = QLineEdit(str(self.settings.current_season))
@@ -306,15 +319,15 @@ class ManualMilestoneDialog(QDialog):
         self.injury_duration_edit.textChanged.connect(self._update_injury_description)
 
         injury_form = QFormLayout()
-        injury_form.addRow("날짜:", self.injury_date_edit)
+        injury_form.addRow(tr("Date:"), self.injury_date_edit)
         injury_form.addRow("", self.injury_date_error)
-        injury_form.addRow("선수:", self.injury_player_combo)
-        injury_form.addRow("부상:", self.injury_label_edit)
-        injury_form.addRow("기간:", self.injury_duration_edit)
-        injury_form.addRow("소속팀:", self.injury_team_combo)
-        injury_form.addRow("시즌:", self.injury_season_edit)
-        injury_form.addRow("설명:", self.injury_description_edit)
-        injury_form.addRow("비고:", self.injury_notes_edit)
+        injury_form.addRow(tr("Player:"), self.injury_player_combo)
+        injury_form.addRow(tr("Injury:"), self.injury_label_edit)
+        injury_form.addRow(tr("Duration:"), self.injury_duration_edit)
+        injury_form.addRow(tr("Affil. Team:"), self.injury_team_combo)
+        injury_form.addRow(tr("Season:"), self.injury_season_edit)
+        injury_form.addRow(tr("Description:"), self.injury_description_edit)
+        injury_form.addRow(tr("Notes:"), self.injury_notes_edit)
 
         layout.addWidget(self.injury_hint)
         layout.addLayout(injury_form)
@@ -345,6 +358,10 @@ class ManualMilestoneDialog(QDialog):
         combo.blockSignals(True)
         combo.clear()
         seen_ids: set[int] = set()
+        mapper = load_korean_name_mapper()
+        roster_names = load_roster_player_names(
+            self.settings.import_export_dir or self.settings.initial_stats_dir or None
+        )
         players = self.aggregator.get_tracked_players(
             self.settings.tracked_teams,
             custom_teams=self.settings.custom_mlb_teams,
@@ -352,10 +369,16 @@ class ManualMilestoneDialog(QDialog):
         for player in players:
             player_id = int(player["player_id"])
             seen_ids.add(player_id)
-            combo.addItem(
-                format_player_list_label(player),
-                player_id,
+            base_label = format_player_list_label(player)
+            korean = korean_display_for_player(
+                mapper,
+                full_name=str(player.get("full_name") or ""),
+                player_id=player_id,
+                roster_names=roster_names,
             )
+            label = f"{base_label} / {korean}" if korean else base_label
+            combo.addItem(label, player_id)
+            combo.setItemData(combo.count() - 1, base_label, Qt.ItemDataRole.UserRole + 1)
         for player in self._player_registry().list_manual_players():
             player_id = int(player["player_id"])
             if player_id in seen_ids:
@@ -415,7 +438,9 @@ class ManualMilestoneDialog(QDialog):
         self._fill_player_combo(combo)
         line = combo.lineEdit()
         if line is not None:
-            line.setPlaceholderText("예: Dong-ju Moon, A. Judge (쉼표 구분)")
+            line.setPlaceholderText(
+                tr("e.g., Dong-ju Moon, A. Judge (comma-separated)")
+            )
         snapshot = {"text": ""}
 
         original_show_popup = combo.showPopup
@@ -429,7 +454,9 @@ class ManualMilestoneDialog(QDialog):
         def on_activated(index: int) -> None:
             if index < 0:
                 return
-            picked_parts = parse_player_name_list(combo.itemText(index))
+            canonical = combo.itemData(index, Qt.ItemDataRole.UserRole + 1)
+            canonical_text = str(canonical) if canonical is not None else combo.itemText(index)
+            picked_parts = parse_player_name_list(canonical_text)
             if not picked_parts:
                 return
             picked = picked_parts[0]
@@ -446,6 +473,17 @@ class ManualMilestoneDialog(QDialog):
 
     def _combo_text(self, combo: QComboBox) -> str:
         return combo.currentText().strip()
+
+    def _canonical_player_text(self, combo: QComboBox) -> str:
+        """Return canonical player name (without Korean suffix) from player combo."""
+        text = combo.currentText().strip()
+        for i in range(combo.count()):
+            if combo.itemText(i).strip() == text:
+                canonical = combo.itemData(i, Qt.ItemDataRole.UserRole + 1)
+                if canonical is not None:
+                    return str(canonical)
+                break
+        return text
 
     def _fill_teams(self) -> None:
         self.team_combo.clear()
@@ -490,7 +528,9 @@ class ManualMilestoneDialog(QDialog):
     def _update_milestone_hint(self) -> None:
         if self.tabs.currentIndex() == _TAB_AWARD:
             self.manual_hint.setText(
-                "수상·리그 1위 등 박스스코어에서 자동 판정되지 않는 항목입니다."
+                tr(
+                    "Awards, league leaders, and other items not auto-detected from boxscores."
+                )
             )
             milestone = self._selected_milestone()
             if milestone is not None:
@@ -502,7 +542,9 @@ class ManualMilestoneDialog(QDialog):
             self.manual_hint.setText(manual_entry_hint(milestone))
         else:
             self.manual_hint.setText(
-                "박스스코어로 자동 판정 가능하지만 수동으로 보완·수정할 때 사용합니다."
+                tr(
+                    "Can be auto-detected from boxscores, but use this to supplement or correct."
+                )
             )
 
     def _on_milestone_changed(self) -> None:
@@ -564,7 +606,7 @@ class ManualMilestoneDialog(QDialog):
             error_label.hide()
             return
         if parse_flexible_date(text) is None:
-            error_label.setText("날짜 형식을 확인하세요")
+            error_label.setText(tr("Check date format"))
             error_label.show()
         else:
             error_label.hide()
@@ -572,15 +614,15 @@ class ManualMilestoneDialog(QDialog):
     def _on_add_player(self) -> None:
         name, ok = QInputDialog.getText(
             self,
-            "선수 추가",
-            "풀 네임을 입력하세요 (예: Dong-ju Moon):",
+            tr("Add Player"),
+            tr("Enter full name (e.g., Dong-ju Moon):"),
         )
         if not ok:
             return
         try:
             player_id = self._player_registry().add_manual_player(name)
         except ValueError as exc:
-            QMessageBox.warning(self, "입력 오류", str(exc))
+            QMessageBox.warning(self, tr("Input Error"), str(exc))
             return
         for combo in (
             self.player_combo,
@@ -619,19 +661,19 @@ class ManualMilestoneDialog(QDialog):
     def _build_milestone_form(self) -> ManualMilestoneFormData | None:
         parsed = parse_flexible_date(self.date_edit.text())
         if parsed is None:
-            self.date_error.setText("날짜 형식을 확인하세요")
+            self.date_error.setText(tr("Check date format"))
             self.date_error.show()
             return None
 
         milestone = self._selected_milestone()
         if milestone is None:
-            QMessageBox.warning(self, "입력 필요", "마일스톤을 선택하세요.")
+            QMessageBox.warning(self, tr("Input Required"), tr("Please select a milestone."))
             return None
 
         try:
             achieved_value = float(self.value_combo.currentText().strip())
         except ValueError:
-            QMessageBox.warning(self, "입력 오류", "달성값은 숫자여야 합니다.")
+            QMessageBox.warning(self, tr("Input Error"), tr("Achieved value must be a number."))
             return None
 
         season: int | None = None
@@ -639,7 +681,7 @@ class ManualMilestoneDialog(QDialog):
             try:
                 season = int(self.season_edit.text().strip())
             except ValueError:
-                QMessageBox.warning(self, "입력 오류", "시즌은 숫자여야 합니다.")
+                QMessageBox.warning(self, tr("Input Error"), tr("Season must be a number."))
                 return None
 
         games_at: int | None = None
@@ -647,7 +689,7 @@ class ManualMilestoneDialog(QDialog):
             try:
                 games_at = int(self.games_edit.text().strip())
             except ValueError:
-                QMessageBox.warning(self, "입력 오류", "동안 경기수는 정수여야 합니다.")
+                QMessageBox.warning(self, tr("Input Error"), tr("Games must be an integer."))
                 return None
 
         is_player = self.player_radio.isChecked()
@@ -657,8 +699,8 @@ class ManualMilestoneDialog(QDialog):
             if player_id is None:
                 QMessageBox.warning(
                     self,
-                    "입력 필요",
-                    "선수를 선택하거나 풀 네임을 입력하세요.",
+                    tr("Input Required"),
+                    tr("Select a player or enter a full name."),
                 )
                 return None
         team = self.team_combo.currentData() if not is_player else None
@@ -679,7 +721,7 @@ class ManualMilestoneDialog(QDialog):
         )
         errors = validate_manual_entry(form, milestone)
         if errors:
-            QMessageBox.warning(self, "입력 오류", "\n".join(errors))
+            QMessageBox.warning(self, tr("Input Error"), "\n".join(errors))
             return None
         return form
 
@@ -695,13 +737,13 @@ class ManualMilestoneDialog(QDialog):
     def _build_transfer_form(self) -> ManualTransferFormData | None:
         parsed = parse_flexible_date(self.transfer_date_edit.text())
         if parsed is None:
-            self.transfer_date_error.setText("날짜 형식을 확인하세요")
+            self.transfer_date_error.setText(tr("Check date format"))
             self.transfer_date_error.show()
             return None
 
         season = self._parse_optional_season(self.transfer_season_edit.text())
         if self.transfer_season_edit.text().strip() and season is None:
-            QMessageBox.warning(self, "입력 오류", "시즌은 숫자여야 합니다.")
+            QMessageBox.warning(self, tr("Input Error"), tr("Season must be a number."))
             return None
 
         form = ManualTransferFormData(
@@ -717,24 +759,24 @@ class ManualMilestoneDialog(QDialog):
         )
         errors = validate_manual_transfer(form)
         if errors:
-            QMessageBox.warning(self, "입력 오류", "\n".join(errors))
+            QMessageBox.warning(self, tr("Input Error"), "\n".join(errors))
             return None
         return form
 
     def _build_injury_form(self) -> ManualInjuryFormData | None:
         parsed = parse_flexible_date(self.injury_date_edit.text())
         if parsed is None:
-            self.injury_date_error.setText("날짜 형식을 확인하세요")
+            self.injury_date_error.setText(tr("Check date format"))
             self.injury_date_error.show()
             return None
 
         season = self._parse_optional_season(self.injury_season_edit.text())
         if self.injury_season_edit.text().strip() and season is None:
-            QMessageBox.warning(self, "입력 오류", "시즌은 숫자여야 합니다.")
+            QMessageBox.warning(self, tr("Input Error"), tr("Season must be a number."))
             return None
 
         form = ManualInjuryFormData(
-            player_name=self._combo_text(self.injury_player_combo),
+            player_name=self._canonical_player_text(self.injury_player_combo),
             achieved_date=parsed,
             injury_label=self.injury_label_edit.text().strip(),
             duration=self.injury_duration_edit.text().strip(),
@@ -745,7 +787,7 @@ class ManualMilestoneDialog(QDialog):
         )
         errors = validate_manual_injury(form)
         if errors:
-            QMessageBox.warning(self, "입력 오류", "\n".join(errors))
+            QMessageBox.warning(self, tr("Input Error"), "\n".join(errors))
             return None
         return form
 
@@ -775,8 +817,8 @@ class ManualMilestoneDialog(QDialog):
             if dup_kind == "warn":
                 reply = QMessageBox.question(
                     self,
-                    "중복 확인",
-                    f"{dup_msg}\n그래도 추가하시겠습니까?",
+                    tr("Duplicate Check"),
+                    tr("{dup_msg}\nAdd anyway?").format(dup_msg=dup_msg),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 )
                 if reply != QMessageBox.StandardButton.Yes:
@@ -793,7 +835,7 @@ class ManualMilestoneDialog(QDialog):
             try:
                 checker.record_manual_transfer(form)
             except ValueError as exc:
-                QMessageBox.warning(self, "입력 오류", str(exc))
+                QMessageBox.warning(self, tr("Input Error"), str(exc))
                 return
             self.accept()
             return
@@ -805,6 +847,6 @@ class ManualMilestoneDialog(QDialog):
             try:
                 checker.record_manual_injury(form)
             except ValueError as exc:
-                QMessageBox.warning(self, "입력 오류", str(exc))
+                QMessageBox.warning(self, tr("Input Error"), str(exc))
                 return
             self.accept()

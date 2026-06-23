@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from core.i18n import tr
 from core.milestone.checker import (
     CAREER_BATTING_STATS,
     CAREER_PITCHING_STATS,
@@ -225,7 +226,7 @@ class MilestonePredictor:
             return {
                 "possible": None,
                 "projected_add": 0.0,
-                "note": "데이터 없음",
+                "note": tr("No data"),
             }
 
         games_played = int(
@@ -236,7 +237,7 @@ class MilestonePredictor:
             return {
                 "possible": False,
                 "projected_add": 0.0,
-                "note": "데이터 없음",
+                "note": tr("No data"),
             }
 
         per_game = current_val / games_played
@@ -244,10 +245,12 @@ class MilestonePredictor:
         projected_add = per_game * games_remaining
         possible = projected_add >= remaining
         if possible:
-            note = f"가능 (+{projected_add:.0f})"
+            note = tr("Achievable (+{amount})").format(amount=f"{projected_add:.0f}")
         else:
             after = max(remaining - projected_add, 0)
-            note = f"불가 (+{projected_add:.0f}, 시즌 후 {after:.0f} 남음)"
+            note = tr("Not achievable (+{amount}, {after} remaining after season)").format(
+                amount=f"{projected_add:.0f}", after=f"{after:.0f}"
+            )
         return {
             "possible": possible,
             "projected_add": round(projected_add, 1),
@@ -269,7 +272,7 @@ class MilestonePredictor:
             return {
                 "possible": None,
                 "projected_add": 0.0,
-                "note": "데이터 없음",
+                "note": tr("No data"),
             }
 
         games_played = int(
@@ -280,7 +283,7 @@ class MilestonePredictor:
             return {
                 "possible": False,
                 "projected_add": 0.0,
-                "note": "데이터 없음",
+                "note": tr("No data"),
             }
 
         per_game = current_val / games_played
@@ -288,10 +291,12 @@ class MilestonePredictor:
         projected_add = per_game * games_remaining
         possible = projected_add >= remaining
         if possible:
-            note = f"가능 (+{projected_add:.0f})"
+            note = tr("Achievable (+{amount})").format(amount=f"{projected_add:.0f}")
         else:
             after = max(remaining - projected_add, 0)
-            note = f"불가 (+{projected_add:.0f}, 시즌 후 {after:.0f} 남음)"
+            note = tr("Not achievable (+{amount}, {after} remaining after season)").format(
+                amount=f"{projected_add:.0f}", after=f"{after:.0f}"
+            )
         return {
             "possible": possible,
             "projected_add": round(projected_add, 1),

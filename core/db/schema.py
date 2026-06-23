@@ -339,6 +339,8 @@ def _ensure_streak_schema(conn: sqlite3.Connection) -> None:
             run_index               INTEGER NOT NULL DEFAULT 1,
             current_value           INTEGER NOT NULL DEFAULT 0,
             ip_outs_accum           INTEGER NOT NULL DEFAULT 0,
+            first_success_game_id   INTEGER,
+            first_success_game_date TEXT,
             last_success_game_id    INTEGER,
             last_success_game_date  TEXT,
             recorded_milestones     TEXT NOT NULL DEFAULT '',
@@ -361,6 +363,16 @@ def _ensure_streak_schema(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE pitching_logs ADD COLUMN is_starter INTEGER NOT NULL DEFAULT 0"
         )
+    streak_cols = _table_columns(conn, "player_streak_state")
+    if streak_cols:
+        for name, ddl in (
+            ("first_success_game_id", "INTEGER"),
+            ("first_success_game_date", "TEXT"),
+        ):
+            if name not in streak_cols:
+                conn.execute(
+                    f"ALTER TABLE player_streak_state ADD COLUMN {name} {ddl}"
+                )
     mr_cols = _table_columns(conn, "milestone_records")
     if mr_cols:
         for name, ddl in (

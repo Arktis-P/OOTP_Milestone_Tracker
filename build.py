@@ -23,7 +23,7 @@ BUNDLE_DATA_FILES = (
     "settings.json.example",
     "korean_last_names.csv",
     "korean_first_names.csv",
-    "korean_names_pending.csv",
+    "korean_names_pending.csv.example",
     "streak_policies.json",
 )
 
@@ -44,6 +44,11 @@ def ensure_default_data() -> None:
     settings_target = data_dir / "settings.json"
     if settings_example.exists() and not settings_target.exists():
         shutil.copy2(settings_example, settings_target)
+
+    pending_example = data_dir / "korean_names_pending.csv.example"
+    pending_target = data_dir / "korean_names_pending.csv"
+    if pending_example.exists() and not pending_target.exists():
+        shutil.copy2(pending_example, pending_target)
 
 
 def _pyinstaller_add_data(relative_path: str, *, dest_dir: str = "data") -> str:

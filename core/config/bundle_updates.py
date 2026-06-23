@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from core.config.paths import get_bundle_root, get_user_data_dir, resolve_data_path
+from core.i18n import tr
 from core.milestone.definitions import load_milestones, save_milestones_csv
 
 MANIFEST_NAME = "bundle_updates.json"
@@ -23,10 +24,10 @@ KOREAN_LAST_NAMES_FILE = "korean_last_names.csv"
 KOREAN_FIRST_NAMES_FILE = "korean_first_names.csv"
 
 FILE_LABELS: dict[str, str] = {
-    MILESTONES_FILE: "마일스톤 기준",
-    STREAK_POLICIES_FILE: "연속기록 정책",
-    KOREAN_LAST_NAMES_FILE: "한글 성 매핑",
-    KOREAN_FIRST_NAMES_FILE: "한글 이름 매핑",
+    MILESTONES_FILE: "Milestone Criteria",
+    STREAK_POLICIES_FILE: "Streak Policies",
+    KOREAN_LAST_NAMES_FILE: "Korean Last Name Mappings",
+    KOREAN_FIRST_NAMES_FILE: "Korean First Name Mappings",
 }
 
 
@@ -339,7 +340,7 @@ def _merge_milestone_keys(keys: list[str]) -> int:
     local_path = user_data_file_path(MILESTONES_FILE)
     bundle_path = bundle_data_path(MILESTONES_FILE)
     if not bundle_path.is_file():
-        raise FileNotFoundError(f"번들 파일 없음: {bundle_path}")
+        raise FileNotFoundError(f"Bundle file not found: {bundle_path}")
 
     local_defs = load_milestones(local_path) if local_path.is_file() else None
     bundle_defs = load_milestones(bundle_path)
@@ -508,7 +509,7 @@ def _version_gt(left: str, right: str) -> bool:
 
 
 def file_display_name(file_name: str) -> str:
-    return FILE_LABELS.get(file_name, file_name)
+    return tr(FILE_LABELS.get(file_name, file_name))
 
 
 def pending_update_count() -> int:
@@ -525,8 +526,8 @@ def apply_bundle_updates_with_message(parent=None) -> bool:
 
     result = apply_pending_updates(report.items)
     if result.errors:
-        QMessageBox.warning(parent, "업데이트 실패", "\n".join(result.errors))
+        QMessageBox.warning(parent, tr("Update Failed"), "\n".join(result.errors))
         return False
 
-    QMessageBox.information(parent, "기준 파일 업데이트", "기준 파일이 병합되었습니다.")
+    QMessageBox.information(parent, tr("Reference File Update"), tr("Reference files merged successfully."))
     return True

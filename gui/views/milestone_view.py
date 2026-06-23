@@ -10,11 +10,13 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QProgressBar,
     QPushButton,
     QSpinBox,
     QTableWidgetItem,
@@ -24,6 +26,8 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings
+from core.config.settings_manager import SettingsManager
+from core.i18n import tr
 from core.milestone.checker import MilestoneChecker
 from core.milestone.definitions import MilestoneDefinitions
 from core.roster.korean_names import (
@@ -40,79 +44,102 @@ from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.table_widgets import TablePanel
 from gui.widgets.edit_milestone_record_dialog import EditMilestoneRecordDialog
 from gui.widgets.manual_milestone_dialog import ManualMilestoneDialog
-from gui.ui_compact import hint_style
+from gui.widgets.milestone_dialog import MilestoneAchievedDialog
+from gui.widgets.card_panel import CardPanel, section_label
+from gui.theme import AMBER_TEXT, TEXT_SECONDARY, hint_style, meta_panel_style
+from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
 
-_TABLE_COLUMNS = [
-    "날짜",
-    "선수 이름",
-    "선수 이름(한글)",
-    "소속팀",
-    "내용",
-    "경기수",
-    "상대팀",
-    "상대선수",
-    "설명",
-    "비고",
-]
+def _table_columns() -> list[str]:
+    return [
+        tr("Date"),
+        tr("Player Name"),
+        tr("Player Name (Korean)"),
+        tr("Team"),
+        tr("Milestone"),
+        tr("Games"),
+        tr("Opponent"),
+        tr("Opp. Player"),
+        tr("Description"),
+        tr("Notes"),
+    ]
 
 
 class MilestoneView(QWidget):
     records_changed = pyqtSignal()
+    import_finished = pyqtSignal(str)
 
     def __init__(
         self,
         aggregator: Aggregator,
         milestones: MilestoneDefinitions,
         settings: AppSettings,
+        settings_manager: SettingsManager | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.aggregator = aggregator
         self.milestones = milestones
         self.settings = settings
+        self.settings_manager = settings_manager or SettingsManager()
+        self._import_worker: ImportWorker | None = None
         self._records: list[dict] = []
         self._highlight_id: int | None = None
 
         self.banner = ErrorBanner(self)
 
+        self.import_button = QPushButton(tr("📥  Import Boxscores"))
+        self.import_button.setObjectName("primaryButton")
+        self.import_button.clicked.connect(self.start_import)
+        self.mlb_only_checkbox = QCheckBox(tr("MLB Only"))
+        self.mlb_only_checkbox.setChecked(self.settings.import_mlb_only)
+        self.mlb_only_checkbox.setToolTip(tr("Imports Major League boxscores only. KBO, WBC, etc. are skipped."))
+        self.mlb_only_checkbox.toggled.connect(self._on_mlb_only_toggled)
+        self.progress_label = QLabel("")
+        self.progress_label.setVisible(False)
+        self.progress_label.setStyleSheet(hint_style(TEXT_SECONDARY))
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        self.progress_bar.setMinimumWidth(120)
+        self.progress_bar.setMaximumWidth(260)
+
         self.subject_combo = QComboBox()
-        self.subject_combo.addItem("전체", "all")
-        self.subject_combo.addItem("개인만", "personal")
-        self.subject_combo.addItem("팀만", "team")
+        self.subject_combo.addItem(tr("All (subject)"), "all")
+        self.subject_combo.addItem(tr("Personal Only"), "personal")
+        self.subject_combo.addItem(tr("Team Only"), "team")
         self.subject_combo.currentIndexChanged.connect(self.refresh)
 
         self.team_filter = QComboBox()
-        self.team_filter.addItem("팀 전체", "")
+        self.team_filter.addItem(tr("All Teams"), "")
         self._reload_team_filter()
         self.team_filter.currentIndexChanged.connect(self.refresh)
 
         self.scope_combo = QComboBox()
-        self.scope_combo.addItem("전체 scope", "")
-        self.scope_combo.addItem("경기", "game")
-        self.scope_combo.addItem("시즌", "season")
-        self.scope_combo.addItem("통산", "career")
-        self.scope_combo.addItem("팀 경기", "team_game")
-        self.scope_combo.addItem("팀 시즌", "team_season")
-        self.scope_combo.addItem("연속기록", "streak")
+        self.scope_combo.addItem(tr("All Scopes"), "")
+        self.scope_combo.addItem(tr("Game"), "game")
+        self.scope_combo.addItem(tr("Season"), "season")
+        self.scope_combo.addItem(tr("Career"), "career")
+        self.scope_combo.addItem(tr("Team Game"), "team_game")
+        self.scope_combo.addItem(tr("Team Season"), "team_season")
+        self.scope_combo.addItem(tr("Streak"), "streak")
         self.scope_combo.currentIndexChanged.connect(self.refresh)
 
         self.season_spin = QSpinBox()
         self.season_spin.setRange(1900, 2100)
-        self.season_spin.setSpecialValueText("전체")
+        self.season_spin.setSpecialValueText(tr("All"))
         self.season_spin.setMinimum(0)
         self.season_spin.setValue(0)
         self.season_spin.valueChanged.connect(self.refresh)
 
         self.table_panel = TablePanel(
-            _TABLE_COLUMNS,
-            placeholder="선수·팀 또는 마일스톤 검색...",
+            _table_columns(),
+            placeholder=tr("Search player, team, or milestone..."),
         )
         self.table_panel.filter_bar.search_input.textChanged.connect(self.refresh)
 
         self.meta_label = QLabel("")
         self.meta_label.setWordWrap(True)
-        self.meta_label.setStyleSheet(f"padding: 6px; {hint_style()}")
-        self.game_log_button = QPushButton("게임 로그 열기")
+        self.meta_label.setStyleSheet(meta_panel_style())
+        self.game_log_button = QPushButton(tr("🌐 Open Game Log"))
         self.game_log_button.setEnabled(False)
         self.game_log_button.clicked.connect(self._open_selected_game_log)
 
@@ -122,13 +149,14 @@ class MilestoneView(QWidget):
         self.log_hint_panel.setMaximumHeight(100)
         self.log_hint_panel.hide()
 
-        self.refresh_button = QPushButton("새로고침")
-        self.export_button = QPushButton("CSV로 보내기")
-        self.export_streak_button = QPushButton("연속기록 내보내기")
-        self.manual_button = QPushButton("수동 입력")
-        self.season_ratio_button = QPushButton("시즌 비율 마일스톤 기록")
-        self.edit_button = QPushButton("수정")
-        self.delete_button = QPushButton("삭제")
+        self.refresh_button = QPushButton(tr("Refresh"))
+        self.export_button = QPushButton(tr("Export to CSV"))
+        self.export_streak_button = QPushButton(tr("Export Streak"))
+        self.manual_button = QPushButton(tr("➕ Manual Entry"))
+        self.manual_button.setObjectName("primaryButton")
+        self.season_ratio_button = QPushButton(tr("Record Season Ratio Milestones"))
+        self.edit_button = QPushButton(tr("Edit"))
+        self.delete_button = QPushButton(tr("Delete"))
         self.refresh_button.clicked.connect(self.refresh)
         self.export_button.clicked.connect(self.export_history_csv)
         self.export_streak_button.clicked.connect(self.export_streak_csvs)
@@ -142,39 +170,65 @@ class MilestoneView(QWidget):
         self._edit_shortcut.activated.connect(self._edit_selected_record)
 
         filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel("대상:"))
+        filter_row.setSpacing(10)
+        filter_row.addWidget(section_label(tr("Subject")))
         filter_row.addWidget(self.subject_combo)
-        filter_row.addWidget(QLabel("팀:"))
+        self.subject_combo.setMaximumWidth(88)
+        filter_row.addWidget(section_label(tr("Team")))
         filter_row.addWidget(self.team_filter)
-        filter_row.addWidget(QLabel("scope:"))
+        self.team_filter.setMinimumWidth(100)
+        self.team_filter.setMaximumWidth(150)
+        filter_row.addWidget(section_label("SCOPE"))
         filter_row.addWidget(self.scope_combo)
-        filter_row.addWidget(QLabel("시즌:"))
+        self.scope_combo.setMaximumWidth(120)
+        filter_row.addWidget(section_label(tr("Season")))
         filter_row.addWidget(self.season_spin)
-        filter_row.addStretch()
+        self.season_spin.setMaximumWidth(72)
+        filter_row.addWidget(section_label(tr("Search")))
+        filter_row.addWidget(self.table_panel.filter_bar.search_input, stretch=1)
 
         action_row = QHBoxLayout()
+        action_row.setSpacing(6)
+        action_row.addWidget(self.import_button)
+        action_row.addWidget(self.mlb_only_checkbox)
+        action_row.addWidget(self.progress_label)
+        action_row.addWidget(self.progress_bar)
+        action_row.addSpacing(28)
+        action_row.addWidget(self.manual_button)
+        action_row.addWidget(self.season_ratio_button)
+        action_row.addStretch()
         action_row.addWidget(self.refresh_button)
         action_row.addWidget(self.export_button)
         action_row.addWidget(self.export_streak_button)
-        action_row.addWidget(self.manual_button)
-        action_row.addWidget(self.season_ratio_button)
         action_row.addWidget(self.edit_button)
         action_row.addWidget(self.delete_button)
-        action_row.addStretch()
-        action_row.addWidget(QLabel("F2: 수정 · 더블클릭: 게임 로그"))
+
+        hint = QLabel(tr("F2: Edit · Double-click: Game Log"))
+        hint.setObjectName("mutedLabel")
+
+        filter_card = CardPanel()
+        filter_card.content_layout.addLayout(filter_row)
+        filter_card.content_layout.addLayout(action_row)
+        filter_card.content_layout.addWidget(hint)
+
+        table_card = CardPanel(tr("Milestone History"))
+        table_card.add_widget(self.table_panel.table)
 
         meta_row = QHBoxLayout()
         meta_row.addWidget(self.meta_label, stretch=1)
         meta_row.addWidget(self.game_log_button)
+        self.meta_card = CardPanel()
+        self.meta_card.content_layout.addLayout(meta_row)
+        self.meta_card.setVisible(False)
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(4)
+        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.banner)
-        layout.addLayout(filter_row)
-        layout.addLayout(action_row)
-        layout.addWidget(self.table_panel, stretch=1)
+        layout.addWidget(filter_card)
+        layout.addWidget(table_card, stretch=1)
         layout.addWidget(self.log_hint_panel)
-        layout.addLayout(meta_row)
+        layout.addWidget(self.meta_card)
 
         self._selected_record_id: int | None = None
         self.refresh()
@@ -183,7 +237,7 @@ class MilestoneView(QWidget):
         current = self.team_filter.currentData()
         self.team_filter.blockSignals(True)
         self.team_filter.clear()
-        self.team_filter.addItem("팀 전체", "")
+        self.team_filter.addItem(tr("All Teams"), "")
         names = expand_tracked_teams(
             self.settings.tracked_teams, self.settings.custom_mlb_teams
         )
@@ -200,6 +254,102 @@ class MilestoneView(QWidget):
             if kind == "all":
                 self._reload_team_filter()
             self.refresh()
+
+    def _on_mlb_only_toggled(self, checked: bool) -> None:
+        self.settings.import_mlb_only = checked
+        self.settings_manager.save(self.settings)
+
+    def start_import(self) -> None:
+        self.settings.import_mlb_only = self.mlb_only_checkbox.isChecked()
+        boxscore_dir = self.settings.boxscore_dir
+        if not boxscore_dir:
+            self.banner.show_warning(tr("Boxscore folder not configured. Select a league in Settings."))
+            return
+
+        self.import_button.setEnabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_label.setVisible(True)
+        self.progress_bar.setValue(0)
+
+        since_mtime = self.settings_manager.get_last_boxscore_import_at(
+            self.settings, boxscore_dir
+        )
+        self._import_worker = ImportWorker(
+            self.aggregator.db_path,
+            self.settings_manager,
+            self.milestones,
+            self.settings,
+            boxscore_dir,
+            self.settings.current_season,
+            since_mtime=since_mtime,
+            parent=self,
+        )
+        self._import_worker.progress.connect(self._on_import_progress)
+        self._import_worker.finished.connect(self._on_import_finished)
+        self._import_worker.error.connect(self._on_import_error)
+        self._import_worker.start()
+
+    def _on_import_progress(
+        self, current: int, total: int, filename: str, phase: str = "import"
+    ) -> None:
+        self.progress_bar.setMaximum(max(total, 1))
+        self.progress_bar.setValue(current)
+        if phase == "milestone":
+            self.progress_label.setText(
+                tr("Checking milestones... ({current}/{total}) {filename}").format(
+                    current=current, total=total, filename=filename
+                )
+            )
+        elif phase == "streak":
+            self.progress_label.setText(
+                tr("Checking streaks... ({current}/{total}) {filename}").format(
+                    current=current, total=total, filename=filename
+                )
+            )
+        else:
+            self.progress_label.setText(
+                tr("Importing boxscores... ({current}/{total}) {filename}").format(
+                    current=current, total=total, filename=filename
+                )
+            )
+
+    def _on_import_finished(self, payload: ImportFinishedPayload) -> None:
+        self.import_button.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        self.progress_label.setVisible(False)
+
+        result = payload.batch
+        parts = [tr("{count} games added").format(count=result.imported)]
+        if result.skipped_non_mlb:
+            parts.append(tr("{count} non-MLB skipped").format(count=result.skipped_non_mlb))
+        if payload.milestones_recorded:
+            parts.append(tr("{count} milestones achieved").format(count=payload.milestones_recorded))
+        message = " · ".join(parts)
+        self.import_finished.emit(message)
+        self.refresh()
+
+        if result.errors:
+            self.banner.show_warning(
+                tr("Some errors: {count} — ").format(count=len(result.errors))
+                + (result.errors[0].error if result.errors else "")
+            )
+        elif result.imported == 0 and not payload.milestones:
+            self.banner.show_info(message or tr("No new games"))
+        elif payload.milestones:
+            box = QMessageBox(self)
+            box.setWindowTitle(tr("Import Complete"))
+            box.setText(message)
+            detail_button = box.addButton(tr("Details"), QMessageBox.ButtonRole.ActionRole)
+            box.addButton(QMessageBox.StandardButton.Ok)
+            box.exec()
+            if box.clickedButton() == detail_button:
+                MilestoneAchievedDialog(payload.milestones, self).exec()
+
+    def _on_import_error(self, message: str) -> None:
+        self.import_button.setEnabled(True)
+        self.progress_bar.setVisible(False)
+        self.progress_label.setVisible(False)
+        self.banner.show_error(tr("Import failed: {message}").format(message=message))
 
     def refresh(self) -> None:
         checker = MilestoneChecker(
@@ -270,9 +420,9 @@ class MilestoneView(QWidget):
                 if record_id is not None:
                     item.setData(Qt.ItemDataRole.UserRole, int(record_id))
                 if bool(record.get("is_manual")) and col_idx == 4:
-                    item.setForeground(QColor("#b45309"))
+                    item.setForeground(QColor(AMBER_TEXT))
                 if self._highlight_id is not None and record.get("id") == self._highlight_id:
-                    item.setBackground(QColor("#FDE68A"))
+                    item.setBackground(QColor("#3a2f00"))
                 self.table_panel.table.setItem(row_idx, col_idx, item)
         self.table_panel.table.setSortingEnabled(True)
         if self._highlight_id is not None:
@@ -289,8 +439,8 @@ class MilestoneView(QWidget):
     def export_history_csv(self) -> None:
         confirm = QMessageBox.question(
             self,
-            "마일스톤 이력보내기",
-            "전체 마일스톤 이력을보냅니다 (현재 필터와 무관).\n계속하시겠습니까?",
+            tr("Export Milestone History"),
+            tr("Exports the full milestone history (regardless of current filter).\nDo you want to continue?"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm != QMessageBox.StandardButton.Yes:
@@ -298,7 +448,7 @@ class MilestoneView(QWidget):
 
         filepath, _ = QFileDialog.getSaveFileName(
             self,
-            "마일스톤 이력보내기",
+            tr("Export Milestone History"),
             f"milestone_history_{datetime.now():%Y%m%d}.csv",
             "CSV Files (*.csv)",
         )
@@ -313,7 +463,7 @@ class MilestoneView(QWidget):
         records = self.aggregator.get_all_milestone_records_export()
         with open(filepath, "w", newline="", encoding="utf-8-sig") as handle:
             writer = csv.writer(handle)
-            writer.writerow(_TABLE_COLUMNS)
+            writer.writerow(_table_columns())
             for record in records:
                 is_team = int(record.get("player_id") or 0) == 0 and bool(record.get("team"))
                 display_name = (
@@ -351,7 +501,7 @@ class MilestoneView(QWidget):
                         record.get("notes") or "",
                     ]
                 )
-        self.banner.show_info(f"보내기 완료: {filepath}")
+        self.banner.show_info(tr("Export complete: {filepath}").format(filepath=filepath))
 
     def export_streak_csvs(self) -> None:
         season = self.season_spin.value() or self.settings.current_season
@@ -365,7 +515,7 @@ class MilestoneView(QWidget):
 
         output_dir = QFileDialog.getExistingDirectory(
             self,
-            f"연속기록 내보내기 ({season}시즌)",
+            tr("Export Streak Records ({season} season)").format(season=season),
             default_dir,
         )
         if not output_dir:
@@ -374,12 +524,14 @@ class MilestoneView(QWidget):
         try:
             result = write_streak_csv_bundle(self.aggregator, output_dir, season)
         except OSError as exc:
-            self.banner.show_error(f"연속기록 내보내기 실패: {exc}")
+            self.banner.show_error(tr("Streak export failed: {error}").format(error=exc))
             return
 
         file_list = "\n".join(f"  · {path.name}" for path in result.files)
         self.banner.show_info(
-            f"{season}시즌 연속기록 CSV {len(result.files)}개를 저장했습니다.\n{output_dir}\n{file_list}"
+            tr("{season} season — {count} streak CSV file(s) saved.\n{dir}\n{files}").format(
+                season=season, count=len(result.files), dir=output_dir, files=file_list
+            )
         )
 
     def _open_manual_dialog(self) -> None:
@@ -398,16 +550,17 @@ class MilestoneView(QWidget):
         if season <= 0:
             QMessageBox.information(
                 self,
-                "시즌 선택",
-                "시즌 필터에서 연도를 선택한 뒤 다시 시도하세요.",
+                tr("Select Season"),
+                tr("Please select a season year in the season filter and try again."),
             )
             return
         confirm = QMessageBox.question(
             self,
-            "시즌 비율 마일스톤 기록",
-            f"{season}시즌 타율·출루율·장타율·OPS·ERA 마일스톤을 "
-            "현재 DB 기준으로 기록합니다.\n\n"
-            "시즌이 끝난 뒤 한 번 실행하는 것을 권장합니다. 계속하시겠습니까?",
+            tr("Record Season Ratio Milestones"),
+            tr(
+                "Records AVG/OBP/SLG/OPS/ERA milestones for {season} season based on current DB.\n\n"
+                "Recommended to run once after the season ends. Continue?"
+            ).format(season=season),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm != QMessageBox.StandardButton.Yes:
@@ -423,8 +576,14 @@ class MilestoneView(QWidget):
         achievements = checker.check_season_ratios(season)
         recorded = checker.record_achievements(achievements)
         self.banner.show_info(
-            f"{season}시즌 비율 마일스톤 {recorded}건 기록"
-            + (f" (달성 후보 {len(achievements)}건)" if achievements else "")
+            tr("{season} season — {count} ratio milestone(s) recorded").format(
+                season=season, count=recorded
+            )
+            + (
+                tr(" ({count} candidates)").format(count=len(achievements))
+                if achievements
+                else ""
+            )
         )
         self.refresh()
         self.records_changed.emit()
@@ -448,7 +607,7 @@ class MilestoneView(QWidget):
     def _edit_selected_record(self) -> None:
         record_id = self._selected_record_id_from_table()
         if record_id is None:
-            QMessageBox.information(self, "수정", "수정할 기록을 선택하세요.")
+            QMessageBox.information(self, tr("Edit"), tr("Please select a record to edit."))
             return
         try:
             dialog = EditMilestoneRecordDialog(
@@ -458,7 +617,7 @@ class MilestoneView(QWidget):
                 parent=self,
             )
         except ValueError:
-            QMessageBox.warning(self, "수정", "선택한 기록을 찾을 수 없습니다.")
+            QMessageBox.warning(self, tr("Edit"), tr("The selected record could not be found."))
             self.refresh()
             return
         if dialog.exec():
@@ -469,7 +628,7 @@ class MilestoneView(QWidget):
     def _delete_selected_record(self) -> None:
         record = self._selected_record()
         if record is None:
-            QMessageBox.information(self, "삭제", "삭제할 기록을 선택하세요.")
+            QMessageBox.information(self, tr("Delete"), tr("Please select a record to delete."))
             return
         milestone = self.milestones.get_by_key(str(record["milestone_key"]))
         label = (
@@ -481,17 +640,19 @@ class MilestoneView(QWidget):
         target = str(record["team"]) if is_team else str(record.get("player_name", ""))
         confirm = QMessageBox.question(
             self,
-            "마일스톤 기록 삭제",
-            f"다음 기록을 삭제하시겠습니까?\n\n{target} · {label}\n{record.get('achieved_date', '')}",
+            tr("Delete Milestone Record"),
+            tr("Delete the following record?\n\n{target} · {label}\n{date}").format(
+                target=target, label=label, date=record.get("achieved_date", "")
+            ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
         record_id = int(record["id"])
         if not self.aggregator.delete_milestone_record(record_id):
-            QMessageBox.warning(self, "삭제", "기록을 삭제하지 못했습니다.")
+            QMessageBox.warning(self, tr("Delete"), tr("Failed to delete the record."))
             return
-        self.banner.show_info("마일스톤 기록을 삭제했습니다.")
+        self.banner.show_info(tr("Milestone record deleted."))
         self.refresh()
         self.records_changed.emit()
 
@@ -502,19 +663,21 @@ class MilestoneView(QWidget):
             self.meta_label.setText("")
             self.game_log_button.setEnabled(False)
             self.log_hint_panel.hide()
+            self.meta_card.setVisible(False)
             return
+        self.meta_card.setVisible(True)
         self._selected_record_id = int(record["id"])
         parts: list[str] = []
         if record.get("scope"):
             parts.append(f"scope: {record['scope']}")
         if record.get("achieved_value") is not None:
-            parts.append(f"달성 수치: {record['achieved_value']}")
+            parts.append(tr("Value: {value}").format(value=record["achieved_value"]))
         if record.get("season"):
-            parts.append(f"시즌: {record['season']}")
+            parts.append(tr("Season: {season}").format(season=record["season"]))
         if record.get("game_id"):
-            parts.append(f"경기 ID: {record['game_id']}")
+            parts.append(tr("Game ID: {game_id}").format(game_id=record["game_id"]))
         if record.get("is_manual"):
-            parts.append("수동 입력")
+            parts.append(tr("Manual entry"))
         self.meta_label.setText(" · ".join(parts))
         self.game_log_button.setEnabled(bool(record.get("game_id")))
         self._update_log_hint_panel(record)
@@ -530,27 +693,27 @@ class MilestoneView(QWidget):
             return
         logs_dir = self.settings.game_logs_dir
         if not logs_dir:
-            self.log_hint_panel.setPlainText("게임 로그 경로가 설정되지 않았습니다.")
+            self.log_hint_panel.setPlainText(tr("Game log directory is not configured."))
             self.log_hint_panel.show()
             return
         log_path = Path(logs_dir) / f"log_{game_id}.html"
         if not log_path.is_file():
-            self.log_hint_panel.setPlainText("게임 로그 파일을 찾을 수 없습니다.")
+            self.log_hint_panel.setPlainText(tr("Game log file not found."))
             self.log_hint_panel.show()
             return
         try:
             entries = extract_player_at_bats(log_path, int(player_id))
         except Exception:
-            self.log_hint_panel.setPlainText("게임 로그를 읽을 수 없습니다.")
+            self.log_hint_panel.setPlainText(tr("Could not read game log."))
             self.log_hint_panel.show()
             return
         if not entries:
-            self.log_hint_panel.setPlainText("해당 선수의 타석 기록이 게임 로그에 없습니다.")
+            self.log_hint_panel.setPlainText(tr("No at-bat records for this player in the game log."))
             self.log_hint_panel.show()
             return
         lines = [
-            "게임 로그 참고 (자동 작성 아님 — 참고용)",
-            "※ 위 내용을 참고해 「설명」을 직접 입력하세요.",
+            tr("Game Log Reference (not auto-filled — for reference only)"),
+            tr("※ Use this as reference when entering the Description field manually."),
             "",
         ]
         for entry in entries:
@@ -578,20 +741,20 @@ class MilestoneView(QWidget):
         if not game_id:
             QMessageBox.information(
                 self,
-                "게임 로그",
-                "수동 입력 기록에는 연결된 경기가 없습니다.",
+                tr("Game Log"),
+                tr("No linked game for this manually entered record."),
             )
             return
         logs_dir = self.settings.game_logs_dir
         if not logs_dir:
-            QMessageBox.information(self, "게임 로그", "게임 로그 경로가 설정되지 않았습니다.")
+            QMessageBox.information(self, tr("Game Log"), tr("Game log directory is not configured."))
             return
         log_path = Path(logs_dir) / f"log_{game_id}.html"
         if not log_path.is_file():
             QMessageBox.information(
                 self,
-                "게임 로그",
-                f"파일을 찾을 수 없습니다:\n{log_path}",
+                tr("Game Log"),
+                tr("File not found:\n{path}").format(path=log_path),
             )
             return
         webbrowser.open(log_path.resolve().as_uri())

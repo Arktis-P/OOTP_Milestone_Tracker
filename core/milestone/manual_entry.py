@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Literal
 
+from core.i18n import tr
 from core.milestone.definitions import MilestoneDefinition
 
 TargetKind = Literal["player", "team"]
@@ -65,10 +66,10 @@ class TransferPlayerRecord:
 
 
 TRANSFER_EVENT_LABELS: dict[str, str] = {
-    "fa_contract": "FA 계약",
-    "extension_contract": "연장 계약",
-    "trade": "트레이드",
-    "player_purchase": "선수 구매",
+    "fa_contract": "FA Contract",
+    "extension_contract": "Extension Contract",
+    "trade": "Trade",
+    "player_purchase": "Player Purchase",
 }
 
 
@@ -153,19 +154,19 @@ def validate_manual_entry(
 ) -> list[str]:
     errors: list[str] = []
     if milestone is None:
-        errors.append("마일스톤을 선택하세요.")
+        errors.append(tr("Please select a milestone."))
         return errors
 
     if form.target == "player" and not form.player_id:
-        errors.append("선수를 선택하세요.")
+        errors.append(tr("Please select a player."))
     if form.target == "team" and not (form.team or "").strip():
-        errors.append("팀을 선택하세요.")
+        errors.append(tr("Please select a team."))
 
     scope = milestone.scope
     if scope_needs_season(scope) and form.season is None:
-        errors.append("시즌을 입력하세요.")
+        errors.append(tr("Please enter a season."))
     if scope_needs_games_at_achievement(scope) and form.games_at_achievement is None:
-        errors.append("동안 경기수를 입력하세요.")
+        errors.append(tr("Please enter games at achievement."))
 
     return errors
 
@@ -173,24 +174,24 @@ def validate_manual_entry(
 def validate_manual_transfer(form: ManualTransferFormData) -> list[str]:
     errors: list[str] = []
     if form.event_type not in TRANSFER_EVENT_LABELS:
-        errors.append("이적 유형을 선택하세요.")
+        errors.append(tr("Please select a transfer type."))
     joining = parse_player_name_list(form.joining_players)
     leaving = parse_player_name_list(form.leaving_players)
     if not joining and not leaving:
-        errors.append("합류 또는 이탈 선수를 입력하세요.")
+        errors.append(tr("Please enter joining or leaving players."))
     if not form.join_team.strip():
-        errors.append("합류팀을 입력하세요.")
+        errors.append(tr("Please enter the joining team."))
     return errors
 
 
 def validate_manual_injury(form: ManualInjuryFormData) -> list[str]:
     errors: list[str] = []
     if not parse_player_name_list(form.player_name):
-        errors.append("선수를 입력하세요.")
+        errors.append(tr("Please enter a player."))
     if not form.injury_label.strip():
-        errors.append("부상 내용을 입력하세요.")
+        errors.append(tr("Please enter the injury."))
     if not form.team.strip():
-        errors.append("소속팀을 입력하세요.")
+        errors.append(tr("Please enter the affiliated team."))
     return errors
 
 
@@ -274,7 +275,7 @@ def resolve_transfer_players(
             continue
         player_id = resolve_player_id(conn, name)
         if player_id is None:
-            errors.append(f"선수를 찾을 수 없습니다: {name}")
+            errors.append(tr("Player not found: {name}").format(name=name))
         else:
             ids.append(player_id)
     return ids, errors
@@ -432,7 +433,7 @@ def build_transfer_records(
             )
         return records, []
 
-    return [], ["지원하지 않는 이적 유형입니다."]
+    return [], [tr("Unsupported transfer type.")]
 
 
 def check_duplicate(
@@ -452,7 +453,7 @@ def check_duplicate(
             (form.player_id, milestone.key),
         ).fetchone()
         if row:
-            return "warn", "이미 기록된 통산 마일스톤입니다."
+            return "warn", tr("Already recorded career milestone.")
 
     if scope in ("season", "season_ratio") and form.target == "player":
         row = conn.execute(
@@ -463,7 +464,7 @@ def check_duplicate(
             (form.player_id, milestone.key, form.season),
         ).fetchone()
         if row:
-            return "warn", "이미 해당 시즌에 기록된 마일스톤입니다."
+            return "warn", tr("Already recorded for this season.")
 
     if scope in ("team_season", "team_manual") and form.target == "team":
         row = conn.execute(
@@ -474,7 +475,7 @@ def check_duplicate(
             (form.team, milestone.key, form.season),
         ).fetchone()
         if row:
-            return "warn", "이미 해당 시즌에 기록된 팀 마일스톤입니다."
+            return "warn", tr("Already recorded team milestone for this season.")
 
     if scope in ("game", "team_game"):
         if form.target == "player":
@@ -494,6 +495,6 @@ def check_duplicate(
                 (form.team, milestone.key, achieved_date),
             ).fetchone()
         if row:
-            return "warn", "이미 같은 날짜에 동일 항목이 있습니다."
+            return "warn", tr("Already recorded on the same date.")
 
     return "none", ""

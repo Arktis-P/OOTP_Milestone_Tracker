@@ -9,16 +9,24 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
+    QHBoxLayout,
+    QLabel,
     QMainWindow,
+    QPushButton,
+    QRadioButton,
+    QStackedWidget,
     QStatusBar,
-    QTabWidget,
     QVBoxLayout,
+    QWidget,
 )
 
 from core.config import AppSettings, SettingsManager, get_bundle_root, resolve_data_path
+from core.i18n import tr
 from core.db.validation import format_overlap_warning, validate_no_overlap
 from core.milestone.definitions import load_milestones
 from core.stats.aggregator import Aggregator
+from gui.sidebar_nav import SidebarNav
+from gui.theme import apply_app_theme
 from gui.views.dashboard_view import DashboardView
 from gui.views.initial_import_view import InitialImportView
 from gui.views.milestone_view import MilestoneView
@@ -56,12 +64,30 @@ class MainWindow(QMainWindow):
         self._predict_view: PredictView | None = None
         self._initial_import_view: InitialImportView | None = None
         self._setup_tab: SetupView | None = None
-        self._setup_tab_index: int | None = None
+        self._setup_tab_index: int = SidebarNav.SETUP_PAGE_INDEX
 
-        self._tabs = QTabWidget()
+        self._sidebar = SidebarNav()
+        self._stack = QStackedWidget()
+        self._stack.setObjectName("mainStack")
+
+        shell = QWidget()
+        shell_layout = QHBoxLayout(shell)
+        shell_layout.setContentsMargins(0, 0, 0, 0)
+        shell_layout.setSpacing(0)
+        shell_layout.addWidget(self._sidebar)
+
+        content_wrap = QWidget()
+        content_layout = QVBoxLayout(content_wrap)
+        content_layout.setContentsMargins(12, 12, 12, 12)
+        content_layout.setSpacing(0)
+        content_layout.addWidget(self._stack, stretch=1)
+        shell_layout.addWidget(content_wrap, stretch=1)
+
         self.data_refreshed.connect(self._route_data_refreshed)
-        self._build_tabs()
-        self.setCentralWidget(self._tabs)
+        self._build_pages()
+        self.setCentralWidget(shell)
+
+        self._sidebar.page_changed.connect(self._on_main_page_changed)
 
         self._status = QStatusBar()
         self._update_status_message()
@@ -70,8 +96,13 @@ class MainWindow(QMainWindow):
 
         self._check_overlap_warning()
 
-    def _build_tabs(self) -> None:
-        self._tabs.clear()
+    def _build_pages(self) -> None:
+        while self._stack.count():
+            widget = self._stack.widget(0)
+            self._stack.removeWidget(widget)
+            if widget is not None:
+                widget.deleteLater()
+
         self._dashboard_view = DashboardView(
             self._aggregator,
             self._milestones,
@@ -84,12 +115,16 @@ class MainWindow(QMainWindow):
         self._dashboard_view.navigate_to_initial_import.connect(
             self._navigate_to_initial_import
         )
-        self._tabs.addTab(self._dashboard_view, "대시보드")
+        self._stack.addWidget(self._dashboard_view)
 
         self._milestone_view = MilestoneView(
-            self._aggregator, self._milestones, self.settings
+            self._aggregator,
+            self._milestones,
+            self.settings,
+            self.settings_manager,
         )
-        self._tabs.addTab(self._milestone_view, "마일스톤 기록")
+        self._milestone_view.import_finished.connect(self._on_boxscore_import_finished)
+        self._stack.addWidget(self._milestone_view)
 
         self._stats_view = StatsView(
             self._aggregator,
@@ -98,20 +133,20 @@ class MainWindow(QMainWindow):
             self.settings_manager,
         )
         self._stats_view.import_finished.connect(self._on_boxscore_import_finished)
-        self._tabs.addTab(self._stats_view, "선수 기록")
+        self._stack.addWidget(self._stats_view)
 
         self._predict_view = PredictView(
             self._aggregator, self._milestones, self.settings
         )
-        self._tabs.addTab(self._predict_view, "마일스톤 예측")
+        self._stack.addWidget(self._predict_view)
 
         self._initial_import_view = InitialImportView(
             self._aggregator, self.settings, self.settings_manager
         )
         self._initial_import_view.import_finished.connect(self._on_init_import_finished)
-        self._tabs.addTab(self._initial_import_view, "초기값 설정")
+        self._stack.addWidget(self._initial_import_view)
 
-        self._tabs.addTab(RosterView(self.settings), "레이팅 편집")
+        self._stack.addWidget(RosterView(self.settings))
 
         setup_tab = SetupView(self.settings_manager, self.settings, embedded=True)
         setup_tab.setup_completed.connect(self._on_setup_tab_saved)
@@ -120,17 +155,28 @@ class MainWindow(QMainWindow):
         setup_tab.save_database_reset_prepare.connect(self._prepare_save_database_reset)
         setup_tab.save_database_reset.connect(self._on_save_database_reset)
         setup_tab.boxscore_reimported.connect(self._on_boxscore_reimported)
-        setup_tab.confirm_button.setText("설정 저장")
+        setup_tab.confirm_button.setText(tr("Settings saved"))
+        setup_tab.confirm_button.setObjectName("primaryButton")
         self._setup_tab = setup_tab
-        self._setup_tab_index = self._tabs.count()
-        self._tabs.addTab(setup_tab, "설정")
+        self._stack.addWidget(setup_tab)
 
         self._connect_tab_signals()
-        for index in range(self._tabs.count()):
-            compact_widget(self._tabs.widget(index))
+        for index in range(self._stack.count()):
+            widget = self._stack.widget(index)
+            if widget is not None:
+                compact_widget(widget)
 
-        self._tabs.currentChanged.connect(self._on_main_tab_changed)
+        previous = self._sidebar.current_index()
+        self._sidebar.set_current_index(min(previous, self._stack.count() - 1), emit=False)
+        self._stack.setCurrentIndex(self._sidebar.current_index())
         self._refresh_settings_tab_badge()
+
+    def _set_current_page(self, widget: QWidget) -> None:
+        index = self._stack.indexOf(widget)
+        if index < 0:
+            return
+        self._sidebar.set_current_index(index)
+        self._stack.setCurrentIndex(index)
 
     def _connect_tab_signals(self) -> None:
         if self._milestone_view:
@@ -165,17 +211,17 @@ class MainWindow(QMainWindow):
             record_id = record.get("id") if record else None
             if record_id:
                 self._milestone_view.highlight_record(int(record_id))
-            self._tabs.setCurrentWidget(self._milestone_view)
+            self._set_current_page(self._milestone_view)
 
     def _navigate_to_predict(self, player_id: int, _milestone_key: str) -> None:
         if self._predict_view:
-            self._tabs.setCurrentWidget(self._predict_view)
+            self._set_current_page(self._predict_view)
             pid = player_id if player_id >= 0 else None
             self._predict_view.focus_player(pid, near_only=True)
 
     def _navigate_to_initial_import(self) -> None:
         if self._initial_import_view:
-            self._tabs.setCurrentWidget(self._initial_import_view)
+            self._set_current_page(self._initial_import_view)
 
     def _reload_aggregator(self) -> None:
         target = resolve_data_path(self.settings.db_path)
@@ -233,9 +279,10 @@ class MainWindow(QMainWindow):
     def _apply_settings_changes(self, settings: AppSettings) -> None:
         settings = self.settings_manager.ensure_derived_paths(settings)
         self.settings = settings
-        self._reopen_aggregator_if_needed()
+        self._reload_aggregator()
+        self._sync_view_settings()
         self._update_status_message()
-        self._build_tabs()
+        self._build_pages()
         self.data_refreshed.emit("all")
 
     def _on_setup_tab_saved(self, settings: AppSettings) -> None:
@@ -256,27 +303,22 @@ class MainWindow(QMainWindow):
         self.data_refreshed.emit("all")
         self._refresh_settings_tab_badge()
 
-    def _on_main_tab_changed(self, index: int) -> None:
+    def _on_main_page_changed(self, index: int) -> None:
+        self._stack.setCurrentIndex(index)
         if self._setup_tab is not None and index == self._setup_tab_index:
             self._setup_tab.refresh_bundle_updates_status()
 
     def _refresh_settings_tab_badge(self) -> None:
-        if self._setup_tab_index is None:
-            return
         from core.config.bundle_updates import pending_update_count
-        from gui.badge import red_dot_icon
 
         pending = pending_update_count()
-        tab_bar = self._tabs.tabBar()
         if pending > 0:
-            tab_bar.setTabIcon(self._setup_tab_index, red_dot_icon())
-            self._tabs.setTabToolTip(
-                self._setup_tab_index,
-                f"받을 수 있는 기준 파일 업데이트 {pending}건",
+            self._sidebar.set_setup_badge_visible(
+                True,
+                tr("Bundle update available") + f" ({pending})",
             )
         else:
-            tab_bar.setTabIcon(self._setup_tab_index, QIcon())
-            self._tabs.setTabToolTip(self._setup_tab_index, "")
+            self._sidebar.set_setup_badge_visible(False)
 
     def _on_boxscore_import_finished(self, _message: str) -> None:
         self._update_status_message()
@@ -294,20 +336,26 @@ class MainWindow(QMainWindow):
             self._stats_view.banner.show_warning(format_overlap_warning(overlaps))
 
     def _update_status_message(self) -> None:
-        league = self.settings.active_save or "(리그 미선택)"
+        league = self.settings.active_save or tr("(No league selected)")
         summary = self._aggregator.get_db_summary()
         last_import = self.settings.import_state.get("last_import_at", "")
         last_label = last_import[:10] if last_import else "-"
         teams = (
             ", ".join(self.settings.tracked_teams)
             if self.settings.tracked_teams
-            else "전체"
+            else tr("All")
         )
         self._status.showMessage(
-            f"리그: {league} · 시즌 {self.settings.current_season} · "
-            f"추적팀: {teams} · 마지막 가져오기: {last_label} · "
-            f"DB: {summary['games']}경기 / 선수 {summary['players']}명 "
-            f"(클릭하여 설정)"
+            tr(
+                "League: {league} · Season {season} · Tracked: {teams} · Last import: {last} · DB: {games} games / {players} players (click to configure)"
+            ).format(
+                league=league,
+                season=self.settings.current_season,
+                teams=teams,
+                last=last_label,
+                games=summary["games"],
+                players=summary["players"],
+            )
         )
 
     def _on_status_clicked(self, event) -> None:
@@ -316,23 +364,72 @@ class MainWindow(QMainWindow):
 
     def open_setup_dialog(self) -> None:
         dialog = QDialog(self)
-        dialog.setWindowTitle("리그 설정")
+        dialog.setWindowTitle(tr("League Settings"))
         dialog.resize(*SETUP_WINDOW_SIZE)
 
-        setup = SetupView(self.settings_manager, self.settings, dialog)
-        compact_widget(setup, margin=6, spacing=4)
+        setup = SetupView(self.settings_manager, self.settings, dialog, embedded=True)
         setup.setup_completed.connect(
             lambda updated: self._apply_settings(dialog, updated)
         )
         setup.milestones_changed.connect(self._reload_milestones)
 
         layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(setup)
         dialog.exec()
 
     def _apply_settings(self, dialog: QDialog, settings: AppSettings) -> None:
         self._apply_settings_changes(settings)
         dialog.accept()
+
+
+class _LanguageSelectDialog(QDialog):
+    """Language picker shown before first-run setup."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("OOTP Milestone Tracker")
+        self.setWindowFlags(
+            Qt.WindowType.Dialog
+            | Qt.WindowType.CustomizeWindowHint
+            | Qt.WindowType.WindowTitleHint
+        )
+        self.setFixedWidth(380)
+
+        title = QLabel("OOTP Milestone Tracker")
+        title.setObjectName("pageTitle")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        subtitle = QLabel("언어를 선택하세요  /  Select a language")
+        subtitle.setObjectName("mutedLabel")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._ko_radio = QRadioButton("한국어 (Korean)")
+        self._ko_radio.setChecked(True)
+        self._en_radio = QRadioButton("English")
+
+        btn_ok = QPushButton("계속  /  Continue")
+        btn_ok.setObjectName("primaryButton")
+        btn_ok.setDefault(True)
+        btn_ok.clicked.connect(self.accept)
+
+        radio_col = QVBoxLayout()
+        radio_col.setSpacing(10)
+        radio_col.addWidget(self._ko_radio)
+        radio_col.addWidget(self._en_radio)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(16)
+        layout.setContentsMargins(40, 36, 40, 36)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+        layout.addSpacing(8)
+        layout.addLayout(radio_col)
+        layout.addSpacing(8)
+        layout.addWidget(btn_ok, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    def selected_language(self) -> str:
+        return "en" if self._en_radio.isChecked() else "ko"
 
 
 class _SetupWindow(QMainWindow):
@@ -345,11 +442,12 @@ class _SetupWindow(QMainWindow):
         self.settings_manager = settings_manager
         self._confirmed = False
 
-        self.setWindowTitle("OOTP Milestone Tracker — 설정")
+        self.setWindowTitle(tr("OOTP Milestone Tracker — Settings"))
         self.resize(*SETUP_WINDOW_SIZE)
 
         setup = SetupView(settings_manager, parent=self)
         setup.setup_completed.connect(self._on_completed)
+        setup.confirm_button.setObjectName("primaryButton")
         self.setCentralWidget(setup)
         compact_widget(setup, margin=6, spacing=4)
 
@@ -378,6 +476,7 @@ def run_app() -> None:
 
     ensure_user_data_dir()
     app = QApplication(sys.argv)
+    apply_app_theme(app)
     icon = _load_app_icon()
     if icon is not None:
         app.setWindowIcon(icon)
@@ -394,6 +493,19 @@ def run_app() -> None:
     if settings_manager.is_setup_complete():
         show_main()
     else:
+        first_run_settings = settings_manager.load()
+        if not first_run_settings.language_selected:
+            lang_dlg = _LanguageSelectDialog()
+            if lang_dlg.exec() != QDialog.DialogCode.Accepted:
+                sys.exit(0)
+            chosen = lang_dlg.selected_language()
+            first_run_settings.language = chosen
+            first_run_settings.language_selected = True
+            settings_manager.save(first_run_settings)
+            if chosen != "ko":
+                import subprocess
+                subprocess.Popen([sys.executable] + sys.argv)
+                sys.exit(0)
         setup_window = _SetupWindow(settings_manager)
         setup_window.setup_finished.connect(show_main)
         setup_window.show()

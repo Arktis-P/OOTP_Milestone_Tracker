@@ -10,11 +10,22 @@ dist/
 build/
 *.spec
 
-# DB (로컬 데이터)
-data/records.db
+# SQLite DB (로컬 / 런타임 — dev 콘솔 실행·세이브별 DB)
+data/**/*.db
+data/**/*.db-shm
+data/**/*.db-wal
+data/saves/
 
-# 사용자 설정 (경로 등 로컬 의존)
+# 사용자 설정·로컬 편집 데이터
 data/settings.json
+data/korean_names_pending.csv
+
+# 앱 런타임 상태
+data/bundle_updates_state.json
+data/.legacy_shared_db_migrated
+
+# CSV 임시 쓰기 파일
+data/**/*.tmp
 
 # Local OOTP sample files (not committed)
 samples/

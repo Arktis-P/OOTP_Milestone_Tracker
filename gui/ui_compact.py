@@ -5,7 +5,7 @@ from __future__ import annotations
 from PyQt6.QtWidgets import QLayout, QWidget
 
 # ~70% of the original 1100×720 main window (diagonal ratio).
-MAIN_WINDOW_SIZE = (780, 520)
+MAIN_WINDOW_SIZE = (1000, 680)
 SETUP_WINDOW_SIZE = (560, 440)
 
 # Original dialog design sizes; scale_size() shrinks window chrome only.
@@ -17,7 +17,12 @@ def scale_size(width: int, height: int) -> tuple[int, int]:
 
 
 def hint_style(color: str = "#64748b") -> str:
-    return f"color: {color}; font-size: 12px;"
+    try:
+        from gui.theme import hint_style as _theme_hint
+
+        return _theme_hint(color)
+    except ImportError:
+        return f"color: {color}; font-size: 12px;"
 
 
 def compact_widget(

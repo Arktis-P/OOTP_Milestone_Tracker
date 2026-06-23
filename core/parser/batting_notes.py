@@ -33,6 +33,8 @@ SEASON_ONLY_RE = re.compile(r"^\((\d+)\)\s*,?$")
 NAME_TRAILING_COUNT_RE = re.compile(r"^(.+?)\s+(\d+)\s*$")
 INLINE_OUTSIDE_DETAIL_RE = re.compile(r"^(.+?)\s+(\d+)\s+\((.+)\)\s*,?$")
 INLINE_NAME_DETAIL_RE = re.compile(r"^(.+?)\s+\((.+)\)\s*,?$")
+COUNT_DETAIL_LINE_RE = re.compile(r"^(\d+)\s+\((.+)\)\s*,?$")
+INNING_SEGMENT_RE = re.compile(r"(\d+)(?:st|nd|rd|th)\s+Inning", re.I)
 
 
 @dataclass
@@ -309,6 +311,15 @@ def _split_entry_line(
     if inline_match:
         return inline_match.group(1).strip(), f"({inline_match.group(2)})", 1
 
+    if idx + 1 < len(lines):
+        count_match = COUNT_DETAIL_LINE_RE.match(lines[idx + 1])
+        if count_match and "(" not in line:
+            return (
+                f"{line.strip()} {count_match.group(1)}",
+                f"({count_match.group(2)})",
+                2,
+            )
+
     detail = (
         lines[idx + 1]
         if idx + 1 < len(lines) and lines[idx + 1].startswith("(")
@@ -331,6 +342,7 @@ def _resolve_game_event_count(name_line: str, detail_line: str, field_name: str)
     - ``Name N (season)`` (SB) → N = steals this game, parenthetical = season total
     - ``Name N (season, Xth Inning ...)`` → N = events this game, first paren number = season
     - ``Name (season, Xth Inning ...)`` → one event this game (each listed line is one play)
+    - ``Name`` + next line ``N (season, Xth Inning ...; Yth Inning ...)`` → N events this game
     - ``Name`` comma list (doubles) → one event per name
     """
     outside_match = NAME_TRAILING_COUNT_RE.match(name_line)
@@ -345,11 +357,21 @@ def _resolve_game_event_count(name_line: str, detail_line: str, field_name: str)
             return outside_count if outside_count is not None else 1
         return outside_count or 1
 
-    if INNING_DETAIL_RE.search(detail_line):
-        return outside_count if outside_count is not None else 1
+    if INNING_DETAIL_RE.search(detail_line) or INNING_SEGMENT_RE.search(detail_line):
+        if outside_count is not None:
+            return outside_count
+        segments = _inning_segments_in_detail(detail_line)
+        return segments if segments > 0 else 1
 
     paren_match = re.match(r"\((\d+)", detail_line)
     if paren_match:
         return outside_count if outside_count is not None else 1
 
     return outside_count or 1
+
+
+def _inning_segments_in_detail(detail_line: str) -> int:
+    inner = detail_line.strip()
+    if inner.startswith("(") and inner.endswith(")"):
+        inner = inner[1:-1]
+    return len(INNING_SEGMENT_RE.findall(inner))

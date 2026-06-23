@@ -8,13 +8,18 @@ from pathlib import Path
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from core.config.settings_manager import AppSettings, SettingsManager
+from core.db.meta import get_meta, set_meta
 from core.milestone.checker import MilestoneAchievement, MilestoneChecker
 from core.milestone.prediction_store import PredictionStore
 from core.milestone.definitions import MilestoneDefinitions
+from core.i18n import tr
 from core.roster.korean_names import note_players_from_boxscore_import
 from core.streak.tracker import StreakTracker
 from core.stats.aggregator import Aggregator
 from core.stats.models import BatchImportResult
+
+
+BATTING_NOTES_MULTI_INNING_META = "batting_notes_multi_inning_v1"
 
 
 @dataclass
@@ -63,6 +68,23 @@ class ImportWorker(QThread):
                         cur, total, name, "import"
                     ),
                 )
+                game_ids_for_milestones = list(result.imported_game_ids)
+                game_ids_for_milestones.extend(result.refreshed_game_ids)
+                if (
+                    get_meta(aggregator.conn, BATTING_NOTES_MULTI_INNING_META) != "1"
+                    and self.boxscore_dir
+                ):
+                    self.progress.emit(0, 1, tr("Re-parsing BATTING notes"), "import")
+                    backfilled = aggregator.refresh_all_batting_events_from_dir(
+                        self.boxscore_dir,
+                        self.season,
+                        mlb_only=self.settings.import_mlb_only,
+                    )
+                    game_ids_for_milestones.extend(backfilled)
+                    set_meta(
+                        aggregator.conn, BATTING_NOTES_MULTI_INNING_META, "1"
+                    )
+                game_ids_for_milestones = sorted(set(game_ids_for_milestones))
                 checker = MilestoneChecker(
                     aggregator,
                     self.milestones,
@@ -72,9 +94,9 @@ class ImportWorker(QThread):
                     custom_teams=self.settings.custom_mlb_teams,
                 )
                 achievements: list[MilestoneAchievement] = []
-                if result.imported_game_ids:
+                if game_ids_for_milestones:
                     achievements = checker.check_new_games(
-                        result.imported_game_ids,
+                        game_ids_for_milestones,
                         self.season,
                         progress_callback=lambda cur, total, name: self.progress.emit(
                             cur, total, name, "milestone"
@@ -86,14 +108,14 @@ class ImportWorker(QThread):
                 )
 
                 streak_recorded = 0
-                if result.imported_game_ids:
+                if game_ids_for_milestones:
                     streak_tracker = StreakTracker(
                         aggregator,
                         tracked_teams=self.settings.tracked_teams,
                         custom_teams=self.settings.custom_mlb_teams,
                     )
                     streak_events = streak_tracker.process_new_games(
-                        result.imported_game_ids,
+                        game_ids_for_milestones,
                         self.season,
                         progress_callback=lambda cur, total, name: self.progress.emit(
                             cur, total, name, "streak"
@@ -102,7 +124,7 @@ class ImportWorker(QThread):
                     streak_recorded = len(streak_events)
                     aggregator.conn.commit()
 
-                if result.imported_game_ids:
+                if game_ids_for_milestones:
                     PredictionStore(
                         aggregator,
                         self.milestones,
@@ -110,16 +132,15 @@ class ImportWorker(QThread):
                         season_games_total=self.settings.season_games_total,
                         tracked_teams=self.settings.tracked_teams,
                         custom_teams=self.settings.custom_mlb_teams,
-                    ).update_after_import(result.imported_game_ids)
-                    if self.settings.import_mlb_only:
-                        note_players_from_boxscore_import(
-                            aggregator,
-                            result.imported_game_ids,
-                            import_export_dir=(
-                                self.settings.import_export_dir
-                                or self.settings.initial_stats_dir
-                            ),
-                        )
+                    ).update_after_import(game_ids_for_milestones)
+                    note_players_from_boxscore_import(
+                        aggregator,
+                        game_ids_for_milestones,
+                        import_export_dir=(
+                            self.settings.import_export_dir
+                            or self.settings.initial_stats_dir
+                        ),
+                    )
 
             settings = self.settings_manager.load()
             updated = self.settings_manager.update_boxscore_import_timestamp(

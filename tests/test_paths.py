@@ -39,7 +39,7 @@ def test_frozen_mode_uses_appdata(monkeypatch, tmp_path: Path) -> None:
     (bundle_data / "settings.json.example").write_text("{}", encoding="utf-8")
     (bundle_data / "korean_last_names.csv").write_text("last_name,korean\n", encoding="utf-8")
     (bundle_data / "korean_first_names.csv").write_text("first_name,korean\n", encoding="utf-8")
-    (bundle_data / "korean_names_pending.csv").write_text(
+    (bundle_data / "korean_names_pending.csv.example").write_text(
         "part,name,source,first_seen\n", encoding="utf-8"
     )
     (bundle_data / "streak_policies.json").write_text('{"batting":{}}\n', encoding="utf-8")
@@ -59,6 +59,9 @@ def test_frozen_mode_uses_appdata(monkeypatch, tmp_path: Path) -> None:
 
     assert (user_dir / "milestones.csv").read_text(encoding="utf-8") == "seed\n"
     assert (user_dir / "streak_policies.json").is_file()
+    assert (user_dir / "korean_names_pending.csv").read_text(encoding="utf-8") == (
+        "part,name,source,first_seen\n"
+    )
     assert resolve_data_path("data/records.db") == user_dir / "records.db"
 
 

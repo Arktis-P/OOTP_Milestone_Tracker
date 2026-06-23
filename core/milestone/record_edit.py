@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from core.i18n import tr
 from core.milestone.manual_entry import parse_flexible_date
 
 
@@ -27,15 +28,15 @@ def validate_record_update(
 ) -> list[str]:
     errors: list[str] = []
     if not update.achieved_date.strip():
-        errors.append("날짜를 입력하세요.")
+        errors.append(tr("Please enter a date."))
     elif parse_flexible_date(update.achieved_date) is None:
         parsed_ok = _is_iso_date(update.achieved_date)
         if not parsed_ok:
-            errors.append("날짜 형식을 확인하세요.")
+            errors.append(tr("Please check date format."))
 
     if scope in ("season", "season_ratio", "team_season", "team_manual"):
         if update.season is None:
-            errors.append("시즌을 입력하세요.")
+            errors.append(tr("Please enter a season."))
 
     return errors
 
@@ -47,7 +48,7 @@ def normalize_achieved_date(text: str) -> str:
     raw = text.strip()
     if _is_iso_date(raw):
         return raw
-    raise ValueError("날짜 형식을 확인하세요")
+    raise ValueError(tr("Please check date format."))
 
 
 def parse_optional_int(text: str) -> int | None:

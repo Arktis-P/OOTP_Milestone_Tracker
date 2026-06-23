@@ -19,6 +19,8 @@
   "initial_stats_dir": "",
   "tracked_teams": [],
   "custom_mlb_teams": {},
+  "language": "ko",
+  "language_selected": false,
   "import_mlb_only": true,
   "season_games_total": 162,
   "ratio_qualifiers": {

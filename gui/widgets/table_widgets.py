@@ -15,10 +15,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from core.i18n import tr
+
+
 class FilterBar(QWidget):
     """Search/filter input bar placed above tables."""
 
-    def __init__(self, placeholder: str = "검색...", parent: QWidget | None = None) -> None:
+    def __init__(self, placeholder: str = tr("Search..."), parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText(placeholder)
@@ -90,7 +93,7 @@ class SortableTable(QTableWidget):
 class TablePanel(QWidget):
     """Filter bar + sortable table combo."""
 
-    def __init__(self, columns: Sequence[str], placeholder: str = "검색...", parent: QWidget | None = None) -> None:
+    def __init__(self, columns: Sequence[str], placeholder: str = tr("Search..."), parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.filter_bar = FilterBar(placeholder)
         self.table = SortableTable(columns)

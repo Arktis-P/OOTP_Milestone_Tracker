@@ -15,9 +15,12 @@ BUNDLE_DATA_FILES = (
     "settings.json.example",
     "korean_last_names.csv",
     "korean_first_names.csv",
-    "korean_names_pending.csv",
+    "korean_names_pending.csv.example",
     "streak_policies.json",
 )
+
+_PENDING_CSV = "korean_names_pending.csv"
+_PENDING_CSV_EXAMPLE = "korean_names_pending.csv.example"
 
 _USER_DATA_READY = False
 
@@ -92,6 +95,14 @@ def ensure_user_data_dir() -> Path:
         src = bundle_data / name
         if src.is_file():
             shutil.copy2(src, dest)
+
+    pending_dest = user_dir / _PENDING_CSV
+    if not pending_dest.is_file():
+        pending_src = user_dir / _PENDING_CSV_EXAMPLE
+        if not pending_src.is_file():
+            pending_src = bundle_data / _PENDING_CSV_EXAMPLE
+        if pending_src.is_file():
+            shutil.copy2(pending_src, pending_dest)
 
     _USER_DATA_READY = True
     return user_dir

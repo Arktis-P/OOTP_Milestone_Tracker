@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path
 
 import pytest
@@ -11,10 +10,10 @@ from core.stats.aggregator import Aggregator
 from core.streak.engine import StreakState, process_pitching_log, update_counter_streak
 from core.streak.game_log import BattingGameLog, PitchingGameLog, pitching_log_from_row
 from core.streak.policies import (
-    ended_label,
-    is_milestone_value as policy_is_milestone,
+    format_streak_description,
     load_streak_policies,
-    ongoing_label,
+    should_record_streak_on_break,
+    streak_record_label,
 )
 from core.streak.tracker import StreakTracker
 
@@ -24,25 +23,46 @@ def policies():
     return load_streak_policies()
 
 
-def test_is_milestone_value_fixed_and_repeat(policies) -> None:
+def test_should_record_streak_on_break_thresholds(policies) -> None:
     hit = policies["batting"]["hit_streak"]
-    assert policy_is_milestone(10, hit)
-    assert policy_is_milestone(20, hit)
-    assert policy_is_milestone(21, hit)
-    assert not policy_is_milestone(9, hit)
+    assert should_record_streak_on_break(10, hit)
+    assert should_record_streak_on_break(23, hit)
+    assert not should_record_streak_on_break(9, hit)
+
+    hr = policies["batting"]["home_run_streak"]
+    assert should_record_streak_on_break(5, hr)
+    assert not should_record_streak_on_break(4, hr)
+
+    innings = policies["pitching"]["scoreless_innings_streak"]
+    assert should_record_streak_on_break(90, innings)
+    assert not should_record_streak_on_break(89, innings)
 
 
-def test_ongoing_and_ended_labels(policies) -> None:
-    assert ongoing_label("hit_streak", 10, policies) == "10경기 연속 안타"
-    assert ended_label("hit_streak", 23, policies) == "23경기 연속 안타 기록 종료"
-    ip_policy = policies["pitching"]["scoreless_appearance_ip_outs_streak"]
-    assert "10.0이닝" in ongoing_label(
-        "scoreless_appearance_ip_outs_streak", 30, policies
-    )
-    assert ip_policy["unit"] == "outs"
+def test_streak_record_labels(policies) -> None:
+    assert streak_record_label("hit_streak", 12, policies) == "12경기 연속 안타"
+    assert streak_record_label(
+        "scoreless_innings_streak", 90, policies
+    ) == "30.0 연속 무실점 이닝"
 
 
-def test_hit_streak_milestone_and_end(policies) -> None:
+def test_format_streak_description(policies) -> None:
+    assert format_streak_description(
+        start_date="2026-04-05",
+        end_date="2026-04-30",
+        value=20,
+        streak_type="hit_streak",
+        policies=policies,
+    ) == "2026-04-05 부터 2026-04-30 까지, 20경기 연속"
+    assert format_streak_description(
+        start_date="2026-04-05",
+        end_date="2026-04-30",
+        value=90,
+        streak_type="scoreless_innings_streak",
+        policies=policies,
+    ) == "2026-04-05 부터 2026-04-30 까지, 30.0 연속 무실점 이닝"
+
+
+def test_hit_streak_only_recorded_on_break(policies) -> None:
     state = StreakState()
     hit_policy = policies["batting"]["hit_streak"]
     events = []
@@ -67,7 +87,6 @@ def test_hit_streak_milestone_and_end(policies) -> None:
 
     for n in range(1, 11):
         log = game(n, h=1)
-        outcome = "continue" if log.hit_game else "break"
         events.extend(
             update_counter_streak(
                 state,
@@ -75,7 +94,7 @@ def test_hit_streak_milestone_and_end(policies) -> None:
                 player_id=42,
                 team="Giants",
                 streak_type="hit_streak",
-                outcome=outcome,
+                outcome="continue",
                 policy=hit_policy,
                 game_id=n,
                 game_date=log.game_date,
@@ -83,8 +102,8 @@ def test_hit_streak_milestone_and_end(policies) -> None:
             )
         )
 
-    ongoing = [e for e in events if e.event_type == "ongoing_milestone"]
-    assert any(e.milestone_value == 10 for e in ongoing)
+    assert events == []
+    assert state.current == 10
 
     log = game(11, h=0, ab=4)
     ended = update_counter_streak(
@@ -99,7 +118,10 @@ def test_hit_streak_milestone_and_end(policies) -> None:
         game_date=log.game_date,
         policies_root=policies,
     )
-    assert any(e.event_type == "streak_ended" for e in ended)
+    assert len(ended) == 1
+    assert ended[0].event_type == "streak_ended"
+    assert ended[0].milestone_value == 10
+    assert ended[0].milestone_label == "10경기 연속 안타"
 
 
 @pytest.fixture
@@ -115,7 +137,7 @@ def _seed_game_with_hit_streak(aggregator: Aggregator, *, game_id: int, day: int
         INSERT INTO games (
             game_id, date, season, away_team, home_team,
             away_score, home_score, away_innings, home_innings, is_mlb
-        ) VALUES (?, ?, 2026, 'A', 'B', 1, 0, '[]', '[]', 1)
+        ) VALUES (?, ?, 2026, 'Giants', 'Dodgers', 1, 0, '[]', '[]', 1)
         """,
         (game_id, f"2026-03-{day:02d}"),
     )
@@ -138,25 +160,32 @@ def _seed_game_with_hit_streak(aggregator: Aggregator, *, game_id: int, day: int
     aggregator.conn.commit()
 
 
-def test_tracker_records_milestone_to_db(aggregator: Aggregator) -> None:
+def test_tracker_records_milestone_only_when_streak_ends(aggregator: Aggregator) -> None:
     for i in range(1, 11):
         _seed_game_with_hit_streak(aggregator, game_id=i, day=i, h=1)
+    _seed_game_with_hit_streak(aggregator, game_id=11, day=11, h=0)
 
     tracker = StreakTracker(aggregator)
-    events = tracker.process_new_games(list(range(1, 11)), 2026)
-    assert any(e.milestone_value == 10 for e in events)
+    events = tracker.process_new_games(list(range(1, 12)), 2026)
+    hit_events = [e for e in events if e.streak_type == "hit_streak"]
+    assert len(hit_events) == 1
+    assert hit_events[0].milestone_value == 10
 
-    row = aggregator.conn.execute(
+    rows = aggregator.conn.execute(
         """
-        SELECT milestone_label, scope, streak_event_type
+        SELECT milestone_label, scope, streak_event_type, game_id, milestone_key,
+               description, achieved_date
         FROM milestone_records
-        WHERE player_id = 42 AND achieved_value = 10
+        WHERE player_id = 42 AND milestone_key = 'streak_hit_streak'
         """
-    ).fetchone()
-    assert row is not None
-    assert row["scope"] == "streak"
-    assert row["milestone_label"] == "10경기 연속 안타"
-    assert row["streak_event_type"] == "ongoing_milestone"
+    ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["scope"] == "streak"
+    assert rows[0]["milestone_label"] == "10경기 연속 안타"
+    assert rows[0]["streak_event_type"] == "streak_ended"
+    assert int(rows[0]["game_id"]) == 11
+    assert rows[0]["description"] == "2026-03-01 부터 2026-03-10 까지, 10경기 연속"
+    assert rows[0]["achieved_date"] == "2026-03-11"
 
 
 def _seed_batter_hit_log(
@@ -211,10 +240,17 @@ def test_tracker_respects_tracked_teams(aggregator: Aggregator) -> None:
             player_name="D. Dodger",
             team=dodgers,
         )
+    _seed_team_game(aggregator, game_id=11, day=11, away_team=giants, home_team=dodgers)
+    _seed_batter_hit_log(
+        aggregator, game_id=11, day=11, player_id=42, player_name="G. Giant", team=giants, h=0
+    )
+    _seed_batter_hit_log(
+        aggregator, game_id=11, day=11, player_id=99, player_name="D. Dodger", team=dodgers, h=0
+    )
     aggregator.conn.commit()
 
     tracker = StreakTracker(aggregator, tracked_teams=["SF"])
-    tracker.process_new_games(list(range(1, 11)), 2026)
+    tracker.process_new_games(list(range(1, 12)), 2026)
 
     giants_milestone = aggregator.conn.execute(
         """
@@ -245,7 +281,7 @@ def test_tracker_skips_reprocessing_same_game(aggregator: Aggregator) -> None:
     tracker = StreakTracker(aggregator)
     first = tracker.process_new_games([1], 2026)
     second = tracker.process_new_games([1], 2026)
-    assert len(first) == 0
+    assert first == []
     assert second == []
 
 
