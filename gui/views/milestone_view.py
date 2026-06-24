@@ -159,15 +159,20 @@ class MilestoneView(QWidget):
         self.refresh_button = QPushButton(tr("Refresh"))
         self.export_button = QPushButton(tr("Export to CSV"))
         self.export_streak_button = QPushButton(tr("Export Streak"))
-        self.manual_button = QPushButton(tr("➕ Manual Entry"))
-        self.manual_button.setObjectName("primaryButton")
+        self.btn_manual_record = QPushButton(tr("Record"))
+        self.btn_manual_award = QPushButton(tr("Award"))
+        self.btn_manual_transfer = QPushButton(tr("Transfer"))
+        self.btn_manual_injury = QPushButton(tr("Injury"))
         self.season_ratio_button = QPushButton(tr("Record Season Ratio Milestones"))
         self.edit_button = QPushButton(tr("Edit"))
         self.delete_button = QPushButton(tr("Delete"))
         self.refresh_button.clicked.connect(self.refresh)
         self.export_button.clicked.connect(self.export_history_csv)
         self.export_streak_button.clicked.connect(self.export_streak_csvs)
-        self.manual_button.clicked.connect(self._open_manual_dialog)
+        self.btn_manual_record.clicked.connect(lambda: self._open_manual_dialog(0))
+        self.btn_manual_award.clicked.connect(lambda: self._open_manual_dialog(1))
+        self.btn_manual_transfer.clicked.connect(lambda: self._open_manual_dialog(2))
+        self.btn_manual_injury.clicked.connect(lambda: self._open_manual_dialog(3))
         self.season_ratio_button.clicked.connect(self._record_season_ratio_milestones)
         self.edit_button.clicked.connect(self._edit_selected_record)
         self.delete_button.clicked.connect(self._delete_selected_record)
@@ -202,8 +207,13 @@ class MilestoneView(QWidget):
         action_row.addWidget(self.mlb_only_checkbox)
         action_row.addWidget(self.progress_label)
         action_row.addWidget(self.progress_bar)
-        action_row.addSpacing(28)
-        action_row.addWidget(self.manual_button)
+        action_row.addSpacing(20)
+        action_row.addWidget(section_label(tr("Manual Entry")))
+        action_row.addWidget(self.btn_manual_record)
+        action_row.addWidget(self.btn_manual_award)
+        action_row.addWidget(self.btn_manual_transfer)
+        action_row.addWidget(self.btn_manual_injury)
+        action_row.addSpacing(12)
         action_row.addWidget(self.season_ratio_button)
         action_row.addStretch()
         action_row.addWidget(self.refresh_button)
@@ -563,11 +573,12 @@ class MilestoneView(QWidget):
             )
         )
 
-    def _open_manual_dialog(self) -> None:
+    def _open_manual_dialog(self, tab: int = 0) -> None:
         dialog = ManualMilestoneDialog(
             self.aggregator,
             self.milestones,
             self.settings,
+            initial_tab=tab,
             parent=self,
         )
         if dialog.exec():

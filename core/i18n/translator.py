@@ -534,6 +534,7 @@ _KO: dict[str, str] = {
 
     # ── manual_milestone_dialog.py ─────────────────────────────────────────
     "Manual Entry":                      "수동 입력",
+    "Record":                            "기록",
     "Award":                             "수상",
     "Transfer":                          "이적",
     "Injury":                            "부상",

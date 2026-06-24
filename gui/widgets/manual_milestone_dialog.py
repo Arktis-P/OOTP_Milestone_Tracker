@@ -70,6 +70,7 @@ class ManualMilestoneDialog(QDialog):
         aggregator: Aggregator,
         milestones: MilestoneDefinitions,
         settings: AppSettings,
+        initial_tab: int = 0,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -103,7 +104,10 @@ class ManualMilestoneDialog(QDialog):
         layout.addWidget(content_card, stretch=1)
         add_dialog_footer(layout, buttons)
 
-        self._on_tab_changed(0)
+        self.tabs.blockSignals(True)
+        self.tabs.setCurrentIndex(initial_tab)
+        self.tabs.blockSignals(False)
+        self._on_tab_changed(initial_tab)
 
     def _build_milestone_page(self) -> QWidget:
         page = QWidget()
