@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMessageBox,
     QProgressBar,
@@ -586,6 +587,25 @@ class MilestoneView(QWidget):
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
+        default_date = f"{season}-12-31"
+        date_str, ok = QInputDialog.getText(
+            self,
+            tr("Enter In-Game Date"),
+            tr("Enter the in-game date for the season-end records (YYYY-MM-DD):"),
+            text=default_date,
+        )
+        if not ok:
+            return
+        date_str = date_str.strip()
+        try:
+            datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            QMessageBox.warning(
+                self,
+                tr("Invalid Date"),
+                tr("Please enter the date in YYYY-MM-DD format."),
+            )
+            return
         checker = MilestoneChecker(
             self.aggregator,
             self.milestones,
@@ -594,7 +614,7 @@ class MilestoneView(QWidget):
             tracked_teams=self.settings.tracked_teams,
             custom_teams=self.settings.custom_mlb_teams,
         )
-        achievements = checker.check_season_ratios(season)
+        achievements = checker.check_season_ratios(season, achieved_date=date_str)
         recorded = checker.record_achievements(achievements)
         self.banner.show_info(
             tr("{season} season — {count} ratio milestone(s) recorded").format(

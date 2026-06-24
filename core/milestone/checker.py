@@ -161,8 +161,11 @@ class MilestoneChecker:
             )
         return self._career_pitching_cache[player_id]
 
-    def check_season_ratios(self, season: int) -> list[MilestoneAchievement]:
+    def check_season_ratios(
+        self, season: int, achieved_date: str | None = None
+    ) -> list[MilestoneAchievement]:
         """Record season ratio milestones (타율·ERA 등) at season close."""
+        date = achieved_date or f"{season}-12-31"
         achievements: list[MilestoneAchievement] = []
         for milestone in self.definitions.all_milestones:
             if milestone.scope not in ("season_ratio", "season"):
@@ -180,7 +183,7 @@ class MilestoneChecker:
                     current = float(row.get(_ratio_column(milestone.stat), 0) or 0)
                     if self._is_achieved(current, milestone):
                         achievements.append(
-                            self._build_ratio_achievement(row, milestone, current, season)
+                            self._build_ratio_achievement(row, milestone, current, season, date)
                         )
             elif milestone.stat in RATIO_PITCHING_STATS:
                 rows = self.aggregator.get_season_pitching_totals(season)
@@ -195,9 +198,9 @@ class MilestoneChecker:
                     current = float(row.get(_ratio_column(milestone.stat), 0) or 0)
                     if self._is_achieved(current, milestone):
                         achievements.append(
-                            self._build_ratio_achievement(row, milestone, current, season)
+                            self._build_ratio_achievement(row, milestone, current, season, date)
                         )
-        return achievements
+        return _best_ratio_achievements(achievements)
 
     def record_achievements(
         self,
@@ -823,8 +826,13 @@ class MilestoneChecker:
                 player_id, season, game_id, milestone.stat
             ) or 0.0
         else:
-            current = self._season_batting_total(player_id, season, milestone.stat)
-            prior = current - float(row.get(game_col, 0) or 0)
+            # SUM-based: prior = sum of games before this one; current = prior + game_val.
+            # Using game_id < ? avoids inflating prior with future games from batch imports.
+            game_val = float(row.get(game_col, 0) or 0)
+            prior = self.aggregator.get_batting_season_sum_before(
+                player_id, season, game_id, game_col
+            )
+            current = prior + game_val
         if not self._crossed_threshold(prior, current, milestone):
             return None
         return MilestoneAchievement(
@@ -850,17 +858,20 @@ class MilestoneChecker:
         mapping = SEASON_COUNT_STATS.get(milestone.stat)
         if not mapping:
             return None
-        _, mode, game_col = mapping
+        _, mode, _ = mapping
         if mode == "season_holds":
+            # MAX-based: current cumulative from box score, prior = max before this game
             current = float(row.get("season_holds") or 0)
             prior = self.aggregator.get_max_prior_season_pitching_stat(
                 player_id, season, game_id, "season_holds"
             )
         else:
-            current = self._season_pitching_total(player_id, season, milestone.stat)
+            # SUM-based: prior = sum of games < this one; current = prior + game contribution.
+            # This avoids inflating current/prior with future games from batch imports.
             prior = self.aggregator.get_max_prior_season_pitching_stat(
                 player_id, season, game_id, milestone.stat
             )
+            current = prior + _pitching_game_contribution(milestone.stat, row)
         if not self._crossed_threshold(prior, current, milestone):
             return None
         return MilestoneAchievement(
@@ -964,6 +975,7 @@ class MilestoneChecker:
         milestone: MilestoneDefinition,
         current: float,
         season: int,
+        achieved_date: str,
     ) -> MilestoneAchievement:
         return MilestoneAchievement(
             player_id=int(row["id"]),
@@ -971,7 +983,7 @@ class MilestoneChecker:
             milestone=milestone,
             current_value=current,
             achieved=True,
-            achieved_date=f"{season}-12-31",
+            achieved_date=achieved_date,
             game_id=None,
             season=season,
         )
@@ -1045,6 +1057,44 @@ class MilestoneChecker:
         if milestone.direction == "lower":
             return prior > milestone.threshold >= current
         return prior < milestone.threshold <= current
+
+
+def _pitching_game_contribution(stat: str, row: dict[str, Any]) -> float:
+    """Return the stat contribution from a single pitching_log row."""
+    if stat == "season_k_pit":
+        return float(row.get("k", 0) or 0)
+    if stat == "season_wins":
+        return float(row.get("win", 0) or 0)
+    if stat == "season_saves":
+        return float(row.get("save", 0) or 0)
+    if stat == "season_ip":
+        from core.stats.ip_utils import outs_to_ip_float
+        return outs_to_ip_float(int(row.get("ip_outs", 0) or 0))
+    return 0.0
+
+
+def _best_ratio_achievements(
+    achievements: list[MilestoneAchievement],
+) -> list[MilestoneAchievement]:
+    """For each (player_id, stat), keep only the single best milestone achieved.
+
+    For higher-is-better stats (avg, obp, slg, ops): the best milestone is the
+    one with the highest threshold the player crossed.
+    For lower-is-better stats (era, whip): the best is the lowest threshold crossed.
+    """
+    best: dict[tuple[int, str], MilestoneAchievement] = {}
+    for item in achievements:
+        key = (item.player_id, item.milestone.stat)
+        existing = best.get(key)
+        if existing is None:
+            best[key] = item
+        elif item.milestone.direction == "lower":
+            if item.milestone.threshold < existing.milestone.threshold:
+                best[key] = item
+        else:
+            if item.milestone.threshold > existing.milestone.threshold:
+                best[key] = item
+    return list(best.values())
 
 
 def _ratio_column(stat: str) -> str:

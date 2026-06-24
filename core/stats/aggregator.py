@@ -1276,12 +1276,14 @@ class Aggregator:
         column = _SEASON_TRACKING_COLUMNS.get(stat)
         if not column:
             return None
+        # Use game_id < ? (not <>) so that batch imports don't let future games
+        # inflate the prior value and hide milestone crossings in earlier games.
         row = self._conn.execute(
             f"""
             SELECT MAX({column}) AS prior_value
             FROM batting_logs b
             JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
-            WHERE b.player_id = ? AND b.season = ? AND b.game_id <> ?
+            WHERE b.player_id = ? AND b.season = ? AND b.game_id < ?
             """,
             (player_id, season, game_id),
         ).fetchone()
@@ -1289,16 +1291,33 @@ class Aggregator:
             return float(row["prior_value"])
         return None
 
+    def get_batting_season_sum_before(
+        self, player_id: int, season: int, game_id: int, column: str
+    ) -> float:
+        """Sum a batting column for all games with game_id < given game_id."""
+        row = self._conn.execute(
+            f"""
+            SELECT COALESCE(SUM({column}), 0) AS prior_value
+            FROM batting_logs b
+            JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
+            WHERE b.player_id = ? AND b.season = ? AND b.game_id < ?
+            """,
+            (player_id, season, game_id),
+        ).fetchone()
+        return float(row["prior_value"]) if row else 0.0
+
     def get_max_prior_season_pitching_stat(
         self, player_id: int, season: int, game_id: int, stat: str
     ) -> float:
+        # All SUM-based queries use game_id < ? so that future games already in
+        # the DB from a batch import do not inflate the prior total.
         if stat == "season_k_pit":
             row = self._conn.execute(
                 """
                 SELECT COALESCE(SUM(k), 0) AS prior_value
                 FROM pitching_logs pl
                 JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
-                WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id <> ?
+                WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id < ?
                 """,
                 (player_id, season, game_id),
             ).fetchone()
@@ -1309,7 +1328,7 @@ class Aggregator:
                 SELECT COALESCE(SUM(win), 0) AS prior_value
                 FROM pitching_logs pl
                 JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
-                WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id <> ?
+                WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id < ?
                 """,
                 (player_id, season, game_id),
             ).fetchone()
@@ -1320,7 +1339,7 @@ class Aggregator:
                 SELECT COALESCE(SUM(save), 0) AS prior_value
                 FROM pitching_logs pl
                 JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
-                WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id <> ?
+                WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id < ?
                 """,
                 (player_id, season, game_id),
             ).fetchone()
@@ -1331,7 +1350,7 @@ class Aggregator:
                 SELECT COALESCE(SUM(pl.ip_outs), 0) AS prior_outs
                 FROM pitching_logs pl
                 JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
-                WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id <> ?
+                WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id < ?
                 """,
                 (player_id, season, game_id),
             ).fetchone()
@@ -1346,7 +1365,7 @@ class Aggregator:
                 SELECT MAX(pl.season_holds) AS prior_value
                 FROM pitching_logs pl
                 JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
-                WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id <> ?
+                WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id < ?
                 """,
                 (player_id, season, game_id),
             ).fetchone()

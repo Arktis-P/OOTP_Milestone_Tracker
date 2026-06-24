@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e ' *)",
+      "Bash(node \"C:/Users/cwson/.claude/cursor-notify.js\" \"Claude Code\" \"IPC 테스트 알림 - Cursor 네이티브 알림이에요!\")",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(node -e *)",
+      "Read(//c/Users/cwson/OneDrive/Desktop/Projects/OOTP_Milestone_Tracker_localization/**)",
+      "Read(//c/Users/cwson/AppData/Local/Temp/claude/c--Users-cwson-Onedrive-Desktop-Projects-OOTP-Milestone-Tracker/33f5bfad-9058-4221-a04c-0505acba8bef/tasks/**)",
+      "PowerShell(cd \"C:\\\\Users\\\\cwson\\\\OneDrive\\\\Desktop\\\\Projects\\\\OOTP_Milestone_Tracker_localization\"; python main.py 2>&1; Write-Host \"--- EXIT CODE: $LASTEXITCODE ---\")",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(python main.py)",
+      "Bash(tasklist)",
+      "Bash(python -c \"from core.config import SettingsManager; sm=SettingsManager\\(\\); s=sm.load\\(\\); print\\('language:', s.language, 'language_selected:', s.language_selected, 'setup_complete:', sm.is_setup_complete\\(\\)\\)\")",
+      "PowerShell(Add-Type -AssemblyName System.Windows.Forms; Add-Type -AssemblyName System.Drawing; $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; $bmp = New-Object System.Drawing.Bitmap\\($screen.Width, $screen.Height\\); $graphics = [System.Drawing.Graphics]::FromImage\\($bmp\\); $graphics.CopyFromScreen\\($screen.Location, [System.Drawing.Point]::Empty, $screen.Size\\); $bmp.Save\\(\"$env:TEMP\\\\screenshot.png\"\\); Write-Output \"Saved\")",
+      "Read(//c/Users/cwson/AppData/Local/Temp/**)",
+      "Bash(python -c ' *)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\cwson\\.claude",
+      "C:\\Users\\cwson\\OneDrive\\Desktop\\Projects\\OOTP_Milestone_Tracker_localization\\core\\i18n",
+      "C:\\Users\\cwson\\OneDrive\\Desktop\\Projects\\OOTP_Milestone_Tracker_localization\\gui\\widgets",
+      "C:\\Users\\cwson\\OneDrive\\Desktop\\Projects\\OOTP_Milestone_Tracker_localization\\gui\\workers",
+      "C:\\Users\\cwson\\OneDrive\\Desktop\\Projects\\OOTP_Milestone_Tracker_localization\\core\\config",
+      "C:\\Users\\cwson\\OneDrive\\Desktop\\Projects\\OOTP_Milestone_Tracker_localization\\gui"
+    ]
+  }
+}

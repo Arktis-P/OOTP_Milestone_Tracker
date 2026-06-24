@@ -297,6 +297,132 @@ def test_lower_direction_era(aggregator: Aggregator) -> None:
     assert bad == []
 
 
+def test_season_ratio_only_best_milestone_recorded(aggregator: Aggregator) -> None:
+    """시즌 비율 마일스톤은 가장 좋은 기록 하나만 반환해야 한다.
+
+    타율 .430인 선수에게 .300/.350/.400 임계값이 모두 있을 때,
+    가장 높은 .400 하나만 반환되어야 한다.
+    """
+    defs = MilestoneDefinitions(
+        batting=[
+            MilestoneDefinition(
+                key="season_avg_300",
+                label="시즌 타율 .300",
+                stat="season_avg",
+                threshold=0.300,
+                scope="season_ratio",
+                category="batting",
+            ),
+            MilestoneDefinition(
+                key="season_avg_350",
+                label="시즌 타율 .350",
+                stat="season_avg",
+                threshold=0.350,
+                scope="season_ratio",
+                category="batting",
+            ),
+            MilestoneDefinition(
+                key="season_avg_400",
+                label="시즌 타율 .400",
+                stat="season_avg",
+                threshold=0.400,
+                scope="season_ratio",
+                category="batting",
+            ),
+        ],
+        pitching=[],
+    )
+    checker = MilestoneChecker(aggregator, defs, season_games_total=162)
+    aggregator.conn.execute(
+        "INSERT INTO players (player_id, full_name, short_name) VALUES (7001, 'Kim Doyoung', 'D. Kim')"
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team, away_score, home_score,
+            away_innings, home_innings
+        ) VALUES (7001, '2026-09-30', 2026, 'A', 'H', 1, 2, '[]', '[]')
+        """
+    )
+    # 502 타석 중 216안타 → 타율 .430
+    aggregator.conn.execute(
+        """
+        INSERT INTO batting_logs (
+            game_id, player_id, season, team, date, ab, h, season_hr, season_rbi
+        ) VALUES (7001, 7001, 2026, 'H', '2026-09-30', 502, 216, 0, 0)
+        """
+    )
+    aggregator.conn.commit()
+
+    achievements = checker.check_season_ratios(2026)
+    # .300, .350, .400 모두 달성했지만 가장 높은 .400 하나만 반환해야 함
+    assert len(achievements) == 1
+    assert achievements[0].milestone.key == "season_avg_400"
+    assert achievements[0].current_value >= 0.4
+
+
+def test_season_ratio_lower_direction_only_best(aggregator: Aggregator) -> None:
+    """ERA 등 낮을수록 좋은 마일스톤은 가장 낮은 임계값(가장 엄격한) 하나만 반환해야 한다."""
+    defs = MilestoneDefinitions(
+        batting=[],
+        pitching=[
+            MilestoneDefinition(
+                key="season_era_350",
+                label="시즌 ERA 3.50 이하",
+                stat="season_era",
+                threshold=3.50,
+                scope="season_ratio",
+                category="pitching",
+                direction="lower",
+            ),
+            MilestoneDefinition(
+                key="season_era_300",
+                label="시즌 ERA 3.00 이하",
+                stat="season_era",
+                threshold=3.00,
+                scope="season_ratio",
+                category="pitching",
+                direction="lower",
+            ),
+            MilestoneDefinition(
+                key="season_era_250",
+                label="시즌 ERA 2.50 이하",
+                stat="season_era",
+                threshold=2.50,
+                scope="season_ratio",
+                category="pitching",
+                direction="lower",
+            ),
+        ],
+    )
+    checker = MilestoneChecker(aggregator, defs, season_games_total=162)
+    aggregator.conn.execute(
+        "INSERT INTO players (player_id, full_name, short_name) VALUES (7002, 'Ace Pitcher', 'A. Pitcher')"
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team, away_score, home_score,
+            away_innings, home_innings
+        ) VALUES (7002, '2026-09-30', 2026, 'A', 'H', 0, 1, '[]', '[]')
+        """
+    )
+    # 180이닝(540아웃), 자책점 40 → ERA = 40*9/180 = 2.00
+    aggregator.conn.execute(
+        """
+        INSERT INTO pitching_logs (
+            game_id, player_id, season, team, date, ip_outs, er
+        ) VALUES (7002, 7002, 2026, 'H', '2026-09-30', 540, 40)
+        """
+    )
+    aggregator.conn.commit()
+
+    achievements = checker.check_season_ratios(2026)
+    # ERA 2.00은 3.50/3.00/2.50 모두 달성이지만, 가장 엄격한(낮은) 2.50 하나만 반환해야 함
+    assert len(achievements) == 1
+    assert achievements[0].milestone.key == "season_era_250"
+
+
 def test_career_first_stats_from_zero(
     aggregator: Aggregator, checker: MilestoneChecker
 ) -> None:
@@ -354,6 +480,293 @@ def test_career_first_stats_from_zero(
         "pit_career_first_save",
     } <= pitcher_keys
     assert "pit_career_first_win" not in pitcher_keys
+
+
+def test_season_hr_milestone_detected_in_batch_import(
+    aggregator: Aggregator, milestones: MilestoneDefinitions
+) -> None:
+    """Regression: season HR milestone missed when future games are already in DB.
+
+    When all games are batch-imported before milestone checking begins,
+    get_max_prior_season_stat must use game_id < ? (chronological order)
+    rather than game_id <> ? (which would pick up later games' higher season_hr).
+    """
+    checker = MilestoneChecker(aggregator, milestones, season_games_total=162)
+    aggregator.conn.execute(
+        "INSERT INTO players (player_id, full_name, short_name) VALUES (8001, 'HR Batter', 'H. Batter')"
+    )
+    # game_id=1001: player hits 20th HR (the milestone-crossing game)
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team,
+            away_score, home_score, away_innings, home_innings, is_mlb
+        ) VALUES (1001, '2026-06-01', 2026, 'A', 'B', 1, 2, '[]', '[]', 1)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO batting_logs (
+            game_id, player_id, season, team, date, ab, h, home_runs, season_hr
+        ) VALUES (1001, 8001, 2026, 'B', '2026-06-01', 4, 1, 1, 20)
+        """
+    )
+    # game_id=1002: later game where player has 25 HRs (already in DB)
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team,
+            away_score, home_score, away_innings, home_innings, is_mlb
+        ) VALUES (1002, '2026-07-01', 2026, 'A', 'B', 1, 3, '[]', '[]', 1)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO batting_logs (
+            game_id, player_id, season, team, date, ab, h, home_runs, season_hr
+        ) VALUES (1002, 8001, 2026, 'B', '2026-07-01', 4, 2, 2, 25)
+        """
+    )
+    aggregator.conn.commit()
+
+    # Check both games at once (simulates batch import)
+    achievements = checker.check_new_games([1001, 1002], season=2026)
+    hr20 = [a for a in achievements if a.milestone.key == "bat_season_hr_20"]
+    # Without the fix, prior = MAX(season_hr from games != 1001) = 25, so 25 < 20 → FALSE
+    # With the fix,  prior = MAX(season_hr from games < 1001)  = None → 0.0, so 0 < 20 → TRUE
+    assert len(hr20) == 1
+    assert hr20[0].game_id == 1001
+
+
+def test_season_hr_milestone_skipped_value_detected(
+    aggregator: Aggregator, milestones: MilestoneDefinitions
+) -> None:
+    """시즌 40홈런 마일스톤: 39→41로 건너뛰어도 탐지돼야 한다."""
+    checker = MilestoneChecker(aggregator, milestones, season_games_total=162)
+    aggregator.conn.execute(
+        "INSERT INTO players (player_id, full_name, short_name) VALUES (8005, 'Skip Batter', 'S. Batter')"
+    )
+    # 이전 게임: season_hr = 39
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team,
+            away_score, home_score, away_innings, home_innings, is_mlb
+        ) VALUES (3001, '2026-07-01', 2026, 'A', 'B', 1, 2, '[]', '[]', 1)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO batting_logs (
+            game_id, player_id, season, team, date, ab, h, home_runs, season_hr
+        ) VALUES (3001, 8005, 2026, 'B', '2026-07-01', 4, 1, 1, 39)
+        """
+    )
+    # 마일스톤 게임: 한 게임에 2홈런 (39 → 41, 40 스킵)
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team,
+            away_score, home_score, away_innings, home_innings, is_mlb
+        ) VALUES (3002, '2026-07-02', 2026, 'A', 'B', 1, 3, '[]', '[]', 1)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO batting_logs (
+            game_id, player_id, season, team, date, ab, h, home_runs, season_hr
+        ) VALUES (3002, 8005, 2026, 'B', '2026-07-02', 4, 2, 2, 41)
+        """
+    )
+    aggregator.conn.commit()
+
+    achievements = checker.check_new_games([3001, 3002], season=2026)
+    hr40 = [a for a in achievements if a.milestone.key == "bat_season_hr_40" and a.player_id == 8005]
+    # prior=39 < 40 <= 41=current → TRUE
+    assert len(hr40) == 1, f"시즌 40홈런 미탐지 (achievements: {[a.milestone.key for a in achievements if a.player_id == 8005]})"
+    assert hr40[0].game_id == 3002
+
+
+def test_season_rbi_milestone_detected_in_batch_import(
+    aggregator: Aggregator, milestones: MilestoneDefinitions
+) -> None:
+    """Regression: same batch-import bug for season_rbi milestones."""
+    checker = MilestoneChecker(aggregator, milestones, season_games_total=162)
+    aggregator.conn.execute(
+        "INSERT INTO players (player_id, full_name, short_name) VALUES (8002, 'RBI Batter', 'R. Batter')"
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team,
+            away_score, home_score, away_innings, home_innings, is_mlb
+        ) VALUES (2001, '2026-06-01', 2026, 'A', 'B', 1, 2, '[]', '[]', 1)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO batting_logs (
+            game_id, player_id, season, team, date, ab, h, rbi, season_rbi
+        ) VALUES (2001, 8002, 2026, 'B', '2026-06-01', 4, 1, 2, 100)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team,
+            away_score, home_score, away_innings, home_innings, is_mlb
+        ) VALUES (2002, '2026-07-01', 2026, 'A', 'B', 1, 3, '[]', '[]', 1)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO batting_logs (
+            game_id, player_id, season, team, date, ab, h, rbi, season_rbi
+        ) VALUES (2002, 8002, 2026, 'B', '2026-07-01', 4, 2, 5, 120)
+        """
+    )
+    aggregator.conn.commit()
+
+    achievements = checker.check_new_games([2001, 2002], season=2026)
+    rbi100 = [a for a in achievements if a.milestone.key == "bat_season_rbi_100"]
+    assert len(rbi100) == 1
+    assert rbi100[0].game_id == 2001
+
+
+def test_season_hits_milestone_detected_in_batch_import(
+    aggregator: Aggregator, milestones: MilestoneDefinitions
+) -> None:
+    """Regression: season_h SUM 방식도 배치 임포트 시 정상 탐지돼야 한다."""
+    checker = MilestoneChecker(aggregator, milestones, season_games_total=162)
+    aggregator.conn.execute(
+        "INSERT INTO players (player_id, full_name, short_name) VALUES (8003, 'Hit Batter', 'H. Batter')"
+    )
+    # 마일스톤 게임: 2안타로 198 → 200
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team,
+            away_score, home_score, away_innings, home_innings, is_mlb
+        ) VALUES (4001, '2026-07-01', 2026, 'A', 'B', 1, 2, '[]', '[]', 1)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO batting_logs (
+            game_id, player_id, season, team, date, ab, h
+        ) VALUES (4001, 8003, 2026, 'B', '2026-07-01', 4, 2)
+        """
+    )
+    # 미래 게임: 추가 안타 (이미 DB에 있음)
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team,
+            away_score, home_score, away_innings, home_innings, is_mlb
+        ) VALUES (4002, '2026-08-01', 2026, 'A', 'B', 2, 3, '[]', '[]', 1)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO batting_logs (
+            game_id, player_id, season, team, date, ab, h
+        ) VALUES (4002, 8003, 2026, 'B', '2026-08-01', 4, 30)
+        """
+    )
+    aggregator.conn.commit()
+
+    # game 4001이 첫 번째 게임이므로 prior=0, current=2 → 0 < 200은 안됨
+    # game 4001 하나만 체크 시: prior=0, current=2 → 0 < 150 <= 2? NO → 올바름
+    # 올바른 시나리오: game 4001이 198 → 200 지점이 되려면 이전 게임이 필요
+    # game_id=3999 (이전 게임, 198안타)을 추가
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team,
+            away_score, home_score, away_innings, home_innings, is_mlb
+        ) VALUES (3999, '2026-06-30', 2026, 'A', 'B', 1, 1, '[]', '[]', 1)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO batting_logs (
+            game_id, player_id, season, team, date, ab, h
+        ) VALUES (3999, 8003, 2026, 'B', '2026-06-30', 4, 198)
+        """
+    )
+    aggregator.conn.commit()
+
+    # 배치: [4001, 4002] 체크 (4002는 이미 DB에 있는 미래 게임)
+    achievements = checker.check_new_games([4001, 4002], season=2026)
+    hit200 = [a for a in achievements if a.milestone.key == "bat_season_hits_200" and a.player_id == 8003]
+    # prior(game<4001) = 198, current = 198+2 = 200 → 198 < 200 <= 200 → TRUE
+    assert len(hit200) == 1
+    assert hit200[0].game_id == 4001
+
+
+def test_season_k_milestone_detected_in_batch_import(
+    aggregator: Aggregator, milestones: MilestoneDefinitions
+) -> None:
+    """Regression: season_k_pit SUM 방식도 배치 임포트 시 정상 탐지."""
+    checker = MilestoneChecker(aggregator, milestones, season_games_total=162)
+    aggregator.conn.execute(
+        "INSERT INTO players (player_id, full_name, short_name) VALUES (8004, 'K Pitcher', 'K. Pitcher')"
+    )
+    # game_id=5001: 탈삼진 마일스톤 게임 (이전까지 197K, 이 게임에 3K → 200)
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team,
+            away_score, home_score, away_innings, home_innings, is_mlb
+        ) VALUES (5001, '2026-07-01', 2026, 'A', 'B', 1, 2, '[]', '[]', 1)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO pitching_logs (
+            game_id, player_id, season, team, date, ip_outs, k
+        ) VALUES (5001, 8004, 2026, 'B', '2026-07-01', 21, 3)
+        """
+    )
+    # game_id=4999: 이전 게임 (197K)
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team,
+            away_score, home_score, away_innings, home_innings, is_mlb
+        ) VALUES (4999, '2026-06-30', 2026, 'A', 'B', 1, 1, '[]', '[]', 1)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO pitching_logs (
+            game_id, player_id, season, team, date, ip_outs, k
+        ) VALUES (4999, 8004, 2026, 'B', '2026-06-30', 21, 197)
+        """
+    )
+    # game_id=5002: 미래 게임 (이미 DB에 있음, 추가 30K)
+    aggregator.conn.execute(
+        """
+        INSERT INTO games (
+            game_id, date, season, away_team, home_team,
+            away_score, home_score, away_innings, home_innings, is_mlb
+        ) VALUES (5002, '2026-08-01', 2026, 'A', 'B', 2, 3, '[]', '[]', 1)
+        """
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO pitching_logs (
+            game_id, player_id, season, team, date, ip_outs, k
+        ) VALUES (5002, 8004, 2026, 'B', '2026-08-01', 21, 30)
+        """
+    )
+    aggregator.conn.commit()
+
+    achievements = checker.check_new_games([5001, 5002], season=2026)
+    k200 = [a for a in achievements if a.milestone.key == "pit_season_k_200" and a.player_id == 8004]
+    # prior(games < 5001) = 197, current = 197+3 = 200 → 197 < 200 <= 200 → TRUE
+    assert len(k200) == 1
+    assert k200[0].game_id == 5001
 
 
 def test_career_first_stat_not_retriggered_with_prior_init(
