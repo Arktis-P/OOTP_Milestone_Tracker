@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QTableWidgetItem,
     QTextEdit,
@@ -99,6 +100,10 @@ class MilestoneView(QWidget):
         self.progress_label = QLabel("")
         self.progress_label.setVisible(False)
         self.progress_label.setStyleSheet(hint_style(TEXT_SECONDARY))
+        self.progress_label.setMaximumWidth(340)
+        self.progress_label.setSizePolicy(
+            QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred
+        )
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         self.progress_bar.setMinimumWidth(120)
