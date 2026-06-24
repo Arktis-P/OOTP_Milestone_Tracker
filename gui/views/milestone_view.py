@@ -170,6 +170,8 @@ class MilestoneView(QWidget):
         self.table_panel.table.itemSelectionChanged.connect(self._update_meta_panel)
         self._edit_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F2), self.table_panel.table)
         self._edit_shortcut.activated.connect(self._edit_selected_record)
+        self._delete_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.table_panel.table)
+        self._delete_shortcut.activated.connect(self._delete_selected_record)
 
         filter_row = QHBoxLayout()
         filter_row.setSpacing(10)
@@ -205,7 +207,7 @@ class MilestoneView(QWidget):
         action_row.addWidget(self.edit_button)
         action_row.addWidget(self.delete_button)
 
-        hint = QLabel(tr("F2: Edit · Double-click: Game Log"))
+        hint = QLabel(tr("F2: Edit · Del: Delete · Double-click: Game Log"))
         hint.setObjectName("mutedLabel")
 
         filter_card = CardPanel()
@@ -639,6 +641,16 @@ class MilestoneView(QWidget):
         record_id = item.data(Qt.ItemDataRole.UserRole)
         return int(record_id) if record_id is not None else None
 
+    def _selected_record_ids_from_table(self) -> list[int]:
+        ids: list[int] = []
+        for index in self.table_panel.table.selectionModel().selectedRows():
+            item = self.table_panel.table.item(index.row(), 0)
+            if item is not None:
+                record_id = item.data(Qt.ItemDataRole.UserRole)
+                if record_id is not None:
+                    ids.append(int(record_id))
+        return ids
+
     def _selected_record(self) -> dict | None:
         record_id = self._selected_record_id_from_table()
         if record_id is None:
@@ -667,33 +679,60 @@ class MilestoneView(QWidget):
             self.records_changed.emit()
 
     def _delete_selected_record(self) -> None:
-        record = self._selected_record()
-        if record is None:
+        record_ids = self._selected_record_ids_from_table()
+        if not record_ids:
             QMessageBox.information(self, tr("Delete"), tr("Please select a record to delete."))
             return
-        milestone = self.milestones.get_by_key(str(record["milestone_key"]))
-        label = (
-            milestone.label
-            if milestone
-            else record.get("milestone_label", record["milestone_key"])
-        )
-        is_team = int(record.get("player_id") or 0) == 0 and bool(record.get("team"))
-        target = str(record["team"]) if is_team else str(record.get("player_name", ""))
-        confirm = QMessageBox.question(
-            self,
-            tr("Delete Milestone Record"),
-            tr("Delete the following record?\n\n{target} · {label}\n{date}").format(
-                target=target, label=label, date=record.get("achieved_date", "")
-            ),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
+
+        if len(record_ids) == 1:
+            record = self.aggregator.get_milestone_record_by_id(record_ids[0])
+            if record is None:
+                QMessageBox.warning(self, tr("Delete"), tr("Failed to delete the record."))
+                return
+            milestone = self.milestones.get_by_key(str(record["milestone_key"]))
+            label = (
+                milestone.label
+                if milestone
+                else record.get("milestone_label", record["milestone_key"])
+            )
+            is_team = int(record.get("player_id") or 0) == 0 and bool(record.get("team"))
+            target = str(record["team"]) if is_team else str(record.get("player_name", ""))
+            confirm = QMessageBox.question(
+                self,
+                tr("Delete Milestone Record"),
+                tr("Delete the following record?\n\n{target} · {label}\n{date}").format(
+                    target=target, label=label, date=record.get("achieved_date", "")
+                ),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+        else:
+            confirm = QMessageBox.question(
+                self,
+                tr("Delete Milestone Records"),
+                tr("Delete {count} selected records?").format(count=len(record_ids)),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+
         if confirm != QMessageBox.StandardButton.Yes:
             return
-        record_id = int(record["id"])
-        if not self.aggregator.delete_milestone_record(record_id):
-            QMessageBox.warning(self, tr("Delete"), tr("Failed to delete the record."))
-            return
-        self.banner.show_info(tr("Milestone record deleted."))
+
+        failed = sum(
+            1 for rid in record_ids if not self.aggregator.delete_milestone_record(rid)
+        )
+        if failed:
+            QMessageBox.warning(
+                self,
+                tr("Delete"),
+                tr("Failed to delete {count} record(s).").format(count=failed),
+            )
+        else:
+            count = len(record_ids)
+            if count == 1:
+                self.banner.show_info(tr("Milestone record deleted."))
+            else:
+                self.banner.show_info(
+                    tr("{count} milestone records deleted.").format(count=count)
+                )
         self.refresh()
         self.records_changed.emit()
 
