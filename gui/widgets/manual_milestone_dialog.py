@@ -5,6 +5,7 @@ from __future__ import annotations
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QComboBox,
+    QCompleter,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -134,6 +135,7 @@ class ManualMilestoneDialog(QDialog):
         self.player_combo.setEditable(True)
         self.player_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._fill_players()
+        self._apply_completer(self.player_combo)
         line = self.player_combo.lineEdit()
         if line is not None:
             line.setPlaceholderText(
@@ -159,6 +161,7 @@ class ManualMilestoneDialog(QDialog):
         self.milestone_combo.setEditable(True)
         self.milestone_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self.milestone_combo.currentIndexChanged.connect(self._on_milestone_changed)
+        self._apply_completer(self.milestone_combo)
 
         self.manual_hint = QLabel("")
         self.manual_hint.setWordWrap(True)
@@ -189,8 +192,18 @@ class ManualMilestoneDialog(QDialog):
         self.value_combo.setEditable(True)
         self.value_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
 
-        self.opponent_team_edit = QLineEdit()
-        self.opponent_player_edit = QLineEdit()
+        self.opponent_team_edit = QComboBox()
+        self.opponent_team_edit.setEditable(True)
+        self.opponent_team_edit.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._fill_mlb_team_combo(self.opponent_team_edit)
+        self._apply_completer(self.opponent_team_edit)
+
+        self.opponent_player_edit = QComboBox()
+        self.opponent_player_edit.setEditable(True)
+        self.opponent_player_edit.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self._fill_player_combo(self.opponent_player_edit)
+        self._apply_completer(self.opponent_player_edit)
+
         self.description_edit = QLineEdit()
         self.notes_edit = QLineEdit()
 
@@ -250,8 +263,13 @@ class ManualMilestoneDialog(QDialog):
 
         self.transfer_join_team_combo = QComboBox()
         self.transfer_counterpart_team_combo = QComboBox()
+        for _tc in (self.transfer_join_team_combo, self.transfer_counterpart_team_combo):
+            _tc.setEditable(True)
+            _tc.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._fill_mlb_team_combo(self.transfer_join_team_combo)
         self._fill_mlb_team_combo(self.transfer_counterpart_team_combo)
+        self._apply_completer(self.transfer_join_team_combo)
+        self._apply_completer(self.transfer_counterpart_team_combo)
         self.transfer_season_edit = QLineEdit(str(self.settings.current_season))
         self.transfer_description_edit = QLineEdit()
         self.transfer_description_edit.textEdited.connect(
@@ -304,6 +322,7 @@ class ManualMilestoneDialog(QDialog):
         self.injury_player_combo.setEditable(True)
         self.injury_player_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._fill_player_combo(self.injury_player_combo)
+        self._apply_completer(self.injury_player_combo)
 
         self.injury_label_edit = QLineEdit()
         self.injury_label_edit.setPlaceholderText(
@@ -314,7 +333,10 @@ class ManualMilestoneDialog(QDialog):
             tr("e.g., 3 days, 3 weeks, 5-6 months")
         )
         self.injury_team_combo = QComboBox()
+        self.injury_team_combo.setEditable(True)
+        self.injury_team_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         self._fill_tracked_team_combo(self.injury_team_combo)
+        self._apply_completer(self.injury_team_combo)
         self.injury_season_edit = QLineEdit(str(self.settings.current_season))
         self.injury_description_edit = QLineEdit()
         self.injury_notes_edit = QLineEdit()
@@ -392,6 +414,8 @@ class ManualMilestoneDialog(QDialog):
         combo.blockSignals(False)
         if current:
             combo.setEditText(current)
+        if combo.isEditable():
+            self._apply_completer(combo)
 
     def _mlb_team_names(self) -> list[str]:
         team_map = merge_team_maps(
@@ -473,6 +497,14 @@ class ManualMilestoneDialog(QDialog):
             self._update_transfer_description()
 
         combo.activated.connect(on_activated)
+
+    def _apply_completer(self, combo: QComboBox) -> None:
+        """Attach a case-insensitive substring-match completer to an editable combo."""
+        completer = QCompleter(combo.model(), combo)
+        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        combo.setCompleter(completer)
 
     def _combo_text(self, combo: QComboBox) -> str:
         return combo.currentText().strip()
@@ -629,6 +661,7 @@ class ManualMilestoneDialog(QDialog):
             return
         for combo in (
             self.player_combo,
+            self.opponent_player_edit,
             self.injury_player_combo,
             self.transfer_joining_combo,
             self.transfer_leaving_combo,
@@ -717,8 +750,8 @@ class ManualMilestoneDialog(QDialog):
             season=season,
             achieved_value=achieved_value,
             games_at_achievement=games_at,
-            opponent_team=self.opponent_team_edit.text().strip(),
-            opponent_player=self.opponent_player_edit.text().strip(),
+            opponent_team=self._combo_text(self.opponent_team_edit),
+            opponent_player=self._canonical_player_text(self.opponent_player_edit),
             description=self.description_edit.text().strip(),
             notes=self.notes_edit.text().strip(),
         )
