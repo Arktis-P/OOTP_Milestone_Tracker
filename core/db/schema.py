@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS games (
     player_of_game_name TEXT,
     special_notes   TEXT,
     is_mlb          INTEGER NOT NULL DEFAULT 1,
+    is_postseason   INTEGER NOT NULL DEFAULT 0,
     imported_at     TEXT DEFAULT (datetime('now'))
 );
 
@@ -232,6 +233,7 @@ def _migrate_post_schema(conn: sqlite3.Connection) -> None:
     _ensure_team_registry(conn)
     _backfill_milestone_games_at_achievement(conn)
     _ensure_processed_boxscores(conn)
+    _ensure_games_is_postseason(conn)
 
 
 def _ensure_db_meta(conn: sqlite3.Connection) -> None:
@@ -629,6 +631,14 @@ def _ensure_processed_boxscores(conn: sqlite3.Connection) -> None:
         """
     )
     set_meta(conn, "processed_boxscores_migrated_v1", "1")
+
+
+def _ensure_games_is_postseason(conn: sqlite3.Connection) -> None:
+    columns = _table_columns(conn, "games")
+    if columns and "is_postseason" not in columns:
+        conn.execute(
+            "ALTER TABLE games ADD COLUMN is_postseason INTEGER NOT NULL DEFAULT 0"
+        )
 
 
 def _ensure_milestone_predictions(conn: sqlite3.Connection) -> None:

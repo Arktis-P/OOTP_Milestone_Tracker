@@ -41,7 +41,22 @@ _BOXSCORE_META_TITLE_RE = re.compile(
     r"Box Score,\s*(.+?)\s+at\s+(.+?),\s*(\d{1,2}/\d{1,2}/\d{4})",
     re.I,
 )
+# Matches MLB postseason series names that appear before "Box Score" in the title.
+# Regular season titles start with "MLB Box Score"; postseason titles use the series name.
+_POSTSEASON_TITLE_RE = re.compile(
+    r"^(world\s+series|[AN]L(?:CS|DS)|wild[\s-]?card(?:\s+game)?)\s+box\s+score\b",
+    re.I,
+)
 GAME_BOX_GLOB = "game_box_*.html"
+
+
+def detect_is_postseason_from_title(title_text: str) -> bool:
+    """Return True if the boxscore title indicates an MLB postseason game.
+
+    Regular season: "MLB Box Score, ..."
+    Postseason:     "World Series Box Score, ...", "ALCS Box Score, ...", etc.
+    """
+    return bool(_POSTSEASON_TITLE_RE.match(title_text.strip()))
 
 
 @dataclass(frozen=True)
@@ -52,6 +67,7 @@ class BoxscoreFileSummary:
     home_team: str
     date: str
     is_mlb: bool
+    is_postseason: bool = False
     already_imported: bool = False
 
 
@@ -74,10 +90,13 @@ def summarize_boxscore_file(
     away_team = ""
     home_team = ""
     date = ""
+    is_postseason = False
     head = path.read_text(encoding="utf-8", errors="replace")[:read_limit]
     title_match = _BOXSCORE_TITLE_RE.search(head)
     if title_match:
-        meta_match = _BOXSCORE_META_TITLE_RE.search(title_match.group(1))
+        title_text = title_match.group(1)
+        is_postseason = detect_is_postseason_from_title(title_text)
+        meta_match = _BOXSCORE_META_TITLE_RE.search(title_text)
         if meta_match:
             away_team = meta_match.group(1).strip()
             home_team = meta_match.group(2).strip()
@@ -94,6 +113,7 @@ def summarize_boxscore_file(
         home_team=home_team,
         date=date,
         is_mlb=is_mlb,
+        is_postseason=is_postseason,
         already_imported=imported,
     )
 
@@ -186,6 +206,7 @@ class BoxscoreHTMLParser:
 
         game_id = self._extract_game_id(soup)
         game_notes = self._parse_game_notes(soup)
+        is_postseason = detect_is_postseason_from_title(title)
 
         return GameMeta(
             game_id=game_id,
@@ -207,6 +228,7 @@ class BoxscoreHTMLParser:
             ballpark=game_notes.ballpark,
             attendance=game_notes.attendance,
             game_time=game_notes.game_time,
+            is_postseason=is_postseason,
         )
 
     def _extract_game_id(self, soup: BeautifulSoup) -> int:

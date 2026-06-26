@@ -78,6 +78,7 @@ class StatsView(QWidget):
         self._players: list[dict] = []
         self._players_by_id: dict[int, dict] = {}
         self._career_mode = False
+        self._postseason_mode = False
 
         self.banner = ErrorBanner(self)
         self.import_button = QPushButton(tr("📥  Import Boxscores"))
@@ -105,15 +106,18 @@ class StatsView(QWidget):
         mode_layout.setSpacing(0)
         self.mode_season_btn = QPushButton(tr("Season"))
         self.mode_career_btn = QPushButton(tr("Career"))
-        for btn in (self.mode_season_btn, self.mode_career_btn):
+        self.mode_postseason_btn = QPushButton(tr("Postseason"))
+        for btn in (self.mode_season_btn, self.mode_career_btn, self.mode_postseason_btn):
             btn.setCheckable(True)
             btn.setFlat(True)
             btn.setObjectName("modeBtn")
         self.mode_season_btn.setChecked(True)
         self.mode_season_btn.clicked.connect(lambda: self._set_mode_buttons("season"))
         self.mode_career_btn.clicked.connect(lambda: self._set_mode_buttons("career"))
+        self.mode_postseason_btn.clicked.connect(lambda: self._set_mode_buttons("postseason"))
         mode_layout.addWidget(self.mode_season_btn)
         mode_layout.addWidget(self.mode_career_btn)
+        mode_layout.addWidget(self.mode_postseason_btn)
         self.career_toggle.hide()
 
         self.season_combo = QComboBox()
@@ -215,27 +219,35 @@ class StatsView(QWidget):
         self.reload_players()
 
     def _set_mode_buttons(self, mode: str) -> None:
+        self.mode_season_btn.setChecked(mode == "season")
+        self.mode_career_btn.setChecked(mode == "career")
+        self.mode_postseason_btn.setChecked(mode == "postseason")
         career = mode == "career"
-        self.mode_season_btn.setChecked(not career)
-        self.mode_career_btn.setChecked(career)
         if self.career_toggle.isChecked() != career:
             self.career_toggle.blockSignals(True)
             self.career_toggle.setChecked(career)
             self.career_toggle.blockSignals(False)
-        self._on_career_toggled(career)
+        self._career_mode = career
+        self._postseason_mode = (mode == "postseason")
+        self.season_combo.setEnabled(mode == "season")
+        self._refresh_player_stats()
 
     def _on_search_text_changed(self, _text: str) -> None:
         self._search_timer.start()
 
     def _on_career_toggled(self, checked: bool) -> None:
         self._career_mode = checked
+        self._postseason_mode = False
         self.mode_season_btn.setChecked(not checked)
         self.mode_career_btn.setChecked(checked)
+        self.mode_postseason_btn.setChecked(False)
         self.season_combo.setEnabled(not checked)
         self._refresh_player_stats()
 
     def _on_season_changed(self) -> None:
         if self.season_combo.currentData() == "career":
+            self._postseason_mode = False
+            self.mode_postseason_btn.setChecked(False)
             self.career_toggle.setChecked(True)
         else:
             self.career_toggle.setChecked(False)
@@ -368,8 +380,14 @@ class StatsView(QWidget):
         self.player_header.setText(format_player_header(player, korean_name=korean_name))
         self.milestone_timeline.load_player(player_id)
 
-        career_mode = self._career_mode or self.season_combo.currentData() == "career"
-        if career_mode:
+        postseason_mode = self._postseason_mode
+        career_mode = (not postseason_mode) and (
+            self._career_mode or self.season_combo.currentData() == "career"
+        )
+        if postseason_mode:
+            self.info_label.setText(tr("Career postseason stats (from imported boxscores)"))
+            self._fill_postseason_tables(player_id)
+        elif career_mode:
             coverage = get_init_season_coverage(self.aggregator.conn)
             has_init = self.aggregator.player_has_init_stats(player_id)
             if has_init:
@@ -488,6 +506,45 @@ class StatsView(QWidget):
             },
         )
 
+    def _fill_postseason_tables(self, player_id: int) -> None:
+        batting = self.aggregator.get_batting_career_postseason(player_id)
+        pitching = self.aggregator.get_pitching_career_postseason(player_id)
+        self._set_stat_row(
+            self.batting_table,
+            batting,
+            {
+                "G": "games_played",
+                "AB": "ab",
+                "H": "h",
+                "2B": "doubles",
+                "3B": "triples",
+                "HR": "hr",
+                "RBI": "rbi",
+                "R": "r",
+                "BB": "bb",
+                "K": "k",
+                "SB": "sb",
+                "AVG": "avg",
+            },
+        )
+        self._set_stat_row(
+            self.pitching_table,
+            pitching,
+            {
+                "G": "games",
+                "GS": "games",
+                "W": "wins",
+                "L": "losses",
+                "SV": "saves",
+                "IP": "ip_display",
+                "K": "k",
+                "BB": "bb",
+                "HR": "hr",
+                "ERA": "era",
+                "WHIP": "whip",
+            },
+        )
+
     @staticmethod
     def _set_stat_row(table: SortableTable, data: dict | None, mapping: dict[str, str]) -> None:
         if not data:
@@ -497,7 +554,7 @@ class StatsView(QWidget):
         table.populate([row])
 
     def _open_game_logs(self, _row: int, _col: int) -> None:
-        if self._career_mode:
+        if self._career_mode or self._postseason_mode:
             return
         player_id = self._selected_player_id()
         player = self._selected_player()

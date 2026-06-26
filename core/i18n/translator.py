@@ -142,6 +142,9 @@ _KO: dict[str, str] = {
     "View Career Records":           "통산 기록 보기",
     "Season":                        "시즌",
     "Career":                        "통산",
+    "Postseason":                    "포스트시즌",
+    "Career postseason stats (from imported boxscores)":
+        "통산 포스트시즌 기록 (임포트된 박스스코어 기준)",
     "Search player...":              "선수 검색...",
     "Filter list by name or ID. Does not re-query DB on each input.":
         "이름·ID로 목록을 필터합니다. 입력마다 DB를 다시 읽지 않습니다.",

@@ -17,6 +17,7 @@ from core.parser.batting_notes import (
 from core.parser.boxscore_html import (
     BoxscoreHTMLParser,
     GAME_BOX_GLOB,
+    _BOXSCORE_TITLE_RE,
     peek_is_mlb_boxscore,
 )
 from core.i18n import tr
@@ -32,8 +33,10 @@ from core.stats.models import (
     PitcherLine,
 )
 
-_MLB_GAME_JOIN_B = "JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1"
-_MLB_GAME_JOIN_PL = "JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1"
+_MLB_GAME_JOIN_B = "JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0"
+_MLB_GAME_JOIN_PL = "JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0"
+_MLB_PS_JOIN_B = "JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 1"
+_MLB_PS_JOIN_PL = "JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 1"
 
 
 class Aggregator:
@@ -462,7 +465,7 @@ class Aggregator:
             f"""
             SELECT bl.player_id, bl.position, COUNT(*) AS cnt
             FROM batting_logs bl
-            JOIN games g ON g.game_id = bl.game_id AND g.is_mlb = 1
+            JOIN games g ON g.game_id = bl.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0
             WHERE bl.position != '' {id_filter}
             GROUP BY bl.player_id, bl.position
             ORDER BY bl.player_id, cnt DESC
@@ -498,8 +501,8 @@ class Aggregator:
                 away_hits, home_hits, away_errors, home_errors,
                 ballpark, attendance, game_time, weather,
                 player_of_game_id, player_of_game_name, special_notes,
-                is_mlb
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                is_mlb, is_postseason
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 meta.game_id,
@@ -525,6 +528,7 @@ class Aggregator:
                 notes.player_of_game,
                 notes.special_notes,
                 1 if is_mlb else 0,
+                1 if meta.is_postseason else 0,
             ),
         )
 
@@ -857,6 +861,277 @@ class Aggregator:
         ).fetchone()
         return dict(row) if row else None
 
+    # ── Postseason stats ───────────────────────────────────────────────────────
+
+    def get_batting_postseason(self, player_id: int, season: int) -> dict[str, Any] | None:
+        """Batting stats for a player's postseason games in a given season."""
+        row = self._conn.execute(
+            f"""
+            SELECT
+                b.player_id,
+                p.short_name,
+                p.full_name,
+                SUM(b.ab) AS ab,
+                SUM(b.h) AS h,
+                SUM(b.r) AS r,
+                SUM(b.rbi) AS rbi,
+                SUM(b.bb) AS bb,
+                SUM(b.k) AS k,
+                SUM(b.doubles) AS doubles,
+                SUM(b.triples) AS triples,
+                SUM(b.home_runs) AS hr,
+                SUM(b.stolen_bases) AS sb,
+                SUM(b.hit_by_pitch) AS hbp,
+                {_batting_ratio_sql()}
+                COUNT(DISTINCT b.game_id) AS games_played
+            FROM batting_logs b
+            {_MLB_PS_JOIN_B}
+            JOIN players p ON p.player_id = b.player_id
+            WHERE b.season = ? AND b.player_id = ?
+            GROUP BY b.player_id
+            """,
+            (season, player_id),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_pitching_postseason(self, player_id: int, season: int) -> dict[str, Any] | None:
+        """Pitching stats for a player's postseason games in a given season."""
+        row = self._conn.execute(
+            f"""
+            SELECT
+                pl.player_id,
+                p.short_name,
+                p.full_name,
+                SUM(pl.ip_outs) AS ip_outs,
+                SUM(pl.h) AS h,
+                SUM(pl.er) AS er,
+                SUM(pl.bb) AS bb,
+                SUM(pl.k) AS k,
+                SUM(pl.hr) AS hr,
+                SUM(pl.win) AS wins,
+                SUM(pl.loss) AS losses,
+                SUM(pl.save) AS saves,
+                SUM(pl.is_cg) AS cg,
+                SUM(pl.is_sho) AS sho,
+                {_pitching_ratio_sql()}
+                COUNT(DISTINCT pl.game_id) AS games
+            FROM pitching_logs pl
+            {_MLB_PS_JOIN_PL}
+            JOIN players p ON p.player_id = pl.player_id
+            WHERE pl.season = ? AND pl.player_id = ?
+            GROUP BY pl.player_id
+            """,
+            (season, player_id),
+        ).fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        data["ip"] = outs_to_ip_float(int(data["ip_outs"]))
+        data["ip_display"] = outs_to_ip_str(int(data["ip_outs"]))
+        return data
+
+    def get_batting_career_postseason(self, player_id: int) -> dict[str, Any] | None:
+        """Career postseason batting totals (from imported boxscores only)."""
+        row = self._conn.execute(
+            f"""
+            SELECT
+                b.player_id,
+                p.short_name,
+                p.full_name,
+                SUM(b.ab) AS ab,
+                SUM(b.h) AS h,
+                SUM(b.r) AS r,
+                SUM(b.rbi) AS rbi,
+                SUM(b.bb) AS bb,
+                SUM(b.k) AS k,
+                SUM(b.doubles) AS doubles,
+                SUM(b.triples) AS triples,
+                SUM(b.home_runs) AS hr,
+                SUM(b.stolen_bases) AS sb,
+                SUM(b.hit_by_pitch) AS hbp,
+                ROUND(CAST(SUM(b.h) AS REAL) / NULLIF(SUM(b.ab), 0), 3) AS avg,
+                COUNT(DISTINCT b.game_id) AS games_played
+            FROM batting_logs b
+            {_MLB_PS_JOIN_B}
+            JOIN players p ON p.player_id = b.player_id
+            WHERE b.player_id = ?
+            GROUP BY b.player_id
+            """,
+            (player_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_pitching_career_postseason(self, player_id: int) -> dict[str, Any] | None:
+        """Career postseason pitching totals (from imported boxscores only)."""
+        row = self._conn.execute(
+            f"""
+            SELECT
+                pl.player_id,
+                p.short_name,
+                p.full_name,
+                SUM(pl.ip_outs) AS ip_outs,
+                SUM(pl.h) AS h,
+                SUM(pl.er) AS er,
+                SUM(pl.bb) AS bb,
+                SUM(pl.k) AS k,
+                SUM(pl.hr) AS hr,
+                SUM(pl.win) AS wins,
+                SUM(pl.loss) AS losses,
+                SUM(pl.save) AS saves,
+                ROUND(
+                    CAST(SUM(pl.er) * 27 AS REAL) / NULLIF(SUM(pl.ip_outs), 0), 2
+                ) AS era,
+                ROUND(
+                    CAST(SUM(pl.bb) + SUM(pl.h) AS REAL)
+                    / NULLIF(SUM(pl.ip_outs) / 3.0, 0), 3
+                ) AS whip,
+                COUNT(DISTINCT pl.game_id) AS games
+            FROM pitching_logs pl
+            {_MLB_PS_JOIN_PL}
+            JOIN players p ON p.player_id = pl.player_id
+            WHERE pl.player_id = ?
+            GROUP BY pl.player_id
+            """,
+            (player_id,),
+        ).fetchone()
+        if not row:
+            return None
+        data = dict(row)
+        data["ip"] = outs_to_ip_float(int(data["ip_outs"]))
+        data["ip_display"] = outs_to_ip_str(int(data["ip_outs"]))
+        return data
+
+    def get_postseason_batting_totals(self, season: int) -> list[dict[str, Any]]:
+        """All players' postseason batting stats for a given season."""
+        rows = self._conn.execute(
+            f"""
+            SELECT
+                b.player_id AS id,
+                p.short_name AS name,
+                p.full_name,
+                MAX(b.team) AS team,
+                SUM(b.ab) AS ab,
+                SUM(b.h) AS h,
+                SUM(b.r) AS r,
+                SUM(b.rbi) AS rbi,
+                SUM(b.bb) AS bb,
+                SUM(b.k) AS k,
+                SUM(b.home_runs) AS hr,
+                SUM(b.stolen_bases) AS sb,
+                SUM(b.doubles) AS doubles,
+                SUM(b.triples) AS triples,
+                {_batting_ratio_sql()}
+                COUNT(DISTINCT b.game_id) AS games_played
+            FROM batting_logs b
+            {_MLB_PS_JOIN_B}
+            JOIN players p ON p.player_id = b.player_id
+            WHERE b.season = ?
+            GROUP BY b.player_id
+            ORDER BY p.short_name
+            """,
+            (season,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_postseason_pitching_totals(self, season: int) -> list[dict[str, Any]]:
+        """All players' postseason pitching stats for a given season."""
+        rows = self._conn.execute(
+            f"""
+            SELECT
+                pl.player_id AS id,
+                p.short_name AS name,
+                p.full_name,
+                MAX(pl.team) AS team,
+                SUM(pl.ip_outs) AS ip_outs,
+                SUM(pl.h) AS h,
+                SUM(pl.er) AS er,
+                SUM(pl.bb) AS bb,
+                SUM(pl.k) AS k,
+                SUM(pl.hr) AS hr,
+                SUM(pl.win) AS w,
+                SUM(pl.loss) AS l,
+                SUM(pl.save) AS sv,
+                {_pitching_ratio_sql()}
+                COUNT(DISTINCT pl.game_id) AS games
+            FROM pitching_logs pl
+            {_MLB_PS_JOIN_PL}
+            JOIN players p ON p.player_id = pl.player_id
+            WHERE pl.season = ?
+            GROUP BY pl.player_id
+            ORDER BY p.short_name
+            """,
+            (season,),
+        ).fetchall()
+        result = []
+        for row in rows:
+            data = dict(row)
+            data["ip"] = outs_to_ip_float(int(data["ip_outs"]))
+            result.append(data)
+        return result
+
+    def get_postseason_game_logs_batting(
+        self, player_id: int, season: int
+    ) -> list[dict[str, Any]]:
+        """Per-game batting log for a player's postseason games in a given season."""
+        rows = self._conn.execute(
+            """
+            SELECT
+                b.game_id,
+                b.date,
+                b.team,
+                g.away_team,
+                g.home_team,
+                b.ab, b.h, b.home_runs AS hr, b.rbi, b.bb, b.k,
+                b.doubles, b.triples, b.r, b.stolen_bases AS sb,
+                b.season_avg
+            FROM batting_logs b
+            JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 1
+            WHERE b.player_id = ? AND b.season = ?
+            ORDER BY b.date, b.game_id
+            """,
+            (player_id, season),
+        ).fetchall()
+        result = []
+        for row in rows:
+            data = dict(row)
+            data["opponent"] = data["home_team"] if data["team"] == data["away_team"] else data["away_team"]
+            result.append(data)
+        return result
+
+    def get_postseason_game_logs_pitching(
+        self, player_id: int, season: int
+    ) -> list[dict[str, Any]]:
+        """Per-game pitching log for a player's postseason games in a given season."""
+        rows = self._conn.execute(
+            """
+            SELECT
+                pl.game_id,
+                pl.date,
+                pl.team,
+                g.away_team,
+                g.home_team,
+                pl.ip_outs,
+                pl.h, pl.er, pl.bb, pl.k, pl.hr,
+                pl.win, pl.loss, pl.save,
+                pl.is_cg, pl.is_sho,
+                pl.decision
+            FROM pitching_logs pl
+            JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 1
+            WHERE pl.player_id = ? AND pl.season = ?
+            ORDER BY pl.date, pl.game_id
+            """,
+            (player_id, season),
+        ).fetchall()
+        result = []
+        for row in rows:
+            data = dict(row)
+            data["ip"] = outs_to_ip_str(int(data["ip_outs"]))
+            data["opponent"] = data["home_team"] if data["team"] == data["away_team"] else data["away_team"]
+            result.append(data)
+        return result
+
+    # ── End postseason stats ───────────────────────────────────────────────────
+
     def get_pitching_season(self, player_id: int, season: int) -> dict[str, Any] | None:
         row = self._conn.execute(
             f"""
@@ -997,11 +1272,11 @@ class Aggregator:
                         GROUP BY game_id, team
                     ) first_pitcher
                         ON first_pitcher.first_id = pl2.id
-                    JOIN games g2 ON g2.game_id = pl2.game_id AND g2.is_mlb = 1
+                    JOIN games g2 ON g2.game_id = pl2.game_id AND g2.is_mlb = 1 AND COALESCE(g2.is_postseason, 0) = 0
                     WHERE pl2.player_id = ?
                 ) AS starts
             FROM pitching_logs pl
-            JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+            JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0
             WHERE pl.player_id = ?
             """,
             (player_id, player_id),
@@ -1015,7 +1290,7 @@ class Aggregator:
             """
             SELECT COALESCE(SUM(pl.hold), 0) AS holds
             FROM pitching_logs pl
-            JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+            JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0
             WHERE pl.player_id = ?
             """,
             (player_id,),
@@ -1282,7 +1557,7 @@ class Aggregator:
             f"""
             SELECT MAX({column}) AS prior_value
             FROM batting_logs b
-            JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
+            JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0
             WHERE b.player_id = ? AND b.season = ? AND b.game_id < ?
             """,
             (player_id, season, game_id),
@@ -1299,7 +1574,7 @@ class Aggregator:
             f"""
             SELECT COALESCE(SUM({column}), 0) AS prior_value
             FROM batting_logs b
-            JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
+            JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0
             WHERE b.player_id = ? AND b.season = ? AND b.game_id < ?
             """,
             (player_id, season, game_id),
@@ -1316,7 +1591,7 @@ class Aggregator:
                 """
                 SELECT COALESCE(SUM(k), 0) AS prior_value
                 FROM pitching_logs pl
-                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0
                 WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id < ?
                 """,
                 (player_id, season, game_id),
@@ -1327,7 +1602,7 @@ class Aggregator:
                 """
                 SELECT COALESCE(SUM(win), 0) AS prior_value
                 FROM pitching_logs pl
-                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0
                 WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id < ?
                 """,
                 (player_id, season, game_id),
@@ -1338,7 +1613,7 @@ class Aggregator:
                 """
                 SELECT COALESCE(SUM(save), 0) AS prior_value
                 FROM pitching_logs pl
-                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0
                 WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id < ?
                 """,
                 (player_id, season, game_id),
@@ -1349,7 +1624,7 @@ class Aggregator:
                 """
                 SELECT COALESCE(SUM(pl.ip_outs), 0) AS prior_outs
                 FROM pitching_logs pl
-                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0
                 WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id < ?
                 """,
                 (player_id, season, game_id),
@@ -1364,7 +1639,7 @@ class Aggregator:
                 """
                 SELECT MAX(pl.season_holds) AS prior_value
                 FROM pitching_logs pl
-                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+                JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0
                 WHERE pl.player_id = ? AND pl.season = ? AND pl.game_id < ?
                 """,
                 (player_id, season, game_id),
@@ -1376,6 +1651,47 @@ class Aggregator:
         from core.db.meta import get_init_season_coverage
 
         return get_init_season_coverage(self._conn)
+
+    def refresh_postseason_flags_from_dir(
+        self,
+        boxscore_dir: str | Path,
+    ) -> tuple[int, int]:
+        """Re-read existing boxscore HTML files and update is_postseason on games table.
+
+        Returns (updated, skipped) counts. Call this after upgrading to fix
+        already-imported postseason games that were stored with is_postseason=0.
+        """
+        from core.parser.boxscore_html import detect_is_postseason_from_title
+
+        directory = Path(boxscore_dir)
+        if not directory.is_dir():
+            return 0, 0
+
+        rows = self._conn.execute("SELECT game_id FROM games WHERE is_mlb = 1").fetchall()
+        updated = 0
+        skipped = 0
+        for row in rows:
+            game_id = int(row["game_id"])
+            path = directory / f"game_box_{game_id}.html"
+            if not path.is_file():
+                skipped += 1
+                continue
+            try:
+                head = path.read_text(encoding="utf-8", errors="replace")[:8192]
+                title_match = _BOXSCORE_TITLE_RE.search(head)
+                if not title_match:
+                    skipped += 1
+                    continue
+                is_postseason = 1 if detect_is_postseason_from_title(title_match.group(1)) else 0
+                self._conn.execute(
+                    "UPDATE games SET is_postseason = ? WHERE game_id = ?",
+                    (is_postseason, game_id),
+                )
+                updated += 1
+            except OSError:
+                skipped += 1
+        self._conn.commit()
+        return updated, skipped
 
     def get_db_summary(self) -> dict[str, int]:
         games = self._conn.execute(
@@ -1589,7 +1905,7 @@ class Aggregator:
                 b.doubles, b.triples, b.r, b.stolen_bases AS sb,
                 b.season_avg
             FROM batting_logs b
-            JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
+            JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0
             WHERE b.player_id = ? AND b.season = ?
             ORDER BY b.date, b.game_id
             """,
@@ -1622,7 +1938,7 @@ class Aggregator:
                 pl.is_cg, pl.is_sho,
                 pl.decision
             FROM pitching_logs pl
-            JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
+            JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0
             WHERE pl.player_id = ? AND pl.season = ?
             ORDER BY pl.date, pl.game_id
             """,
@@ -2111,7 +2427,7 @@ def _career_batting_union_sql(max_init_season: int) -> str:
                 SUM(bl.ab), SUM(bl.h), SUM(bl.doubles), SUM(bl.triples), SUM(bl.home_runs),
                 SUM(bl.rbi), SUM(bl.r), SUM(bl.stolen_bases), SUM(bl.bb), SUM(bl.k)
             FROM batting_logs bl
-            JOIN games gm ON gm.game_id = bl.game_id AND gm.is_mlb = 1
+            JOIN games gm ON gm.game_id = bl.game_id AND gm.is_mlb = 1 AND COALESCE(gm.is_postseason, 0) = 0
             GROUP BY bl.player_id
         )
         GROUP BY player_id
@@ -2141,7 +2457,7 @@ def _career_pitching_union_sql(max_init_season: int) -> str:
                 SUM(pl.ip_outs), SUM(pl.win), SUM(pl.loss), SUM(pl.save), SUM(pl.k),
                 SUM(pl.er), SUM(pl.h), SUM(pl.bb), SUM(pl.hr)
             FROM pitching_logs pl
-            JOIN games gm ON gm.game_id = pl.game_id AND gm.is_mlb = 1
+            JOIN games gm ON gm.game_id = pl.game_id AND gm.is_mlb = 1 AND COALESCE(gm.is_postseason, 0) = 0
             GROUP BY pl.player_id
         )
         GROUP BY player_id

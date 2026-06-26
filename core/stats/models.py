@@ -86,6 +86,7 @@ class GameMeta:
     ballpark: str = ""
     attendance: int = 0
     game_time: str = ""
+    is_postseason: bool = False
 
 
 @dataclass
