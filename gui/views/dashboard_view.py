@@ -15,21 +15,26 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QSplitter,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
+from core.app_state import get_readiness_items
 from core.config import AppSettings, SettingsManager
-from core.i18n import tr
+from core.i18n import format_relative_datetime, format_full_datetime, tr
 from core.milestone.definitions import MilestoneDefinitions
 from core.milestone.prediction_store import CachedPrediction, PredictionStore
 from core.stats.aggregator import Aggregator
 from core.stats.player_display import best_display_name
 from gui.theme import RED_TEXT, TEXT_SECONDARY, hint_style
 from gui.widgets.card_panel import CardPanel
+from gui.widgets.empty_state import EmptyStateWidget
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.grade_styles import dashboard_milestone_color
+from gui.widgets.import_result import build_import_message, show_import_result_banner
 from gui.widgets.milestone_dialog import MilestoneAchievedDialog
+from gui.widgets.readiness_checklist import ReadinessChecklistCard
 from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
 
 
@@ -38,6 +43,7 @@ class DashboardView(QWidget):
     navigate_to_milestone = pyqtSignal(dict)
     navigate_to_predict = pyqtSignal(int, str)
     navigate_to_initial_import = pyqtSignal()
+    navigate_to_settings = pyqtSignal()
 
     def __init__(
         self,
@@ -69,7 +75,7 @@ class DashboardView(QWidget):
         self.mlb_only_checkbox = QCheckBox(tr("MLB Only"))
         self.mlb_only_checkbox.setChecked(self.settings.import_mlb_only)
         self.mlb_only_checkbox.toggled.connect(self._on_mlb_only_toggled)
-        self.init_tab_button = QPushButton(tr("→ Initial Setup"))
+        self.init_tab_button = QPushButton(tr("→ Import Existing Records"))
         self.init_tab_button.setObjectName("linkButton")
 
         self.init_tab_button.clicked.connect(self.navigate_to_initial_import.emit)
@@ -92,6 +98,9 @@ class DashboardView(QWidget):
         control_card = CardPanel()
         control_card.content_layout.addLayout(header_row)
 
+        self.readiness_card = ReadinessChecklistCard()
+        self.readiness_card.action_requested.connect(self._on_readiness_action)
+
         self.progress_label = QLabel("")
         self.progress_label.setVisible(False)
         self.progress_label.setStyleSheet(hint_style(TEXT_SECONDARY))
@@ -108,17 +117,25 @@ class DashboardView(QWidget):
         self.recent_list = QListWidget()
         self.recent_list.setObjectName("dashboardMilestoneList")
         self.recent_list.itemClicked.connect(self._on_recent_clicked)
-        self.recent_more = QPushButton(tr("View All Milestone Records →"))
+        self.recent_empty = EmptyStateWidget()
+        self.recent_stack = QStackedWidget()
+        self.recent_stack.addWidget(self.recent_list)
+        self.recent_stack.addWidget(self.recent_empty)
+        self.recent_more = QPushButton(tr("View All Achievement Records →"))
         self.recent_more.setObjectName("linkButton")
         self.recent_more.clicked.connect(self._show_all_milestones)
         recent_card = CardPanel(
             tr("🏆  Recent Milestones (last 10)"),
             trailing=self.recent_more,
         )
-        recent_card.add_widget(self.recent_list)
+        recent_card.add_widget(self.recent_stack)
 
         self.near_list = QListWidget()
         self.near_list.itemClicked.connect(self._on_near_clicked)
+        self.near_empty = EmptyStateWidget()
+        self.near_stack = QStackedWidget()
+        self.near_stack.addWidget(self.near_list)
+        self.near_stack.addWidget(self.near_empty)
         self.near_more = QPushButton(tr("View All Predictions →"))
         self.near_more.setObjectName("linkButton")
         self.near_more.clicked.connect(self._show_all_predictions)
@@ -126,7 +143,7 @@ class DashboardView(QWidget):
             tr("🔥  Upcoming (Near)"),
             trailing=self.near_more,
         )
-        near_card.add_widget(self.near_list)
+        near_card.add_widget(self.near_stack)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(recent_card)
@@ -139,6 +156,7 @@ class DashboardView(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.banner)
         layout.addWidget(control_card)
+        layout.addWidget(self.readiness_card)
         layout.addWidget(self.progress_card)
         layout.addWidget(splitter, stretch=1)
 
@@ -164,22 +182,42 @@ class DashboardView(QWidget):
     def update_status_summary(self) -> None:
         league = self.settings.active_save or tr("(No league selected)")
         last_import = self.settings.import_state.get("last_import_at", "")
-        last_label = last_import[:10] if last_import else "-"
+        last_label = format_relative_datetime(last_import)
         self.status_label.setText(
             tr("Active League: {league}  ·  Season {season}  ·  Last import: {last}").format(
                 league=league, season=self.settings.current_season, last=last_label
             )
         )
+        self.status_label.setToolTip(format_full_datetime(last_import))
+        if not self.aggregator.is_closed:
+            self.readiness_card.set_items(
+                get_readiness_items(self.settings, self.aggregator)
+            )
+
+    def _on_readiness_action(self, key: str) -> None:
+        if key in ("league", "teams"):
+            self.navigate_to_settings.emit()
+        elif key == "init_import":
+            self.navigate_to_initial_import.emit()
+        elif key == "boxscore_import":
+            self.start_import()
 
     def refresh_recent_achievements(self) -> None:
         self._recent_records = self.aggregator.get_recent_milestone_records(10)
         self.recent_list.clear()
         if not self._recent_records:
-            item = QListWidgetItem(tr("No recent milestone records."))
-            item.setFlags(Qt.ItemFlag.NoItemFlags)
-            item.setForeground(Qt.GlobalColor.lightGray)
-            self.recent_list.addItem(item)
+            self.recent_empty.set_content(
+                "🏆",
+                tr("No recent milestone records."),
+                tr("Import boxscores to automatically detect milestones."),
+                [
+                    (tr("Import Boxscores"), self.start_import),
+                    (tr("Go to Achievement Records"), self._show_all_milestones),
+                ],
+            )
+            self.recent_stack.setCurrentWidget(self.recent_empty)
             return
+        self.recent_stack.setCurrentWidget(self.recent_list)
         for record in self._recent_records:
             milestone = self.milestones.get_by_key(record["milestone_key"])
             label = (
@@ -198,11 +236,25 @@ class DashboardView(QWidget):
             if not name:
                 name = record.get("team") or "—"
             is_injury = record.get("milestone_key") == "manual_injury"
-            text = f"{name}  ·  {label}"
+            detail_parts = []
+            if record.get("achieved_date"):
+                detail_parts.append(str(record["achieved_date"]))
+            if record.get("opponent_team"):
+                detail_parts.append(
+                    tr("vs {opponent}").format(opponent=record["opponent_team"])
+                )
+            if record.get("season"):
+                detail_parts.append(
+                    tr("{season} season").format(season=record["season"])
+                )
+            first_line = f"{name}  ·  {label}"
+            text = first_line
+            if detail_parts:
+                text += "\n" + "  ·  ".join(detail_parts)
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, record)
             item.setToolTip(text)
-            item.setSizeHint(QSize(0, 32))
+            item.setSizeHint(QSize(0, 44 if detail_parts else 32))
             if is_injury:
                 item.setForeground(QColor(RED_TEXT))
                 f = item.font()
@@ -225,21 +277,50 @@ class DashboardView(QWidget):
         self._near_predictions = store.list_near_cached(limit=10)
         self.near_list.clear()
         if not self._near_predictions:
-            item = QListWidgetItem(tr("No near career milestones."))
-            item.setFlags(Qt.ItemFlag.NoItemFlags)
-            self.near_list.addItem(item)
-            return
-        for pred in self._near_predictions:
-            remaining = int(pred.remaining)
-            text = (
-                f"🔥 {pred.player_name}\n"
-                + tr("   {label} — {remaining:,} remaining").format(
-                    label=pred.milestone_label, remaining=remaining
-                )
+            self.near_empty.set_content(
+                "🔮",
+                tr("No predictable records."),
+                tr("Import existing career/season records first."),
+                [(tr("Import Existing Records"), self.navigate_to_initial_import.emit)],
             )
-            item = QListWidgetItem(text)
+            self.near_stack.setCurrentWidget(self.near_empty)
+            return
+        self.near_stack.setCurrentWidget(self.near_list)
+        for pred in self._near_predictions:
+            item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, pred)
+            item.setSizeHint(QSize(0, 62))
             self.near_list.addItem(item)
+            self.near_list.setItemWidget(item, self._build_near_row(pred))
+
+    def _build_near_row(self, pred: CachedPrediction) -> QWidget:
+        row = QWidget()
+        layout = QVBoxLayout(row)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(3)
+
+        header = QLabel(f"🔥 {pred.player_name}  ·  {pred.milestone_label}")
+        header.setStyleSheet("font-weight: 600;")
+
+        bar = QProgressBar()
+        bar.setFixedHeight(8)
+        bar.setTextVisible(False)
+        bar.setMaximum(1000)
+        bar.setValue(max(0, min(1000, int(pred.progress_pct * 10))))
+
+        detail = QLabel(
+            tr("{current:,.0f} / {target:,.0f}  ·  {remaining:,.0f} remaining").format(
+                current=pred.current_value,
+                target=pred.threshold,
+                remaining=pred.remaining,
+            )
+        )
+        detail.setStyleSheet(hint_style(TEXT_SECONDARY))
+
+        layout.addWidget(header)
+        layout.addWidget(bar)
+        layout.addWidget(detail)
+        return row
 
     def _on_recent_clicked(self, item: QListWidgetItem) -> None:
         record = item.data(Qt.ItemDataRole.UserRole)
@@ -322,31 +403,20 @@ class DashboardView(QWidget):
         self.progress_bar.setVisible(False)
         self.progress_label.setVisible(False)
 
-        result = payload.batch
-        parts = [tr("{count} games added").format(count=result.imported)]
-        if result.skipped_non_mlb:
-            parts.append(tr("{count} non-MLB skipped").format(count=result.skipped_non_mlb))
-        if payload.milestones_recorded:
-            parts.append(tr("{count} milestones achieved").format(count=payload.milestones_recorded))
-        message = " · ".join(parts)
-        self.import_finished.emit(message)
+        self.import_finished.emit(build_import_message(payload))
         self.update_status_summary()
         self.refresh()
 
-        if result.errors:
-            self.banner.show_warning(
-                tr("Some errors: {count} — ").format(count=len(result.errors))
-                + (result.errors[0].error if result.errors else "")
-            )
-        elif payload.milestones:
-            box = QMessageBox(self)
-            box.setWindowTitle(tr("Import Complete"))
-            box.setText(message)
-            detail_button = box.addButton(tr("Details"), QMessageBox.ButtonRole.ActionRole)
-            box.addButton(QMessageBox.StandardButton.Ok)
-            box.exec()
-            if box.clickedButton() == detail_button:
-                MilestoneAchievedDialog(payload.milestones, self).exec()
+        show_import_result_banner(
+            self.banner,
+            payload,
+            on_view_milestones=lambda: MilestoneAchievedDialog(payload.milestones, self).exec(),
+            on_view_error=lambda: QMessageBox.warning(
+                self,
+                tr("Import Errors"),
+                payload.batch.errors[0].error if payload.batch.errors else "",
+            ),
+        )
 
     def _on_import_error(self, message: str) -> None:
         self.import_button.setEnabled(True)

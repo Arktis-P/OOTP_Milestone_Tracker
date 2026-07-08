@@ -713,7 +713,7 @@ class SetupView(QWidget):
             tr("Reset Complete"),
             tr(
                 "Current save data has been reset.\n"
-                "Please run initial setup and import boxscores again."
+                "Please import existing records and boxscores again."
             ),
         )
 

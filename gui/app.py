@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings, SettingsManager, get_bundle_root, resolve_data_path
-from core.i18n import tr
+from core.i18n import format_full_datetime, format_relative_datetime, tr
 from core.db.validation import format_overlap_warning, validate_no_overlap
 from core.milestone.definitions import load_milestones
 from core.stats.aggregator import Aggregator
@@ -115,6 +115,7 @@ class MainWindow(QMainWindow):
         self._dashboard_view.navigate_to_initial_import.connect(
             self._navigate_to_initial_import
         )
+        self._dashboard_view.navigate_to_settings.connect(self._navigate_to_settings)
         self._stack.addWidget(self._dashboard_view)
 
         self._milestone_view = MilestoneView(
@@ -222,6 +223,10 @@ class MainWindow(QMainWindow):
     def _navigate_to_initial_import(self) -> None:
         if self._initial_import_view:
             self._set_current_page(self._initial_import_view)
+
+    def _navigate_to_settings(self) -> None:
+        if self._setup_tab:
+            self._set_current_page(self._setup_tab)
 
     def _reload_aggregator(self) -> None:
         target = resolve_data_path(self.settings.db_path)
@@ -339,7 +344,7 @@ class MainWindow(QMainWindow):
         league = self.settings.active_save or tr("(No league selected)")
         summary = self._aggregator.get_db_summary()
         last_import = self.settings.import_state.get("last_import_at", "")
-        last_label = last_import[:10] if last_import else "-"
+        last_label = format_relative_datetime(last_import)
         teams = (
             ", ".join(self.settings.tracked_teams)
             if self.settings.tracked_teams
@@ -357,6 +362,35 @@ class MainWindow(QMainWindow):
                 players=summary["players"],
             )
         )
+        self._status.setToolTip(format_full_datetime(last_import))
+        self._update_sidebar_status()
+
+    def _update_sidebar_status(self) -> None:
+        target = resolve_data_path(self.settings.db_path)
+        if not self.settings.active_save:
+            self._sidebar.set_status(
+                level="error",
+                status_text=tr("⚠ No league selected"),
+                context_text=tr("Select a league in Settings."),
+                tooltip=str(target),
+            )
+        elif self._aggregator.is_closed:
+            self._sidebar.set_status(
+                level="error",
+                status_text=tr("⚠ Data connection issue"),
+                context_text=self.settings.active_save,
+                tooltip=str(target),
+            )
+        else:
+            self._sidebar.set_status(
+                level="ok",
+                status_text=tr("● Data OK"),
+                context_text=tr("{league} · Season {season}").format(
+                    league=self.settings.active_save,
+                    season=self.settings.current_season,
+                ),
+                tooltip=tr("DB: {path}").format(path=target),
+            )
 
     def _on_status_clicked(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:

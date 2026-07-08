@@ -69,7 +69,7 @@ class PredictView(QWidget):
         self.near_only_checkbox = QCheckBox(tr("🔥 Near Only"))
         self.near_only_checkbox.toggled.connect(self.refresh)
 
-        title = QLabel(tr("Milestone Predictions (Career)"))
+        title = QLabel(tr("Achievement Predictions (Career)"))
         title.setObjectName("pageTitle")
 
         controls = QHBoxLayout()
@@ -100,7 +100,7 @@ class PredictView(QWidget):
                 tr("This Season"),
             ]
         )
-        table_card = CardPanel(tr("Career Milestone Predictions"))
+        table_card = CardPanel(tr("Career Achievement Predictions"))
         table_card.add_widget(self.table)
 
         layout = QVBoxLayout(self)

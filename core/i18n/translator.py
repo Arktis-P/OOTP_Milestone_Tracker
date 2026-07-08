@@ -2,25 +2,55 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 _language: str = "ko"
 
 # fmt: off
 _KO: dict[str, str] = {
 
+    # ── Relative time formatting (shared) ────────────────────────────────
+    "Today {time}":                     "오늘 {time}",
+    "Yesterday {time}":                 "어제 {time}",
+
+    # ── Readiness checklist (core/app_state.py) ──────────────────────────
+    "Active league selected":           "활성 리그 선택",
+    "No league selected yet.":          "아직 리그를 선택하지 않았습니다.",
+    "Tracked teams configured":         "추적 팀 설정",
+    "No tracked teams configured yet.": "아직 추적 팀을 설정하지 않았습니다.",
+    "Existing records imported":        "기존 기록 가져오기 완료",
+    "Existing career/season records have not been imported yet.":
+        "기존 통산·시즌 기록을 아직 가져오지 않았습니다.",
+    "Through {season} season · {batting:,} batters / {pitching:,} pitchers":
+        "{season}시즌까지 · 타자 {batting:,}명 / 투수 {pitching:,}명",
+    "Boxscores imported":               "박스스코어 가져오기 완료",
+    "No boxscores have been imported yet.": "아직 박스스코어를 가져오지 않았습니다.",
+    "{games:,} MLB games imported":     "MLB {games:,}경기 가져옴",
+    "Getting Started":                  "시작 체크리스트",
+    "✅ Setup complete":                "✅ 설정 완료",
+    "Select League →":                  "리그 선택하기 →",
+    "Import Existing Records →":        "기존 기록 가져오기 →",
+    "Import Boxscores →":               "박스스코어 가져오기 →",
+    "Go →":                             "이동 →",
+
     # ── Sidebar navigation ──────────────────────────────────────────────
     "Record Inspector":             "기록 검사기",
     "Dashboard":                    "대시보드",
-    "Milestone Records":            "마일스톤 기록",
+    "Achievement Records":          "달성 기록",
     "Player Stats":                 "선수 스탯",
-    "Milestone Predictions":        "마일스톤 예측",
+    "Achievement Predictions":      "기록 달성 예측",
     "Tools & Settings":             "도구 & 설정",
-    "Initial Setup":                "초기 설정",
+    "Import Existing Records":      "기존 기록 가져오기",
     "Rating Editor":                "능력치 편집기",
     "Settings":                     "설정",
     "Bundle update available":      "번들 업데이트 있음",
-    "App Info":                     "앱 정보",
-    "%APPDATA% Storage":            "%APPDATA% 저장소",
-    "SQLite DB Connected":          "SQLite DB 연결됨",
+    "● Checking data...":           "● 확인 중...",
+    "● Data OK":                    "● 데이터 정상",
+    "⚠ No league selected":         "⚠ 리그 미설정",
+    "⚠ Data connection issue":      "⚠ 데이터 연결 오류",
+    "Select a league in Settings.": "설정에서 리그를 선택하세요.",
+    "{league} · Season {season}":   "{league} · {season}시즌",
+    "DB: {path}":                   "DB: {path}",
 
     # ── App / status bar ────────────────────────────────────────────────
     "Settings saved":               "설정 저장",
@@ -35,8 +65,8 @@ _KO: dict[str, str] = {
     "⚡ OOTP Simulation Control Panel":  "⚡ OOTP 시뮬레이션 컨트롤 패널",
     "📥  Import Boxscores":             "📥  박스스코어 가져오기",
     "MLB Only":                         "MLB만",
-    "→ Initial Setup":                  "→ 초기 설정",
-    "View All Milestone Records →":     "전체 마일스톤 기록 보기 →",
+    "→ Import Existing Records":        "→ 기존 기록 가져오기",
+    "View All Achievement Records →":   "전체 달성 기록 보기 →",
     "🏆  Recent Milestones (last 10)":  "🏆  최근 마일스톤 (최근 10개)",
     "View All Predictions →":           "전체 예측 보기 →",
     "🔥  Upcoming (Near)":              "🔥  다가오는 마일스톤 (근접)",
@@ -44,6 +74,17 @@ _KO: dict[str, str] = {
         "활성 리그: {league}  ·  {season}시즌  ·  마지막 가져오기: {last}",
     "No recent milestone records.":     "최근 마일스톤 기록이 없습니다.",
     "No near career milestones.":       "근접한 커리어 마일스톤이 없습니다.",
+    "Import boxscores to automatically detect milestones.":
+        "박스스코어를 가져오면 자동으로 마일스톤을 탐지합니다.",
+    "Import Boxscores":                 "박스스코어 가져오기",
+    "Go to Achievement Records":        "달성 기록 화면으로 이동",
+    "vs {opponent}":                    "vs {opponent}",
+    "{season} season":                  "{season}시즌",
+    "No predictable records.":          "예측 가능한 기록이 없습니다.",
+    "Import existing career/season records first.":
+        "기존 시즌·통산 기록을 먼저 가져와 주세요.",
+    "{current:,.0f} / {target:,.0f}  ·  {remaining:,.0f} remaining":
+        "{current:,.0f} / {target:,.0f}  ·  {remaining:,.0f} 남음",
     "   {label} — {remaining:,} remaining":  "   {label} — {remaining:,} 남음",
     "Boxscore folder not configured. Select a league in Settings.":
         "박스스코어 폴더가 설정되지 않았습니다. 설정에서 리그를 선택하세요.",
@@ -63,6 +104,10 @@ _KO: dict[str, str] = {
     "Details":                          "세부 정보",
     "Import failed: {message}":         "가져오기 실패: {message}",
     "No new games":                     "새 경기 없음",
+    "{count} errors":                   "오류 {count}건",
+    "View New Milestones":              "새 마일스톤 보기",
+    "View First Error":                 "첫 오류 확인",
+    "Import Errors":                    "가져오기 오류",
 
     # ── Milestone view — table columns ───────────────────────────────────
     "Date":                             "날짜",
@@ -94,10 +139,15 @@ _KO: dict[str, str] = {
     "Export to CSV":                    "CSV 내보내기",
     "Export Streak":                    "연속기록 내보내기",
     "➕ Manual Entry":                  "➕ 수동 입력",
-    "Record Season Ratio Milestones":   "시즌 비율 마일스톤 기록",
+    "Team Move":                        "팀 이동",
+    "Export":                           "내보내기",
+    "Full History CSV":                 "전체 기록 CSV",
+    "Streak CSV":                       "연속 기록 CSV",
+    "More":                             "더보기",
+    "Determine Final Season Records":   "시즌 최종 기록 판정",
     "Edit":                             "수정",
     "Delete":                           "삭제",
-    "F2: Edit · Double-click: Game Log": "F2: 수정 · 더블클릭: 게임 로그",
+    "F2: Edit · Del: Delete · Double-click: Game Log": "F2: 수정 · Del: 삭제 · 더블클릭: 게임 로그",
     "Milestone History":                "마일스톤 이력",
     "Subject":                          "대상",
     "Search":                           "검색",
@@ -170,9 +220,9 @@ _KO: dict[str, str] = {
     "Boxscore folder not configured. Click the status bar at the bottom to select a league.":
         "박스스코어 폴더가 설정되지 않았습니다. 하단 상태바를 클릭해 리그를 선택하세요.",
     "No players to display. Check that initial stats (stats file) are imported and that custom teams have their abbreviation and name registered in Settings.":
-        "표시할 선수가 없습니다. 초기값 설정( stats 파일 )을 했는지, 커스텀 팀은 설정에서 약칭·팀 이름을 등록했는지 확인하세요.",
+        "표시할 선수가 없습니다. 기존 기록 가져오기( stats 파일 )을 했는지, 커스텀 팀은 설정에서 약칭·팀 이름을 등록했는지 확인하세요.",
     "No players to display. Run initial setup or import boxscores, then check again.":
-        "표시할 선수가 없습니다. 초기값 설정 또는 박스스코어 가져오기 후 다시 확인하세요.",
+        "표시할 선수가 없습니다. 기존 기록 가져오기 또는 박스스코어 가져오기 후 다시 확인하세요.",
     "Personal: {count}":             "개인 {count}",
     "Team: {count}":                 "팀 {count}",
 
@@ -183,7 +233,7 @@ _KO: dict[str, str] = {
     "All Players":                   "전체 선수",
     "All Grades":                    "전체 등급",
     "🔥 Near Only":                 "🔥 임박만 보기",
-    "Milestone Predictions (Career)": "마일스톤 예측 (통산)",
+    "Achievement Predictions (Career)": "기록 달성 예측 (통산)",
     "Player":                        "선수",
     "Grade":                         "등급",
     "Korean Name":                   "한글명",
@@ -198,7 +248,7 @@ _KO: dict[str, str] = {
     "Achievable (+{amount})":        "가능 (+{amount})",
     "Not achievable (+{amount}, {after} remaining after season)":
         "불가 (+{amount}, 시즌 후 {after} 남음)",
-    "Career Milestone Predictions":  "통산 마일스톤 예측 목록",
+    "Career Achievement Predictions":  "통산 기록 달성 예측 목록",
     "No career milestone predictions to display.\nNo players are within tracking range, or check your tracked teams and boxscores.":
         "표시할 통산 마일스톤 예측이 없습니다.\n남은 수치가 추적 시작 기준 이하인 선수가 없거나, 추적 팀·박스스코어를 확인하세요.",
     "🔥 Near":                       "🔥 임박",
@@ -396,8 +446,8 @@ _KO: dict[str, str] = {
     "Reset Failed":                      "초기화 실패",
     "Could not delete the DB file.\n{error}": "DB 파일을 삭제할 수 없습니다.\n{error}",
     "Reset Complete":                    "초기화 완료",
-    "Current save data has been reset.\nPlease run initial setup and import boxscores again.":
-        "현재 세이브 데이터가 초기화되었습니다.\n초기 설정을 다시 실행하고 박스스코어를 가져오세요.",
+    "Current save data has been reset.\nPlease import existing records and boxscores again.":
+        "현재 세이브 데이터가 초기화되었습니다.\n기존 기록 가져오기와 박스스코어 가져오기를 다시 실행하세요.",
     "Korean Name Mapping...":            "한글 이름 매핑...",
     "Input Required":                    "입력 필요",
     "Please select the OOTP save folder.": "OOTP 세이브 폴더를 선택하세요.",
@@ -539,7 +589,6 @@ _KO: dict[str, str] = {
     "Manual Entry":                      "수동 입력",
     "Record":                            "기록",
     "Award":                             "수상",
-    "Transfer":                          "이적",
     "Injury":                            "부상",
     "Add Record":                        "기록 추가",
     "Target:":                           "대상:",
@@ -688,8 +737,8 @@ _KO: dict[str, str] = {
     "Reference files merged successfully.": "기준 파일이 병합되었습니다.",
 
     # ── validation.py ─────────────────────────────────────────────────────
-    "Career stats warning: {seasons} season(s) exist in both initial data and boxscores. Career totals may be inflated. Re-import from the Initial Setup tab, excluding those seasons.":
-        "통산 집계 경고: {seasons}시즌이 초기값과 박스스코어에 모두 존재합니다. 통산 수치가 부풀려질 수 있습니다. 초기값 설정 탭에서 해당 시즌을 제외하고 재임포트하세요.",
+    "Career stats warning: {seasons} season(s) exist in both initial data and boxscores. Career totals may be inflated. Re-import from the Import Existing Records tab, excluding those seasons.":
+        "통산 집계 경고: {seasons}시즌이 초기값과 박스스코어에 모두 존재합니다. 통산 수치가 부풀려질 수 있습니다. 기존 기록 가져오기 탭에서 해당 시즌을 제외하고 재임포트하세요.",
 
     # ── workers ───────────────────────────────────────────────────────────
     "Re-importing boxscore: {filename}": "박스스코어 다시 불러오기: {filename}",
@@ -798,3 +847,39 @@ def tr(text: str) -> str:
     if _language == "en":
         return text
     return _TRANSLATIONS.get(_language, {}).get(text, text)
+
+
+def _parse_iso(iso_str: str) -> datetime | None:
+    try:
+        dt = datetime.fromisoformat(iso_str)
+    except ValueError:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone().replace(tzinfo=None)
+    return dt
+
+
+def format_relative_datetime(iso_str: str | None) -> str:
+    """Today HH:mm / Yesterday HH:mm / YYYY-MM-DD HH:mm / '-' for empty."""
+    if not iso_str:
+        return "-"
+    dt = _parse_iso(iso_str)
+    if dt is None:
+        return iso_str[:10] if len(iso_str) >= 10 else iso_str
+    today = datetime.now().date()
+    time_str = dt.strftime("%H:%M")
+    if dt.date() == today:
+        return tr("Today {time}").format(time=time_str)
+    if dt.date() == today - timedelta(days=1):
+        return tr("Yesterday {time}").format(time=time_str)
+    return dt.strftime("%Y-%m-%d %H:%M")
+
+
+def format_full_datetime(iso_str: str | None) -> str:
+    """Full timestamp for tooltips; '' for empty/unparseable values."""
+    if not iso_str:
+        return ""
+    dt = _parse_iso(iso_str)
+    if dt is None:
+        return iso_str
+    return dt.strftime("%Y-%m-%d %H:%M:%S")

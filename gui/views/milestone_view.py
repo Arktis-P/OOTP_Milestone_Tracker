@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
     QLabel,
+    QMenu,
     QMessageBox,
     QProgressBar,
     QPushButton,
@@ -23,6 +24,7 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QTableWidgetItem,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -43,6 +45,7 @@ from core.stats.aggregator import Aggregator
 from core.stats.team_filter import expand_tracked_teams
 from core.streak.export import export_streak_csvs as write_streak_csv_bundle
 from gui.widgets.error_banner import ErrorBanner
+from gui.widgets.import_result import build_import_message, show_import_result_banner
 from gui.widgets.table_widgets import TablePanel
 from gui.widgets.edit_milestone_record_dialog import EditMilestoneRecordDialog
 from gui.widgets.manual_milestone_dialog import ManualMilestoneDialog
@@ -156,28 +159,44 @@ class MilestoneView(QWidget):
         self.log_hint_panel.setMaximumHeight(100)
         self.log_hint_panel.hide()
 
-        self.refresh_button = QPushButton(tr("Refresh"))
-        self.export_button = QPushButton(tr("Export to CSV"))
-        self.export_streak_button = QPushButton(tr("Export Streak"))
-        self.btn_manual_record = QPushButton(tr("Record"))
-        self.btn_manual_award = QPushButton(tr("Award"))
-        self.btn_manual_transfer = QPushButton(tr("Transfer"))
-        self.btn_manual_injury = QPushButton(tr("Injury"))
-        self.season_ratio_button = QPushButton(tr("Record Season Ratio Milestones"))
+        self.record_menu_button = QToolButton()
+        self.record_menu_button.setText(tr("Add Record"))
+        self.record_menu_button.setObjectName("primaryButton")
+        self.record_menu_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        record_menu = QMenu(self.record_menu_button)
+        record_menu.addAction(tr("Milestone"), lambda: self._open_manual_dialog(0))
+        record_menu.addAction(tr("Award"), lambda: self._open_manual_dialog(1))
+        record_menu.addAction(tr("Team Move"), lambda: self._open_manual_dialog(2))
+        record_menu.addAction(tr("Injury"), lambda: self._open_manual_dialog(3))
+        self.record_menu_button.setMenu(record_menu)
+
+        self.export_menu_button = QToolButton()
+        self.export_menu_button.setText(tr("Export"))
+        self.export_menu_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        export_menu = QMenu(self.export_menu_button)
+        export_menu.addAction(tr("Full History CSV"), self.export_history_csv)
+        export_menu.addAction(tr("Streak CSV"), self.export_streak_csvs)
+        self.export_menu_button.setMenu(export_menu)
+
+        self.more_menu_button = QToolButton()
+        self.more_menu_button.setText(tr("More"))
+        self.more_menu_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        more_menu = QMenu(self.more_menu_button)
+        more_menu.addAction(
+            tr("Determine Final Season Records"), self._record_season_ratio_milestones
+        )
+        more_menu.addAction(tr("Refresh"), self.refresh)
+        self.more_menu_button.setMenu(more_menu)
+
         self.edit_button = QPushButton(tr("Edit"))
         self.delete_button = QPushButton(tr("Delete"))
-        self.refresh_button.clicked.connect(self.refresh)
-        self.export_button.clicked.connect(self.export_history_csv)
-        self.export_streak_button.clicked.connect(self.export_streak_csvs)
-        self.btn_manual_record.clicked.connect(lambda: self._open_manual_dialog(0))
-        self.btn_manual_award.clicked.connect(lambda: self._open_manual_dialog(1))
-        self.btn_manual_transfer.clicked.connect(lambda: self._open_manual_dialog(2))
-        self.btn_manual_injury.clicked.connect(lambda: self._open_manual_dialog(3))
-        self.season_ratio_button.clicked.connect(self._record_season_ratio_milestones)
+        self.edit_button.setEnabled(False)
+        self.delete_button.setEnabled(False)
         self.edit_button.clicked.connect(self._edit_selected_record)
         self.delete_button.clicked.connect(self._delete_selected_record)
         self.table_panel.table.cellDoubleClicked.connect(self._open_game_log)
         self.table_panel.table.itemSelectionChanged.connect(self._update_meta_panel)
+        self.table_panel.table.itemSelectionChanged.connect(self._update_selection_actions)
         self._edit_shortcut = QShortcut(QKeySequence(Qt.Key.Key_F2), self.table_panel.table)
         self._edit_shortcut.activated.connect(self._edit_selected_record)
         self._delete_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.table_panel.table)
@@ -208,17 +227,11 @@ class MilestoneView(QWidget):
         action_row.addWidget(self.progress_label)
         action_row.addWidget(self.progress_bar)
         action_row.addSpacing(20)
-        action_row.addWidget(section_label(tr("Manual Entry")))
-        action_row.addWidget(self.btn_manual_record)
-        action_row.addWidget(self.btn_manual_award)
-        action_row.addWidget(self.btn_manual_transfer)
-        action_row.addWidget(self.btn_manual_injury)
-        action_row.addSpacing(12)
-        action_row.addWidget(self.season_ratio_button)
+        action_row.addWidget(self.record_menu_button)
         action_row.addStretch()
-        action_row.addWidget(self.refresh_button)
-        action_row.addWidget(self.export_button)
-        action_row.addWidget(self.export_streak_button)
+        action_row.addWidget(self.export_menu_button)
+        action_row.addWidget(self.more_menu_button)
+        action_row.addSpacing(12)
         action_row.addWidget(self.edit_button)
         action_row.addWidget(self.delete_button)
 
@@ -337,32 +350,19 @@ class MilestoneView(QWidget):
         self.progress_bar.setVisible(False)
         self.progress_label.setVisible(False)
 
-        result = payload.batch
-        parts = [tr("{count} games added").format(count=result.imported)]
-        if result.skipped_non_mlb:
-            parts.append(tr("{count} non-MLB skipped").format(count=result.skipped_non_mlb))
-        if payload.milestones_recorded:
-            parts.append(tr("{count} milestones achieved").format(count=payload.milestones_recorded))
-        message = " · ".join(parts)
-        self.import_finished.emit(message)
+        self.import_finished.emit(build_import_message(payload))
         self.refresh()
 
-        if result.errors:
-            self.banner.show_warning(
-                tr("Some errors: {count} — ").format(count=len(result.errors))
-                + (result.errors[0].error if result.errors else "")
-            )
-        elif result.imported == 0 and not payload.milestones:
-            self.banner.show_info(message or tr("No new games"))
-        elif payload.milestones:
-            box = QMessageBox(self)
-            box.setWindowTitle(tr("Import Complete"))
-            box.setText(message)
-            detail_button = box.addButton(tr("Details"), QMessageBox.ButtonRole.ActionRole)
-            box.addButton(QMessageBox.StandardButton.Ok)
-            box.exec()
-            if box.clickedButton() == detail_button:
-                MilestoneAchievedDialog(payload.milestones, self).exec()
+        show_import_result_banner(
+            self.banner,
+            payload,
+            on_view_milestones=lambda: MilestoneAchievedDialog(payload.milestones, self).exec(),
+            on_view_error=lambda: QMessageBox.warning(
+                self,
+                tr("Import Errors"),
+                payload.batch.errors[0].error if payload.batch.errors else "",
+            ),
+        )
 
     def _on_import_error(self, message: str) -> None:
         self.import_button.setEnabled(True)
@@ -470,6 +470,7 @@ class MilestoneView(QWidget):
                     self.table_panel.table.selectRow(row_idx)
                     break
             self._highlight_id = None
+        self._update_selection_actions()
 
     def highlight_record(self, record_id: int | None) -> None:
         self._highlight_id = record_id
@@ -596,7 +597,7 @@ class MilestoneView(QWidget):
             return
         confirm = QMessageBox.question(
             self,
-            tr("Record Season Ratio Milestones"),
+            tr("Determine Final Season Records"),
             tr(
                 "Records AVG/OBP/SLG/OPS/ERA milestones for {season} season based on current DB.\n\n"
                 "Recommended to run once after the season ends. Continue?"
@@ -751,6 +752,11 @@ class MilestoneView(QWidget):
                 )
         self.refresh()
         self.records_changed.emit()
+
+    def _update_selection_actions(self) -> None:
+        has_selection = bool(self.table_panel.table.selectionModel().selectedRows())
+        self.edit_button.setEnabled(has_selection)
+        self.delete_button.setEnabled(has_selection)
 
     def _update_meta_panel(self) -> None:
         record = self._selected_record()

@@ -56,5 +56,5 @@ def format_overlap_warning(overlaps: list[int]) -> str:
     return tr(
         "Career stats warning: {seasons} season(s) exist in both initial data and boxscores. "
         "Career totals may be inflated. "
-        "Re-import from the Initial Setup tab, excluding those seasons."
+        "Re-import from the Import Existing Records tab, excluding those seasons."
     ).format(seasons=seasons_str)

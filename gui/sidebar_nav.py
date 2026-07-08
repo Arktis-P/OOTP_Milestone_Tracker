@@ -13,7 +13,15 @@ from PyQt6.QtWidgets import (
 )
 
 from core.i18n import tr
-from gui.theme import ACCENT_TEXT, BG_PANEL, BORDER, TEXT_MUTED, TEXT_SECONDARY
+from gui.theme import (
+    AMBER_TEXT,
+    BG_PANEL,
+    BORDER,
+    GREEN_TEXT,
+    RED_TEXT,
+    TEXT_MUTED,
+    TEXT_SECONDARY,
+)
 
 
 def _nav_sections() -> list[tuple[str | None, list[tuple[int, str, str]]]]:
@@ -22,15 +30,15 @@ def _nav_sections() -> list[tuple[str | None, list[tuple[int, str, str]]]]:
             tr("Record Inspector"),
             [
                 (0, "📊", tr("Dashboard")),
-                (1, "🏆", tr("Milestone Records")),
+                (1, "🏆", tr("Achievement Records")),
                 (2, "👤", tr("Player Stats")),
-                (3, "🔮", tr("Milestone Predictions")),
+                (3, "🔮", tr("Achievement Predictions")),
             ],
         ),
         (
             tr("Tools & Settings"),
             [
-                (4, "📂", tr("Initial Setup")),
+                (4, "📂", tr("Import Existing Records")),
                 (5, "✍️", tr("Rating Editor")),
                 (6, "⚙️", tr("Settings")),
             ],
@@ -102,18 +110,16 @@ class SidebarNav(QWidget):
         footer_layout = QVBoxLayout(footer)
         footer_layout.setContentsMargins(8, 8, 8, 8)
         footer_layout.setSpacing(2)
-        cap = QLabel(tr("App Info"))
-        cap.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px;")
-        cap.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        store = QLabel(tr("%APPDATA% Storage"))
-        store.setStyleSheet(f"color: {ACCENT_TEXT}; font-size: 11px; font-weight: 700;")
-        store.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sub = QLabel(tr("SQLite DB Connected"))
-        sub.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9px;")
-        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        footer_layout.addWidget(cap)
-        footer_layout.addWidget(store)
-        footer_layout.addWidget(sub)
+        self._status_line = QLabel(tr("● Checking data..."))
+        self._status_line.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; font-weight: 700;")
+        self._status_line.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._context_line = QLabel("")
+        self._context_line.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9px;")
+        self._context_line.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        footer_layout.addWidget(self._status_line)
+        footer_layout.addWidget(self._context_line)
+        footer.setToolTip("")
+        self._footer = footer
         root.addWidget(footer)
 
         self.set_current_index(0, emit=False)
@@ -131,6 +137,22 @@ class SidebarNav(QWidget):
 
     def current_index(self) -> int:
         return self._active_index
+
+    _STATUS_COLORS = {"ok": GREEN_TEXT, "warning": AMBER_TEXT, "error": RED_TEXT}
+
+    def set_status(
+        self,
+        *,
+        level: str,
+        status_text: str,
+        context_text: str,
+        tooltip: str = "",
+    ) -> None:
+        color = self._STATUS_COLORS.get(level, TEXT_SECONDARY)
+        self._status_line.setText(status_text)
+        self._status_line.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: 700;")
+        self._context_line.setText(context_text)
+        self._footer.setToolTip(tooltip)
 
     def set_setup_badge_visible(self, visible: bool, tooltip: str = "") -> None:
         if self._setup_badge is None:

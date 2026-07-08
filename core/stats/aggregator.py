@@ -2225,6 +2225,7 @@ class Aggregator:
                    mr.season,
                    mr.notes,
                    mr.team,
+                   mr.opponent_team,
                    mr.recorded_at
             FROM milestone_records mr
             LEFT JOIN players p ON p.player_id = mr.player_id

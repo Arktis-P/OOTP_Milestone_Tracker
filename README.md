@@ -16,7 +16,7 @@ Out of the Park Baseball(OOTP) 시뮬레이션의 선수·팀 기록을 추적�
 - **연속 기록(streak)** 마일스톤 — import 연동, scope 필터, CSV 내보내기
 - 마일스톤 기준은 `milestones.csv`로 관리하며, 설정 탭에서 앱 내 편집 가능
 
-### 마일스톤 예측
+### 기록 달성 예측
 
 - 통산·시즌 마일스톤 달성 가능성 사전 예측
 - `track_from` — 목표까지 **남은 수치** 기준으로 추적 시작 (기본: 목표의 15%)
@@ -38,7 +38,7 @@ Out of the Park Baseball(OOTP) 시뮬레이션의 선수·팀 기록을 추적�
 | `mlb_rosters` / `kbo_rosters`                            | **레이팅 편집** 전용 (통계·마일스톤과 무관)      |
 
 
-- **초기값 설정** 탭: first_time / refresh / mid_season 모드
+- **기존 기록 가져오기** 탭: first_time / refresh / mid_season 모드
 - MLB 전용 import 옵션 (WBC·KBO 등 제외)
 - 세이브(리그)마다 **별도 SQLite DB** — 세이브 전환 시 데이터 분리
 
@@ -52,10 +52,10 @@ Out of the Park Baseball(OOTP) 시뮬레이션의 선수·팀 기록을 추적�
 ## 권장 사용 흐름
 
 1. **설정** — OOTP 세이브의 `import_export` 경로 지정, 현재 시즌·추적 팀(커스텀 팀은 약칭·팀명 등록) 설정
-2. **초기값 설정** — `player_batting_stats.txt`, `player_pitching_stats.txt` import (통산·과거 시즌 baseline)
-3. **박스스코어 가져오기** — 선수 기록·마일스톤 탭에서 HTML import (진행 중 시즌 실시간 반영)
-4. **마일스톤 기록 / 예측** — 자동 감지 확인, 필요 시 수동 입력
-5. 시즌 중·시즌 후 — 초기값 refresh, 박스스코어 추가 import 반복
+2. **기존 기록 가져오기** — `player_batting_stats.txt`, `player_pitching_stats.txt` import (통산·과거 시즌 baseline)
+3. **박스스코어 가져오기** — 선수 기록·달성 기록 탭에서 HTML import (진행 중 시즌 실시간 반영)
+4. **달성 기록 / 기록 달성 예측** — 자동 감지 확인, 필요 시 수동 입력
+5. 시즌 중·시즌 후 — 기존 기록 refresh, 박스스코어 추가 import 반복
 
 > **신생팀·확장팀 팁:** stats export에 아직 팀 기록이 없으면 통계 탭에 선수가 안 보일 수 있습니다. 그동안은 **수동 입력**으로 풀 네임 선수를 등록해 마일스톤을 기록하고, stats·박스스코어가 쌓이면 자동으로 연결됩니다.
 
@@ -117,15 +117,15 @@ ootp_milestone_tracker/
 ### GUI 탭
 
 
-| 탭       | 설명                          |
-| ------- | --------------------------- |
-| 대시보드    | 요약·최근 마일스톤                  |
-| 마일스톤 기록 | 달성 이력, 수동 입력, 시즌 비율·streak  |
-| 선수 기록   | 추적 팀 선수 stats, 박스스코어 import |
-| 마일스톤 예측 | 임박·추적 중인 마일스톤               |
-| 초기값 설정  | stats 파일 import             |
-| 레이팅 편집  | MLB/KBO 로스터 레이팅             |
-| 설정      | 경로, 팀, 마일스톤 기준, DB 초기화      |
+| 탭         | 설명                          |
+| --------- | --------------------------- |
+| 대시보드      | 요약·최근 마일스톤, 시작 체크리스트        |
+| 달성 기록     | 달성 이력, 수동 입력, 시즌 최종 기록 판정·streak |
+| 선수 기록     | 추적 팀 선수 stats, 박스스코어 import |
+| 기록 달성 예측 | 임박·추적 중인 마일스톤               |
+| 기존 기록 가져오기 | stats 파일 import             |
+| 레이팅 편집    | MLB/KBO 로스터 레이팅             |
+| 설정        | 경로, 팀, 마일스톤 기준, DB 초기화      |
 
 
 ## 설정·데이터 파일

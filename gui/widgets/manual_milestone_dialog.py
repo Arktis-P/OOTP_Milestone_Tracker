@@ -84,7 +84,7 @@ class ManualMilestoneDialog(QDialog):
         self.tabs = QTabWidget()
         self.tabs.addTab(QWidget(), tr("Milestone"))
         self.tabs.addTab(QWidget(), tr("Award"))
-        self.tabs.addTab(QWidget(), tr("Transfer"))
+        self.tabs.addTab(QWidget(), tr("Team Move"))
         self.tabs.addTab(QWidget(), tr("Injury"))
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
