@@ -119,6 +119,10 @@ class SetupView(QWidget):
         self.korean_names_button = QPushButton(tr("Open Pending Mappings"))
         self.korean_names_button.clicked.connect(self._open_korean_name_mapping)
         self.korean_badge = QLabel("0")
+
+        self.gemini_api_key_edit = QLineEdit()
+        self.gemini_api_key_edit.setPlaceholderText(tr("AIza... (Gemini API key)"))
+        self.gemini_api_key_edit.setText(getattr(self.settings, "gemini_api_key", ""))
         self.korean_badge.setObjectName("badgeLabel")
         self.korean_badge.setVisible(False)
         self._refresh_korean_names_button()
@@ -236,6 +240,13 @@ class SetupView(QWidget):
                 self.korean_names_button,
             )
         )
+        gemini_key_row_1 = QHBoxLayout()
+        gemini_key_row_1.setSpacing(8)
+        gemini_key_label_1 = QLabel(tr("Gemini API Key:"))
+        gemini_key_label_1.setObjectName("sectionLabel")
+        gemini_key_row_1.addWidget(gemini_key_label_1)
+        gemini_key_row_1.addWidget(self.gemini_api_key_edit, stretch=1)
+        tools_card.add_layout(gemini_key_row_1)
         tools_card.add_widget(
             tool_row(
                 tr("Update App Reference Files"),
@@ -333,6 +344,13 @@ class SetupView(QWidget):
                 badge=self.korean_badge,
             )
         )
+        gemini_key_row_2 = QHBoxLayout()
+        gemini_key_row_2.setSpacing(8)
+        gemini_key_label_2 = QLabel(tr("Gemini API Key:"))
+        gemini_key_label_2.setObjectName("sectionLabel")
+        gemini_key_row_2.addWidget(gemini_key_label_2)
+        gemini_key_row_2.addWidget(self.gemini_api_key_edit, stretch=1)
+        tools_card.add_layout(gemini_key_row_2)
         tools_card.add_widget(
             tool_row(
                 tr("Edit Milestone Criteria"),
@@ -702,7 +720,8 @@ class SetupView(QWidget):
     def _open_korean_name_mapping(self) -> None:
         from gui.widgets.korean_name_mapping_dialog import KoreanNameMappingDialog
 
-        dialog = KoreanNameMappingDialog(self)
+        api_key = self.gemini_api_key_edit.text().strip()
+        dialog = KoreanNameMappingDialog(self, api_key=api_key)
         dialog.exec()
         self._refresh_korean_names_button()
 
@@ -778,6 +797,7 @@ class SetupView(QWidget):
         new_language = self.language_combo.currentData()
         language_changed = new_language != getattr(self.settings, "language", "ko")
         updated.language = new_language
+        updated.gemini_api_key = self.gemini_api_key_edit.text().strip()
         self.settings = updated
         self.settings_manager.save(updated)
         if language_changed:

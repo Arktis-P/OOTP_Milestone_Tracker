@@ -260,13 +260,16 @@ class ManualMilestoneDialog(QDialog):
         self.transfer_type_combo.currentIndexChanged.connect(
             self._update_transfer_description
         )
+        self.transfer_type_combo.currentIndexChanged.connect(
+            self._on_transfer_type_changed
+        )
 
         self.transfer_join_team_combo = QComboBox()
         self.transfer_counterpart_team_combo = QComboBox()
         for _tc in (self.transfer_join_team_combo, self.transfer_counterpart_team_combo):
             _tc.setEditable(True)
             _tc.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._fill_mlb_team_combo(self.transfer_join_team_combo)
+        self._fill_mlb_team_combo(self.transfer_join_team_combo, tracked_first=True)
         self._fill_mlb_team_combo(self.transfer_counterpart_team_combo)
         self._apply_completer(self.transfer_join_team_combo)
         self._apply_completer(self.transfer_counterpart_team_combo)
@@ -368,10 +371,17 @@ class ManualMilestoneDialog(QDialog):
             self.stack.setCurrentIndex(0)
             self._reload_milestones()
             self._update_milestone_hint()
+            self._update_award_mode_fields()
         elif index == _TAB_TRANSFER:
             self.stack.setCurrentIndex(1)
+            self._on_transfer_type_changed()
         elif index == _TAB_INJURY:
             self.stack.setCurrentIndex(2)
+
+    def _update_award_mode_fields(self) -> None:
+        """Hide fields irrelevant to award entries."""
+        is_award = self.tabs.currentIndex() == _TAB_AWARD
+        self.form.setRowVisible(self.opponent_player_edit, not is_award)
 
     def _player_registry(self) -> PlayerRegistry:
         return PlayerRegistry(self.aggregator)
@@ -448,11 +458,29 @@ class ManualMilestoneDialog(QDialog):
             ))
         return sorted(names, key=str.lower)
 
-    def _fill_mlb_team_combo(self, combo: QComboBox) -> None:
+    def _on_transfer_type_changed(self) -> None:
+        if str(self.transfer_type_combo.currentData()) != "fa_contract":
+            return
+        if self.transfer_join_team_combo.currentText().strip():
+            return
+        tracked = self._tracked_team_names()
+        if tracked:
+            self.transfer_join_team_combo.setEditText(tracked[0])
+
+    def _fill_mlb_team_combo(self, combo: QComboBox, *, tracked_first: bool = False) -> None:
         combo.clear()
         combo.addItem("", "")
-        for name in self._mlb_team_names():
-            combo.addItem(name, name)
+        if tracked_first:
+            tracked = self._tracked_team_names()
+            tracked_set = set(tracked)
+            for name in tracked:
+                combo.addItem(name, name)
+            for name in self._mlb_team_names():
+                if name not in tracked_set:
+                    combo.addItem(name, name)
+        else:
+            for name in self._mlb_team_names():
+                combo.addItem(name, name)
 
     def _fill_tracked_team_combo(self, combo: QComboBox) -> None:
         combo.clear()
@@ -722,9 +750,14 @@ class ManualMilestoneDialog(QDialog):
 
         games_at: int | None = None
         if scope_needs_games_at_achievement(milestone.scope):
-            try:
-                games_at = int(self.games_edit.text().strip())
-            except ValueError:
+            text = self.games_edit.text().strip()
+            if text:
+                try:
+                    games_at = int(text)
+                except ValueError:
+                    QMessageBox.warning(self, tr("Input Error"), tr("Games must be an integer."))
+                    return None
+            elif self._current_category() != "award":
                 QMessageBox.warning(self, tr("Input Error"), tr("Games must be an integer."))
                 return None
 
@@ -782,12 +815,18 @@ class ManualMilestoneDialog(QDialog):
             QMessageBox.warning(self, tr("Input Error"), tr("Season must be a number."))
             return None
 
+        join_team = self._combo_text(self.transfer_join_team_combo)
+        if not join_team and str(self.transfer_type_combo.currentData()) == "fa_contract":
+            tracked = self._tracked_team_names()
+            if tracked:
+                join_team = tracked[0]
+
         form = ManualTransferFormData(
             achieved_date=parsed,
             joining_players=self._combo_text(self.transfer_joining_combo),
             leaving_players=self._combo_text(self.transfer_leaving_combo),
             event_type=str(self.transfer_type_combo.currentData()),
-            join_team=self._combo_text(self.transfer_join_team_combo),
+            join_team=join_team,
             counterpart_team=self._combo_text(self.transfer_counterpart_team_combo),
             season=season,
             description=self.transfer_description_edit.text().strip(),

@@ -35,6 +35,7 @@ class AppSettings:
     season_games_total: int = 162
     language: str = "ko"
     language_selected: bool = False
+    gemini_api_key: str = ""
     ratio_qualifiers: dict[str, float] = field(
         default_factory=lambda: {
             "batting_ab_per_game": 3.1,
@@ -137,6 +138,7 @@ class SettingsManager:
             "ratio_qualifiers": dict(settings.ratio_qualifiers),
             "language": settings.language,
             "language_selected": settings.language_selected,
+            "gemini_api_key": settings.gemini_api_key,
         }
         self.path.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
@@ -218,6 +220,7 @@ class SettingsManager:
             season_games_total=int(raw.get("season_games_total", 162)),
             language=str(raw.get("language", "ko")),
             language_selected=bool(raw.get("language_selected", False)),
+            gemini_api_key=str(raw.get("gemini_api_key", "")),
             ratio_qualifiers=dict(
                 raw.get(
                     "ratio_qualifiers",
