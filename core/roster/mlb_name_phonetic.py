@@ -231,10 +231,7 @@ def mlb_phonetic_hangul(
 
         char = lower[index]
         if char in "aeiouy":
-            if pieces and pieces[-1][-1] in "ㅏㅑㅓㅕㅗㅛㅜㅠㅡㅣ":
-                pieces.append(_VOWEL_ONLY.get(char, ""))
-            else:
-                pieces.append(_VOWEL_ONLY.get(char, ""))
+            pieces.append(_VOWEL_ONLY.get(char, ""))
             index += 1
             continue
 
