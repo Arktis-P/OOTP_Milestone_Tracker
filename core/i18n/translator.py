@@ -407,6 +407,25 @@ _KO: dict[str, str] = {
     "Refresh Status":                    "상태 새로고침",
     "🚨 Full DB Reset":                  "🚨 전체 DB 초기화",
     "🔄 Re-import Individual Boxscores": "🔄 개별 박스스코어 재임포트",
+    "🌱 Remove Spring Training Games":   "🌱 스프링 트레이닝 기록 제거",
+    "🔁 Recover Regular Season Games":   "🔁 정규 시즌 기록 복구",
+    "Scanning...":                       "검사 중...",
+    "No spring training games found in tracked data.":
+        "추적 데이터에 스프링 트레이닝 기록이 없습니다.",
+    "Removed {count} spring training games.":
+        "스프링 트레이닝 기록 {count}건을 제거했습니다.",
+    "Removed {count} spring training games from tracked data.":
+        "추적 데이터에서 스프링 트레이닝 기록 {count}건을 제거했습니다.",
+    "Cleanup Complete":                  "정리 완료",
+    "Recovered {count} regular season games.":
+        "정규 시즌 기록 {count}건을 복구했습니다.",
+    "Recovery Complete":                 "복구 완료",
+    "Recovery Failed":                   "복구 실패",
+    "Checked {checked} file(s) modified since the latest spring training "
+    "game ({cutoff_date}).\nRecovered {count} regular season game(s).":
+        "가장 최근 스프링 트레이닝 경기({cutoff_date}) 이후 수정된 파일 {checked}개를 "
+        "검사했습니다.\n정규 시즌 기록 {count}건을 복구했습니다.",
+    "{count} error(s):":                 "오류 {count}건:",
     "{count} new items available (app v{version})": "{count}개의 새 항목 사용 가능 (앱 v{version})",
     "Update Reference Files... ({count})": "참조 파일 업데이트... ({count})",
     "All reference files are up to date.": "모든 참조 파일이 최신 상태입니다.",
@@ -427,6 +446,9 @@ _KO: dict[str, str] = {
     "(Please select a league)":          "(리그를 선택하세요)",
     "League Required":                   "리그 선택 필요",
     "Please select a league to re-import first.": "먼저 재임포트할 리그를 선택하세요.",
+    "Please select a league first.":     "먼저 리그를 선택하세요.",
+    "Path Required":                     "경로 필요",
+    "Box score folder is not set.":      "박스스코어 폴더가 설정되지 않았습니다.",
     "Select a league to view DB status.": "DB 상태를 보려면 리그를 선택하세요.",
     "No saved game, milestone, or initial stats data.":
         "세이브 게임, 마일스톤 또는 초기값 데이터가 없습니다.",

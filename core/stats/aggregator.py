@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from core.db.schema import init_database
-from core.db.sqlite_config import configure_sqlite_connection
+from core.db.sqlite_config import commit_if_in_transaction, configure_sqlite_connection
 from core.parser.batting_notes import (
     BattingEventCounts,
     assign_batting_events_to_lineup,
@@ -252,6 +252,122 @@ class Aggregator:
                 removed.append(game_id)
         return removed
 
+    def find_latest_spring_training_file(
+        self, boxscore_dir: str | Path
+    ) -> tuple[Path, float, str] | None:
+        """Return (path, mtime, date) of the most recently *modified* spring
+        training box score.
+
+        Uses actual file mtime, not game_id — game_id order is not guaranteed
+        to track modification recency (OOTP can write/rewrite files out of
+        numeric order), so picking "the file with the highest id" is not a
+        reliable way to find the most recent game.
+        """
+        directory = Path(boxscore_dir)
+        if not directory.is_dir():
+            return None
+        latest: tuple[Path, float, str] | None = None
+        for path in directory.glob(GAME_BOX_GLOB):
+            if not peek_is_mlb_boxscore(path):
+                continue
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                continue
+            try:
+                data = BoxscoreHTMLParser(path).parse()
+            except (ParserError, OSError):
+                continue
+            if not data.meta.is_spring_training:
+                continue
+            if latest is None or mtime > latest[1]:
+                latest = (path, mtime, data.meta.date)
+        return latest
+
+    def recover_regular_season_after_spring_training(
+        self, boxscore_dir: str | Path, season: int, *, mlb_only: bool = True
+    ) -> dict[str, Any]:
+        """One-time recovery pass: find the most recently modified spring
+        training file, then re-check every file modified at or after it and
+        import any that are actually regular season MLB games.
+
+        This repairs games that OOTP rewrote in place under a filename we had
+        already marked "processed" as spring training or non-MLB (a plain
+        filename-based skip would otherwise ignore that file forever).
+        """
+        directory = Path(boxscore_dir)
+        latest_spring = self.find_latest_spring_training_file(directory)
+        cutoff_mtime = latest_spring[1] if latest_spring else 0.0
+        cutoff_date = latest_spring[2] if latest_spring else ""
+
+        candidates: list[Path] = []
+        if directory.is_dir():
+            for path in directory.glob(GAME_BOX_GLOB):
+                try:
+                    mtime = path.stat().st_mtime
+                except OSError:
+                    continue
+                if mtime >= cutoff_mtime:
+                    candidates.append(path)
+
+        imported: list[int] = []
+        still_spring = 0
+        errors: list[str] = []
+        for path in candidates:
+            if mlb_only and not peek_is_mlb_boxscore(path):
+                continue
+            try:
+                data = BoxscoreHTMLParser(path).parse()
+            except (ParserError, OSError) as exc:
+                errors.append(f"{path.name}: {exc}")
+                continue
+            if data.meta.is_spring_training:
+                still_spring += 1
+                continue
+
+            game_id = data.meta.game_id
+            if self.game_exists(game_id):
+                continue
+
+            # A prior scan may have marked this exact filename "processed"
+            # (as spring training or non-MLB) before OOTP overwrote it with
+            # the real game — clear that stale marker so import can proceed.
+            self._conn.execute(
+                "DELETE FROM processed_boxscores WHERE filename = ?", (path.name,)
+            )
+            commit_if_in_transaction(self._conn)
+            result = self.import_boxscore(data, season, is_mlb=mlb_only)
+            if result.error:
+                errors.append(f"{path.name}: {result.error}")
+                continue
+            if not result.skipped:
+                imported.append(game_id)
+
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                mtime = 0.0
+            self._conn.execute(
+                """
+                INSERT OR REPLACE INTO processed_boxscores (filename, game_id, mtime, is_mlb)
+                VALUES (?, ?, ?, ?)
+                """,
+                (path.name, game_id, mtime, 1),
+            )
+
+        if imported:
+            self.update_primary_positions(imported)
+        self._conn.commit()
+
+        return {
+            "cutoff_date": cutoff_date,
+            "cutoff_mtime": cutoff_mtime,
+            "candidates_checked": len(candidates),
+            "imported_game_ids": imported,
+            "still_spring_training": still_spring,
+            "errors": errors,
+        }
+
     def get_known_game_ids(self) -> set[int]:
         rows = self._conn.execute("SELECT game_id FROM games").fetchall()
         return {int(row["game_id"]) for row in rows}
@@ -259,6 +375,19 @@ class Aggregator:
     def _get_processed_filenames(self) -> set[str]:
         rows = self._conn.execute("SELECT filename FROM processed_boxscores").fetchall()
         return {row[0] for row in rows}
+
+    def _get_processed_file_states(self) -> dict[str, float]:
+        """Return {filename: stored_mtime} for every previously-scanned file.
+
+        Used to detect files OOTP rewrote in place (same filename, new content,
+        e.g. a spring-training placeholder later overwritten with the real
+        regular-season game) — a plain filename-only skip would miss this
+        forever since it never re-checks content once a name is "known".
+        """
+        rows = self._conn.execute(
+            "SELECT filename, mtime FROM processed_boxscores"
+        ).fetchall()
+        return {row["filename"]: float(row["mtime"] or 0.0) for row in rows}
 
     def upsert_player(self, player_id: int, short_name: str, full_name: str | None = None) -> None:
         from core.stats.player_display import looks_abbreviated
@@ -396,8 +525,12 @@ class Aggregator:
         t_start = time.monotonic()
 
         files = sorted(directory.glob(GAME_BOX_GLOB))
-        # Single DB query loads all already-processed filenames into a memory set.
-        processed_filenames = self._get_processed_filenames()
+        # Load {filename: stored_mtime}. A pure filename-only skip would miss
+        # files OOTP rewrites in place under the same name (e.g. a
+        # spring-training placeholder later overwritten with the real
+        # regular-season game once it's actually played) — comparing mtime
+        # catches that instead of skipping the file forever.
+        processed_states = self._get_processed_file_states()
         result = BatchImportResult(total_scanned=len(files))
         # Collect (filename, game_id, mtime, is_mlb) rows to bulk-insert at the end.
         new_processed: list[tuple] = []
@@ -405,13 +538,27 @@ class Aggregator:
         for index, file_path in enumerate(files, start=1):
             try:
                 fname = file_path.name
+                stored_mtime = processed_states.get(fname)
 
-                # Fast path: file is known — no stat(), no read(), no parsing.
-                if fname in processed_filenames:
+                # stat() every file so a changed mtime can be detected; still
+                # far cheaper than a re-parse, and only new/changed files go
+                # on to the expensive MLB-peek/parse steps below.
+                try:
+                    file_mtime = file_path.stat().st_mtime
+                except OSError as exc:
+                    result.errors.append(
+                        ImportResult(
+                            game_id=_game_id_from_filename(fname), error=str(exc)
+                        )
+                    )
+                    continue
+
+                # Fast path: file is known and unchanged since we last saw it.
+                if stored_mtime is not None and abs(file_mtime - stored_mtime) < 1.0:
                     result.skipped_existing += 1
                     continue
 
-                # New file: extract game_id from filename (regex, no I/O).
+                # New or changed-since-last-scan file: extract game_id.
                 game_id = _game_id_from_filename(fname)
                 if game_id < 0:
                     result.errors.append(
@@ -419,14 +566,7 @@ class Aggregator:
                     )
                     continue
 
-                # stat() only for new files to record mtime.
-                try:
-                    file_mtime = file_path.stat().st_mtime
-                except OSError as exc:
-                    result.errors.append(ImportResult(game_id=game_id, error=str(exc)))
-                    continue
-
-                # MLB check reads up to 8 KB; only done for new files.
+                # MLB check reads up to 8 KB; skipped only for still-fresh files.
                 if mlb_only and not peek_is_mlb_boxscore(file_path):
                     result.skipped_non_mlb += 1
                     new_processed.append((fname, game_id, file_mtime, 0))

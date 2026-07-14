@@ -390,6 +390,9 @@ class SetupView(QWidget):
         self.dev_reimport_button.clicked.connect(self._open_dev_boxscore_reimport)
         self.purge_spring_training_button = QPushButton(tr("🌱 Remove Spring Training Games"))
         self.purge_spring_training_button.clicked.connect(self._purge_spring_training_games)
+        self.recover_regular_season_button = QPushButton(tr("🔁 Recover Regular Season Games"))
+        self.recover_regular_season_button.clicked.connect(self._recover_regular_season_games)
+        self._recovery_worker = None
         self._refresh_database_summary()
 
     def _build_dev_tools_panel(self) -> QWidget:
@@ -407,6 +410,7 @@ class SetupView(QWidget):
         dev_buttons.setSpacing(8)
         dev_buttons.addWidget(self.dev_reimport_button, stretch=1)
         dev_buttons.addWidget(self.purge_spring_training_button, stretch=1)
+        dev_buttons.addWidget(self.recover_regular_season_button, stretch=1)
         dev_buttons.addWidget(self.reset_db_button)
         layout.addLayout(dev_buttons)
 
@@ -682,6 +686,69 @@ class SetupView(QWidget):
                 tr("Cleanup Complete"),
                 tr("No spring training games found in tracked data."),
             )
+
+    def _recover_regular_season_games(self) -> None:
+        settings = self.settings_manager.ensure_derived_paths(self.settings)
+        if not settings.active_save_path:
+            QMessageBox.warning(
+                self, tr("League Required"), tr("Please select a league first.")
+            )
+            return
+
+        boxscore_dir = settings.boxscore_dir
+        if not boxscore_dir:
+            QMessageBox.warning(
+                self, tr("Path Required"), tr("Box score folder is not set.")
+            )
+            return
+
+        db_path = resolve_data_path(settings.db_path)
+        from gui.workers.recovery_worker import RecoverRegularSeasonWorker
+
+        self.recover_regular_season_button.setEnabled(False)
+        self.recover_regular_season_button.setText(tr("Scanning..."))
+
+        worker = RecoverRegularSeasonWorker(
+            db_path, boxscore_dir, settings.current_season, self
+        )
+        worker.finished.connect(self._on_recover_regular_season_finished)
+        worker.error.connect(self._on_recover_regular_season_error)
+        worker.finished.connect(worker.deleteLater)
+        worker.error.connect(worker.deleteLater)
+        self._recovery_worker = worker
+        worker.start()
+
+    def _on_recover_regular_season_finished(self, report: dict) -> None:
+        self.recover_regular_season_button.setEnabled(True)
+        self.recover_regular_season_button.setText(tr("🔁 Recover Regular Season Games"))
+        self._recovery_worker = None
+        self._refresh_database_summary()
+
+        imported = report.get("imported_game_ids") or []
+        cutoff_date = report.get("cutoff_date") or ""
+        checked = report.get("candidates_checked", 0)
+        errors = report.get("errors") or []
+
+        message = tr(
+            "Checked {checked} file(s) modified since the latest spring training "
+            "game ({cutoff_date}).\nRecovered {count} regular season game(s)."
+        ).format(checked=checked, cutoff_date=cutoff_date or "-", count=len(imported))
+        if errors:
+            message += "\n\n" + tr("{count} error(s):").format(count=len(errors)) + "\n" + "\n".join(
+                errors[:5]
+            )
+
+        if imported:
+            self.boxscore_reimported.emit(
+                tr("Recovered {count} regular season games.").format(count=len(imported))
+            )
+        QMessageBox.information(self, tr("Recovery Complete"), message)
+
+    def _on_recover_regular_season_error(self, message: str) -> None:
+        self.recover_regular_season_button.setEnabled(True)
+        self.recover_regular_season_button.setText(tr("🔁 Recover Regular Season Games"))
+        self._recovery_worker = None
+        QMessageBox.warning(self, tr("Recovery Failed"), message)
 
     def _current_db_path(self) -> Path | None:
         settings = self.settings_manager.ensure_derived_paths(self.settings)
