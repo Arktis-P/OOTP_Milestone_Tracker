@@ -142,6 +142,8 @@ class Aggregator:
 
         try:
             data = BoxscoreHTMLParser(path).parse()
+            if data.meta.is_spring_training:
+                return ImportResult(game_id=game_id, error=tr("Spring training boxscore is not tracked."))
             result = self.import_boxscore(data, season, is_mlb=mlb_only)
             if not result.error:
                 try:
@@ -224,6 +226,31 @@ class Aggregator:
             if self.refresh_batting_events_from_file(path, season):
                 refreshed.append(game_id)
         return refreshed
+
+    def purge_spring_training_games(self, boxscore_dir: str | Path) -> list[int]:
+        """Remove already-imported games whose box score turns out to be spring training.
+
+        Re-parses each currently-known game's source file (bounded by DB size, not
+        by the full box score directory) and deletes any whose Ballpark reads
+        "Spring Ballpark". Use this once to clean up data imported before spring
+        training detection existed.
+        """
+        directory = Path(boxscore_dir)
+        if not directory.is_dir():
+            return []
+
+        removed: list[int] = []
+        for game_id in sorted(self.get_known_game_ids()):
+            path = directory / f"game_box_{game_id}.html"
+            if not path.is_file():
+                continue
+            try:
+                data = BoxscoreHTMLParser(path).parse()
+            except (ParserError, OSError):
+                continue
+            if data.meta.is_spring_training and self.delete_game_import_data(game_id):
+                removed.append(game_id)
+        return removed
 
     def get_known_game_ids(self) -> set[int]:
         rows = self._conn.execute("SELECT game_id FROM games").fetchall()
@@ -409,6 +436,10 @@ class Aggregator:
                 t_parse = time.monotonic()
                 try:
                     data = BoxscoreHTMLParser(file_path).parse()
+                    if data.meta.is_spring_training:
+                        result.skipped_spring_training += 1
+                        new_processed.append((fname, game_id, file_mtime, 1))
+                        continue
                     import_result = self.import_boxscore(data, season, is_mlb=mlb_only)
                 except ParserError as exc:
                     result.errors.append(ImportResult(game_id=game_id, error=str(exc)))

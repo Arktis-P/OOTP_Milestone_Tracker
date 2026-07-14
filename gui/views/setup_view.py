@@ -388,6 +388,8 @@ class SetupView(QWidget):
         self.reset_db_button.clicked.connect(self._reset_save_database)
         self.dev_reimport_button = QPushButton(tr("🔄 Re-import Individual Boxscores"))
         self.dev_reimport_button.clicked.connect(self._open_dev_boxscore_reimport)
+        self.purge_spring_training_button = QPushButton(tr("🌱 Remove Spring Training Games"))
+        self.purge_spring_training_button.clicked.connect(self._purge_spring_training_games)
         self._refresh_database_summary()
 
     def _build_dev_tools_panel(self) -> QWidget:
@@ -404,6 +406,7 @@ class SetupView(QWidget):
         dev_buttons = QHBoxLayout()
         dev_buttons.setSpacing(8)
         dev_buttons.addWidget(self.dev_reimport_button, stretch=1)
+        dev_buttons.addWidget(self.purge_spring_training_button, stretch=1)
         dev_buttons.addWidget(self.reset_db_button)
         layout.addLayout(dev_buttons)
 
@@ -639,6 +642,46 @@ class SetupView(QWidget):
         dialog.exec()
         if dialog.result_message:
             self.boxscore_reimported.emit(dialog.result_message)
+
+    def _purge_spring_training_games(self) -> None:
+        settings = self.settings_manager.ensure_derived_paths(self.settings)
+        if not settings.active_save_path:
+            QMessageBox.warning(
+                self, tr("League Required"), tr("Please select a league first.")
+            )
+            return
+
+        boxscore_dir = settings.boxscore_dir
+        if not boxscore_dir:
+            QMessageBox.warning(
+                self, tr("Path Required"), tr("Box score folder is not set.")
+            )
+            return
+
+        db_path = resolve_data_path(settings.db_path)
+        from core.stats.aggregator import Aggregator
+
+        with Aggregator(db_path) as aggregator:
+            removed = aggregator.purge_spring_training_games(boxscore_dir)
+
+        self._refresh_database_summary()
+        if removed:
+            self.boxscore_reimported.emit(
+                tr("Removed {count} spring training games.").format(count=len(removed))
+            )
+            QMessageBox.information(
+                self,
+                tr("Cleanup Complete"),
+                tr("Removed {count} spring training games from tracked data.").format(
+                    count=len(removed)
+                ),
+            )
+        else:
+            QMessageBox.information(
+                self,
+                tr("Cleanup Complete"),
+                tr("No spring training games found in tracked data."),
+            )
 
     def _current_db_path(self) -> Path | None:
         settings = self.settings_manager.ensure_derived_paths(self.settings)

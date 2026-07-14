@@ -638,6 +638,10 @@ class StatsView(QWidget):
         parts = [tr("{count} games added").format(count=result.imported)]
         if result.skipped_non_mlb:
             parts.append(tr("{count} non-MLB skipped").format(count=result.skipped_non_mlb))
+        if result.skipped_spring_training:
+            parts.append(
+                tr("{count} spring training skipped").format(count=result.skipped_spring_training)
+            )
         if payload.milestones_recorded:
             team_count = sum(
                 1

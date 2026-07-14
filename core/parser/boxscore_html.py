@@ -59,6 +59,16 @@ def detect_is_postseason_from_title(title_text: str) -> bool:
     return bool(_POSTSEASON_TITLE_RE.match(title_text.strip()))
 
 
+# GAME NOTES > Ballpark reads "Spring Ballpark" for spring training games; the
+# title stays "MLB Box Score" like regular season, so ballpark is the only signal.
+_SPRING_TRAINING_BALLPARKS = {"spring ballpark", "spring training ballpark"}
+
+
+def is_spring_training_ballpark(ballpark: str) -> bool:
+    """Return True if the GAME NOTES ballpark text marks a spring training game."""
+    return ballpark.strip().lower() in _SPRING_TRAINING_BALLPARKS
+
+
 @dataclass(frozen=True)
 class BoxscoreFileSummary:
     path: Path
@@ -207,6 +217,7 @@ class BoxscoreHTMLParser:
         game_id = self._extract_game_id(soup)
         game_notes = self._parse_game_notes(soup)
         is_postseason = detect_is_postseason_from_title(title)
+        is_spring_training = is_spring_training_ballpark(game_notes.ballpark)
 
         return GameMeta(
             game_id=game_id,
@@ -229,6 +240,7 @@ class BoxscoreHTMLParser:
             attendance=game_notes.attendance,
             game_time=game_notes.game_time,
             is_postseason=is_postseason,
+            is_spring_training=is_spring_training,
         )
 
     def _extract_game_id(self, soup: BeautifulSoup) -> int:

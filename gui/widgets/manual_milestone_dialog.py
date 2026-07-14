@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QComboBox,
     QCompleter,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
+    QHeaderView,
     QInputDialog,
     QLabel,
     QLineEdit,
@@ -17,6 +19,8 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -78,8 +82,9 @@ class ManualMilestoneDialog(QDialog):
         self.aggregator = aggregator
         self.milestones = milestones
         self.settings = settings
+        self._pending_milestone_entries: list[tuple[ManualMilestoneFormData, MilestoneDefinition]] = []
         self.setWindowTitle(tr("Manual Entry"))
-        self.resize(*scale_size(540, 560))
+        self.resize(*scale_size(620, 700))
 
         self.tabs = QTabWidget()
         self.tabs.addTab(QWidget(), tr("Milestone"))
@@ -93,7 +98,7 @@ class ManualMilestoneDialog(QDialog):
         self.stack.addWidget(self._build_transfer_page())
         self.stack.addWidget(self._build_injury_page())
 
-        buttons = make_button_box(save=True, save_text="Add Record")
+        buttons = make_button_box(save=True, save_text="Save All")
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
 
@@ -221,10 +226,50 @@ class ManualMilestoneDialog(QDialog):
         self.form.addRow(tr("Description:"), self.description_edit)
         self.form.addRow(tr("Notes:"), self.notes_edit)
 
+        self.add_to_list_button = QPushButton(tr("+ Add to List"))
+        self.add_to_list_button.clicked.connect(self._on_add_to_list)
+        self.remove_pending_button = QPushButton(tr("Remove Selected"))
+        self.remove_pending_button.clicked.connect(self._on_remove_pending)
+
+        add_row = QHBoxLayout()
+        add_row.addStretch()
+        add_row.addWidget(self.add_to_list_button)
+
+        pending_label = QLabel(tr("Records to add:"))
+
+        self.pending_table = QTableWidget(0, 7)
+        self.pending_table.setHorizontalHeaderLabels(
+            [
+                tr("Date"),
+                tr("Target"),
+                tr("Milestone"),
+                tr("Achieved Value"),
+                tr("Opponent"),
+                tr("Description"),
+                tr("Notes"),
+            ]
+        )
+        self.pending_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.pending_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.pending_table.verticalHeader().setVisible(False)
+        self.pending_table.horizontalHeader().setSectionResizeMode(
+            2, QHeaderView.ResizeMode.Stretch
+        )
+        self.pending_table.horizontalHeader().setSectionResizeMode(
+            5, QHeaderView.ResizeMode.Stretch
+        )
+
+        pending_row = QHBoxLayout()
+        pending_row.addWidget(pending_label)
+        pending_row.addStretch()
+        pending_row.addWidget(self.remove_pending_button)
+
         layout.addLayout(target_row)
         layout.addWidget(self.manual_hint)
         layout.addLayout(self.form)
-        layout.addStretch()
+        layout.addLayout(add_row)
+        layout.addLayout(pending_row)
+        layout.addWidget(self.pending_table, stretch=1)
 
         self._reload_milestones()
         self._on_target_changed()
@@ -722,6 +767,82 @@ class ManualMilestoneDialog(QDialog):
         except ValueError:
             return None
 
+    def _on_add_to_list(self) -> None:
+        form = self._build_milestone_form()
+        if form is None:
+            return
+        milestone = self.milestones.get_by_key(form.milestone_key)
+        assert milestone is not None
+        self._pending_milestone_entries.append((form, milestone))
+        self._refresh_pending_table()
+        self._reset_entry_fields_after_add()
+
+    def _on_remove_pending(self) -> None:
+        rows = sorted({index.row() for index in self.pending_table.selectedIndexes()}, reverse=True)
+        for row in rows:
+            del self._pending_milestone_entries[row]
+        self._refresh_pending_table()
+
+    def _refresh_pending_table(self) -> None:
+        self.pending_table.setRowCount(len(self._pending_milestone_entries))
+        for row, (form, milestone) in enumerate(self._pending_milestone_entries):
+            target_text = (
+                self._display_player_label(form.player_id)
+                if form.target == "player"
+                else str(form.team or "")
+            )
+            values = [
+                form.achieved_date.isoformat(),
+                target_text,
+                milestone.label,
+                self._format_achieved_value(form.achieved_value),
+                form.opponent_team or "",
+                form.description or "",
+                form.notes or "",
+            ]
+            for col, text in enumerate(values):
+                item = QTableWidgetItem(text)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.pending_table.setItem(row, col, item)
+
+    def _display_player_label(self, player_id: int | None) -> str:
+        if player_id is None:
+            return ""
+        index = self.player_combo.findData(player_id)
+        if index >= 0:
+            return self.player_combo.itemText(index)
+        row = self.aggregator.conn.execute(
+            "SELECT full_name, short_name FROM players WHERE player_id = ?",
+            (player_id,),
+        ).fetchone()
+        if row:
+            return str(row["full_name"] or row["short_name"] or player_id)
+        return str(player_id)
+
+    @staticmethod
+    def _format_achieved_value(value: float) -> str:
+        if value == int(value):
+            return str(int(value))
+        return str(value)
+
+    def _reset_entry_fields_after_add(self) -> None:
+        """Clear per-record fields after queuing, keeping date/milestone for the next entry."""
+        self.player_combo.setCurrentIndex(-1)
+        self.player_combo.setCurrentText("")
+        self.value_combo.setCurrentIndex(0 if self.value_combo.count() else -1)
+        self.games_edit.clear()
+        self.opponent_team_edit.setCurrentText("")
+        self.opponent_player_edit.setCurrentText("")
+        self.description_edit.clear()
+        self.notes_edit.clear()
+        self.player_combo.setFocus()
+
+    def _entry_fields_have_content(self) -> bool:
+        """Whether the on-screen entry fields hold an unqueued record worth saving too."""
+        if self.player_radio.isChecked():
+            return bool(self.player_combo.currentText().strip())
+        return bool(self.team_combo.currentText().strip())
+
     def _build_milestone_form(self) -> ManualMilestoneFormData | None:
         parsed = parse_flexible_date(self.date_edit.text())
         if parsed is None:
@@ -881,25 +1002,34 @@ class ManualMilestoneDialog(QDialog):
         checker = self._checker()
 
         if tab in (_TAB_MILESTONE, _TAB_AWARD):
-            form = self._build_milestone_form()
-            if form is None:
+            entries = list(self._pending_milestone_entries)
+            if self._entry_fields_have_content():
+                form = self._build_milestone_form()
+                if form is None:
+                    return
+                milestone = self.milestones.get_by_key(form.milestone_key)
+                assert milestone is not None
+                entries.append((form, milestone))
+
+            if not entries:
+                QMessageBox.warning(
+                    self, tr("Input Required"), tr("Please add at least one record.")
+                )
                 return
 
-            milestone = self.milestones.get_by_key(form.milestone_key)
-            assert milestone is not None
+            for form, milestone in entries:
+                dup_kind, dup_msg = check_duplicate(self.aggregator.conn, form, milestone)
+                if dup_kind == "warn":
+                    reply = QMessageBox.question(
+                        self,
+                        tr("Duplicate Check"),
+                        tr("{dup_msg}\nAdd anyway?").format(dup_msg=dup_msg),
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    )
+                    if reply != QMessageBox.StandardButton.Yes:
+                        continue
+                checker.record_manual_milestone(form)
 
-            dup_kind, dup_msg = check_duplicate(self.aggregator.conn, form, milestone)
-            if dup_kind == "warn":
-                reply = QMessageBox.question(
-                    self,
-                    tr("Duplicate Check"),
-                    tr("{dup_msg}\nAdd anyway?").format(dup_msg=dup_msg),
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                )
-                if reply != QMessageBox.StandardButton.Yes:
-                    return
-
-            checker.record_manual_milestone(form)
             self.accept()
             return
 

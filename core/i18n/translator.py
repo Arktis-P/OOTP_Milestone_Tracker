@@ -633,6 +633,13 @@ _KO: dict[str, str] = {
     "Select a player or enter a full name.": "선수를 선택하거나 풀 네임을 입력하세요.",
     "Duplicate Check":                   "중복 확인",
     "{dup_msg}\nAdd anyway?":            "{dup_msg}\n그래도 추가하시겠습니까?",
+    "Save All":                          "모두 저장",
+    "+ Add to List":                     "+ 목록에 추가",
+    "Remove Selected":                   "선택 삭제",
+    "Records to add:":                   "추가할 기록:",
+    "Target":                            "대상",
+    "Achieved Value":                    "달성값",
+    "Please add at least one record.":   "기록을 하나 이상 추가하세요.",
 
     # ── team_milestone_dialog.py ──────────────────────────────────────────
     "Manual Team Milestone Entry":       "팀 마일스톤 수동 입력",

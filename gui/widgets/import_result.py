@@ -18,6 +18,10 @@ def build_import_message(payload: ImportFinishedPayload) -> str:
         )
     if result.skipped_non_mlb:
         parts.append(tr("{count} non-MLB skipped").format(count=result.skipped_non_mlb))
+    if result.skipped_spring_training:
+        parts.append(
+            tr("{count} spring training skipped").format(count=result.skipped_spring_training)
+        )
     if result.errors:
         parts.append(tr("{count} errors").format(count=len(result.errors)))
     return tr("Import Complete") + " · " + " · ".join(parts)

@@ -87,6 +87,7 @@ class GameMeta:
     attendance: int = 0
     game_time: str = ""
     is_postseason: bool = False
+    is_spring_training: bool = False
 
 
 @dataclass
@@ -190,6 +191,7 @@ class BatchImportResult:
     skipped_mtime: int = 0
     skipped_existing: int = 0
     skipped_non_mlb: int = 0
+    skipped_spring_training: int = 0
     errors: list[ImportResult] = field(default_factory=list)
     total_scanned: int = 0
     candidates: int = 0
