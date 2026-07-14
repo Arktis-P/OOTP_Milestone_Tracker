@@ -325,13 +325,15 @@ class Aggregator:
                 still_spring += 1
                 continue
 
-            game_id = data.meta.game_id
-            if self.game_exists(game_id):
-                continue
+            filename_game_id = data.meta.game_id
 
             # A prior scan may have marked this exact filename "processed"
             # (as spring training or non-MLB) before OOTP overwrote it with
             # the real game — clear that stale marker so import can proceed.
+            # (import_boxscore itself handles the case where filename_game_id
+            # collides with a *different* season's existing game by
+            # remapping it, so no separate game_exists pre-check is needed
+            # here — that would incorrectly skip the remap opportunity.)
             self._conn.execute(
                 "DELETE FROM processed_boxscores WHERE filename = ?", (path.name,)
             )
@@ -341,7 +343,7 @@ class Aggregator:
                 errors.append(f"{path.name}: {result.error}")
                 continue
             if not result.skipped:
-                imported.append(game_id)
+                imported.append(result.game_id)
 
             try:
                 mtime = path.stat().st_mtime
@@ -352,7 +354,7 @@ class Aggregator:
                 INSERT OR REPLACE INTO processed_boxscores (filename, game_id, mtime, is_mlb)
                 VALUES (?, ?, ?, ?)
                 """,
-                (path.name, game_id, mtime, 1),
+                (path.name, filename_game_id, mtime, 1),
             )
 
         if imported:
@@ -438,10 +440,33 @@ class Aggregator:
             return existing_full
         return short_name
 
+    def _resolve_game_id_for_import(self, game_id: int, season: int) -> int:
+        """Return a collision-free game_id for this import.
+
+        OOTP recycles game_box_<id>.html filenames across seasons — the same
+        numeric id can later be rewritten with a completely different game
+        (e.g. game_box_1.html held a 2026 game, then later held a 2027 game).
+        If the id already belongs to a DIFFERENT season's game, remap it to a
+        synthetic id so the new game imports as its own row instead of being
+        silently skipped (game_exists check) or clobbering the old season's
+        historical batting/pitching logs and milestones under the same id.
+        """
+        row = self._conn.execute(
+            "SELECT season FROM games WHERE game_id = ?", (game_id,)
+        ).fetchone()
+        if row is None or int(row["season"]) == season:
+            return game_id
+        remapped = season * 1_000_000 + game_id
+        while self.game_exists(remapped):
+            remapped += 1
+        return remapped
+
     def import_boxscore(
         self, data: BoxscoreData, season: int, *, is_mlb: bool = True
     ) -> ImportResult:
-        game_id = data.meta.game_id
+        game_id = self._resolve_game_id_for_import(data.meta.game_id, season)
+        if game_id != data.meta.game_id:
+            data.meta.game_id = game_id
         if self.game_exists(game_id):
             return ImportResult(game_id=game_id, skipped=True)
 
@@ -596,7 +621,11 @@ class Aggregator:
                     new_processed.append((fname, game_id, file_mtime, 1))
                 else:
                     result.imported += 1
-                    result.imported_game_ids.append(game_id)
+                    # Use the id actually inserted (may differ from the
+                    # filename-derived id if _resolve_game_id_for_import
+                    # remapped it), so downstream milestone checks look at
+                    # the right game.
+                    result.imported_game_ids.append(import_result.game_id)
                     new_processed.append((fname, game_id, file_mtime, 1))
 
             finally:
