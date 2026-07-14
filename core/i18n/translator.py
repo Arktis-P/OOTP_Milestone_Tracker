@@ -639,6 +639,22 @@ _KO: dict[str, str] = {
     "Records to add:":                   "추가할 기록:",
     "Target":                            "대상",
     "Achieved Value":                    "달성값",
+    "Add One at a Time":                 "하나씩 입력하기",
+    "Add Row":                            "행 추가",
+    "Enter records directly in the table below, or use "
+    "'Add One at a Time' for the classic single-record form.":
+        "아래 표에 바로 입력하세요. 기존 방식으로 하나씩 입력하려면 "
+        "'하나씩 입력하기'를 사용하세요.",
+    "Games in":                          "동안 경기수",
+    "Duration":                          "기간",
+    "Affil. Team":                       "소속팀",
+    "Row {n}":                           "{n}번 행",
+    "Add Award":                         "수상 추가",
+    "Add Milestone":                     "마일스톤 추가",
+    "Add Team Move":                     "이적 추가",
+    "Add Injury":                        "부상 추가",
+    "Add":                               "추가",
+    "Translating via Gemini...":         "제미나이로 번역 중...",
     "Please add at least one record.":   "기록을 하나 이상 추가하세요.",
 
     # ── team_milestone_dialog.py ──────────────────────────────────────────

@@ -181,6 +181,12 @@ class KoreanNameMappingDialog(QDialog):
         if not api_key:
             self.gemini_button.setToolTip(tr("Set Gemini API key in Settings first."))
 
+        self.gemini_status_label = QLabel("")
+        self.gemini_status_label.setStyleSheet(f"color: {TEXT_MUTED};")
+        self.gemini_status_label.hide()
+        self._gemini_worker = None
+        self._gemini_pending: list[PendingName] = []
+
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(
             [tr("Type"), tr("Full Name (Ref)"), tr("Romanized"), tr("Korean Name (Suggestion)"), tr("Source")]
@@ -206,6 +212,7 @@ class KoreanNameMappingDialog(QDialog):
         top_row.addWidget(self.search_input, stretch=1)
         top_row.addWidget(self.refresh_button)
         top_row.addWidget(self.gemini_button)
+        top_row.addWidget(self.gemini_status_label)
 
         table_panel = table_card(tr("Pending Mappings"), self.table)
 
@@ -314,7 +321,7 @@ class KoreanNameMappingDialog(QDialog):
         return item
 
     def _translate_with_gemini(self) -> None:
-        from core.roster.gemini_korean import translate_names_via_gemini
+        from gui.workers.gemini_worker import GeminiTranslateWorker
 
         self._store = KoreanNameStore.load()
         pending = self._store.pending
@@ -324,15 +331,24 @@ class KoreanNameMappingDialog(QDialog):
 
         items = [(item.part, item.name) for item in pending]  # type: ignore[misc]
 
-        try:
-            results = translate_names_via_gemini(self._api_key, items)
-        except Exception as exc:
-            QMessageBox.warning(
-                self,
-                tr("Gemini Error"),
-                str(exc),
-            )
-            return
+        self._gemini_pending = pending
+        self.gemini_button.setEnabled(False)
+        self.gemini_status_label.setText(tr("Translating via Gemini..."))
+        self.gemini_status_label.show()
+
+        worker = GeminiTranslateWorker(self._api_key, items, self)
+        worker.status.connect(self.gemini_status_label.setText)
+        worker.finished.connect(self._on_gemini_finished)
+        worker.error.connect(self._on_gemini_error)
+        worker.finished.connect(worker.deleteLater)
+        worker.error.connect(worker.deleteLater)
+        self._gemini_worker = worker
+        worker.start()
+
+    def _on_gemini_finished(self, results: dict[tuple[str, str], str]) -> None:
+        self.gemini_button.setEnabled(True)
+        self.gemini_status_label.hide()
+        self._gemini_worker = None
 
         if not results:
             QMessageBox.information(
@@ -342,12 +358,18 @@ class KoreanNameMappingDialog(QDialog):
             )
             return
 
-        result_dialog = GeminiResultDialog(results, pending, self)
+        result_dialog = GeminiResultDialog(results, self._gemini_pending, self)
         if result_dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
         translations = result_dialog.get_translations()
         self._apply_gemini_translations(translations)
+
+    def _on_gemini_error(self, message: str) -> None:
+        self.gemini_button.setEnabled(True)
+        self.gemini_status_label.hide()
+        self._gemini_worker = None
+        QMessageBox.warning(self, tr("Gemini Error"), message)
 
     def _apply_gemini_translations(
         self, translations: dict[tuple[str, str], str]

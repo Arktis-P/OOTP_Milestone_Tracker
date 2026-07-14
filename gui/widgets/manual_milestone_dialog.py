@@ -1,26 +1,30 @@
-"""Unified manual milestone entry dialog with category tabs."""
+"""Unified manual milestone entry dialog with category tabs.
+
+Each tab shows a table (one row per record) so several records can be
+entered and saved in a single pass. New rows are only added via the
+"Add Row" button (never automatically while typing), so a stray edit can't
+leave an unnoticed extra row behind. An "Add One at a Time" button opens the
+classic single-record popup for users who prefer that flow; accepting it
+appends a new row to the table.
+"""
 
 from __future__ import annotations
+
+from typing import Literal
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
-    QCompleter,
     QDialog,
-    QDialogButtonBox,
-    QFormLayout,
     QHBoxLayout,
     QHeaderView,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
     QPushButton,
-    QRadioButton,
     QStackedWidget,
     QTableWidget,
-    QTableWidgetItem,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -30,9 +34,7 @@ from core.config import AppSettings
 from core.i18n import tr
 from core.milestone.checker import MilestoneChecker
 from core.milestone.definitions import MilestoneDefinition, MilestoneDefinitions
-from core.milestone.implementation import manual_entry_hint, requires_external_data
 from core.milestone.manual_entry import (
-    ManualEntryCategory,
     ManualInjuryFormData,
     ManualMilestoneFormData,
     ManualTransferFormData,
@@ -50,23 +52,54 @@ from core.milestone.manual_entry import (
     validate_manual_injury,
     validate_manual_transfer,
 )
-from core.roster.player_registry import PlayerRegistry
 from core.stats.aggregator import Aggregator
-from core.roster.korean_names import korean_display_for_player, load_korean_name_mapper, load_roster_player_names
-from core.stats.player_display import format_manual_entry_label, format_player_list_label
-from core.stats.team_filter import (
-    CANONICAL_MLB_TEAMS,
-    expand_tracked_teams,
-    merge_team_maps,
-)
-from gui.ui_compact import hint_style, scale_size
-from gui.widgets.app_dialog import add_dialog_footer, error_label, init_dialog_layout, make_button_box
+from gui.ui_compact import UI_SCALE, scale_size
+from gui.widgets.app_dialog import add_dialog_footer, init_dialog_layout, make_button_box, table_card
 from gui.widgets.card_panel import CardPanel
+from gui.widgets.manual_entry_fields import (
+    canonical_player_text,
+    configure_mlb_team_combo,
+    configure_player_combo,
+    configure_player_multipick_combo,
+    ensure_player_id_from_combo,
+    tracked_team_names,
+    apply_completer,
+)
+from gui.widgets.single_record_dialogs import (
+    SingleInjuryEntryDialog,
+    SingleMilestoneEntryDialog,
+    SingleTransferEntryDialog,
+)
 
 _TAB_MILESTONE = 0
 _TAB_AWARD = 1
 _TAB_TRANSFER = 2
 _TAB_INJURY = 3
+
+# Milestone/Award table columns
+_M_DATE, _M_PLAYER, _M_TEAM, _M_MILESTONE, _M_VALUE, _M_SEASON, _M_GAMES, \
+    _M_OPP_TEAM, _M_OPP_PLAYER, _M_DESC, _M_NOTES = range(11)
+
+# Transfer table columns
+_T_DATE, _T_JOINING, _T_LEAVING, _T_TYPE, _T_JOIN_TEAM, _T_COUNTERPART, \
+    _T_SEASON, _T_DESC, _T_NOTES = range(9)
+
+# Injury table columns
+_I_DATE, _I_PLAYER, _I_LABEL, _I_DURATION, _I_TEAM, _I_SEASON, _I_DESC, _I_NOTES = range(8)
+
+
+def _scaled_column_widths(table: QTableWidget, widths: dict[int, int]) -> None:
+    """Set column widths, scaled to match the dialog's compact-UI scale factor."""
+    for col, width in widths.items():
+        table.setColumnWidth(col, round(width * UI_SCALE))
+
+
+def _row_of_widget(table: QTableWidget, widget: QWidget) -> int:
+    for row in range(table.rowCount()):
+        for col in range(table.columnCount()):
+            if table.cellWidget(row, col) is widget:
+                return row
+    return -1
 
 
 class ManualMilestoneDialog(QDialog):
@@ -82,9 +115,8 @@ class ManualMilestoneDialog(QDialog):
         self.aggregator = aggregator
         self.milestones = milestones
         self.settings = settings
-        self._pending_milestone_entries: list[tuple[ManualMilestoneFormData, MilestoneDefinition]] = []
         self.setWindowTitle(tr("Manual Entry"))
-        self.resize(*scale_size(620, 700))
+        self.resize(*scale_size(1560, 760))
 
         self.tabs = QTabWidget()
         self.tabs.addTab(QWidget(), tr("Milestone"))
@@ -115,702 +147,298 @@ class ManualMilestoneDialog(QDialog):
         self.tabs.blockSignals(False)
         self._on_tab_changed(initial_tab)
 
+    # ── Milestone / Award page ──────────────────────────────────────────
+
     def _build_milestone_page(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
 
-        self.player_radio = QRadioButton(tr("Personal"))
-        self.team_radio = QRadioButton(tr("Team"))
-        self.player_radio.setChecked(True)
-        self.player_radio.toggled.connect(self._on_target_changed)
-
-        target_row = QHBoxLayout()
-        target_row.addWidget(QLabel(tr("Target:")))
-        target_row.addWidget(self.player_radio)
-        target_row.addWidget(self.team_radio)
-        target_row.addStretch()
-
-        self.date_edit = QLineEdit()
-        self.date_edit.setPlaceholderText("2026-03-01")
-        self.date_error = error_label()
-        self.date_error.hide()
-        self.date_edit.textChanged.connect(self._validate_date_field)
-
-        self.player_combo = QComboBox()
-        self.player_combo.setEditable(True)
-        self.player_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._fill_players()
-        self._apply_completer(self.player_combo)
-        line = self.player_combo.lineEdit()
-        if line is not None:
-            line.setPlaceholderText(
-                tr("Enter full name or select from list (e.g., Dong-ju Moon)")
-            )
-        self.add_player_button = QPushButton(tr("+ Add Player"))
-        self.add_player_button.clicked.connect(self._on_add_player)
-
-        player_row = QHBoxLayout()
-        player_row.addWidget(self.player_combo, stretch=1)
-        player_row.addWidget(self.add_player_button)
-        self.player_row_widget = QWidget()
-        self.player_row_widget.setLayout(player_row)
-
-        self.team_combo = QComboBox()
-        self._fill_teams()
-        self.team_row_widget = QWidget()
-        team_layout = QHBoxLayout(self.team_row_widget)
-        team_layout.setContentsMargins(0, 0, 0, 0)
-        team_layout.addWidget(self.team_combo)
-
-        self.milestone_combo = QComboBox()
-        self.milestone_combo.setEditable(True)
-        self.milestone_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self.milestone_combo.currentIndexChanged.connect(self._on_milestone_changed)
-        self._apply_completer(self.milestone_combo)
-
-        self.manual_hint = QLabel("")
-        self.manual_hint.setWordWrap(True)
-        self.manual_hint.setStyleSheet(hint_style())
-        self.manual_hint.setText(
+        self.milestone_hint = QLabel(
             tr(
-                "Select tracked team players from the list, or enter a full name directly "
-                "/ use '+ Add Player' to register players not yet in the DB."
+                "Enter records directly in the table below, or use "
+                "'Add One at a Time' for the classic single-record form."
             )
         )
+        self.milestone_hint.setWordWrap(True)
 
-        self.season_edit = QLineEdit(str(self.settings.current_season))
-        self.season_label = QLabel(tr("Season:"))
-        self.season_row_widget = QWidget()
-        season_layout = QHBoxLayout(self.season_row_widget)
-        season_layout.setContentsMargins(0, 0, 0, 0)
-        season_layout.addWidget(self.season_edit)
+        toolbar = QHBoxLayout()
+        self.milestone_add_row_button = QPushButton(tr("Add Row"))
+        self.milestone_add_row_button.clicked.connect(lambda: self._add_milestone_row())
+        self.milestone_add_one_button = QPushButton(tr("Add One at a Time"))
+        self.milestone_add_one_button.clicked.connect(self._open_single_milestone_dialog)
+        self.milestone_remove_button = QPushButton(tr("Remove Selected"))
+        self.milestone_remove_button.clicked.connect(self._on_remove_milestone_rows)
+        toolbar.addWidget(self.milestone_add_row_button)
+        toolbar.addWidget(self.milestone_add_one_button)
+        toolbar.addStretch()
+        toolbar.addWidget(self.milestone_remove_button)
 
-        self.games_edit = QLineEdit()
-        self.games_edit.setPlaceholderText(tr("Games played up to this point"))
-        self.games_label = QLabel(tr("Games in:"))
-        self.games_row_widget = QWidget()
-        games_layout = QHBoxLayout(self.games_row_widget)
-        games_layout.setContentsMargins(0, 0, 0, 0)
-        games_layout.addWidget(self.games_edit)
-
-        self.value_combo = QComboBox()
-        self.value_combo.setEditable(True)
-        self.value_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-
-        self.opponent_team_edit = QComboBox()
-        self.opponent_team_edit.setEditable(True)
-        self.opponent_team_edit.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._fill_mlb_team_combo(self.opponent_team_edit)
-        self._apply_completer(self.opponent_team_edit)
-
-        self.opponent_player_edit = QComboBox()
-        self.opponent_player_edit.setEditable(True)
-        self.opponent_player_edit.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._fill_player_combo(self.opponent_player_edit)
-        self._apply_completer(self.opponent_player_edit)
-
-        self.description_edit = QLineEdit()
-        self.notes_edit = QLineEdit()
-
-        self.form = QFormLayout()
-        self.form.addRow(tr("Date:"), self.date_edit)
-        self.form.addRow("", self.date_error)
-        self.form.addRow(tr("Player:"), self.player_row_widget)
-        self.form.addRow(tr("Team:"), self.team_row_widget)
-        self.form.addRow(tr("Milestone:"), self.milestone_combo)
-        self.form.addRow(self.season_label, self.season_row_widget)
-        self.form.addRow(self.games_label, self.games_row_widget)
-        self.form.addRow(tr("Achieved Value:"), self.value_combo)
-        self.form.addRow(tr("Opponent:"), self.opponent_team_edit)
-        self.form.addRow(tr("Opp. Player:"), self.opponent_player_edit)
-        self.form.addRow(tr("Description:"), self.description_edit)
-        self.form.addRow(tr("Notes:"), self.notes_edit)
-
-        self.add_to_list_button = QPushButton(tr("+ Add to List"))
-        self.add_to_list_button.clicked.connect(self._on_add_to_list)
-        self.remove_pending_button = QPushButton(tr("Remove Selected"))
-        self.remove_pending_button.clicked.connect(self._on_remove_pending)
-
-        add_row = QHBoxLayout()
-        add_row.addStretch()
-        add_row.addWidget(self.add_to_list_button)
-
-        pending_label = QLabel(tr("Records to add:"))
-
-        self.pending_table = QTableWidget(0, 7)
-        self.pending_table.setHorizontalHeaderLabels(
+        self.milestone_table = QTableWidget(0, 11)
+        self.milestone_table.setHorizontalHeaderLabels(
             [
                 tr("Date"),
-                tr("Target"),
+                tr("Player"),
+                tr("Team"),
                 tr("Milestone"),
                 tr("Achieved Value"),
+                tr("Season"),
+                tr("Games in"),
                 tr("Opponent"),
+                tr("Opp. Player"),
                 tr("Description"),
                 tr("Notes"),
             ]
         )
-        self.pending_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.pending_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.pending_table.verticalHeader().setVisible(False)
-        self.pending_table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.ResizeMode.Stretch
+        self._style_history_table(self.milestone_table)
+        self.milestone_table.horizontalHeader().setSectionResizeMode(
+            _M_DESC, QHeaderView.ResizeMode.Stretch
         )
-        self.pending_table.horizontalHeader().setSectionResizeMode(
-            5, QHeaderView.ResizeMode.Stretch
-        )
+        _scaled_column_widths(self.milestone_table, {
+            _M_DATE: 100, _M_PLAYER: 190, _M_TEAM: 130, _M_MILESTONE: 220,
+            _M_VALUE: 90, _M_SEASON: 70, _M_GAMES: 90, _M_OPP_TEAM: 130,
+            _M_OPP_PLAYER: 160, _M_NOTES: 160,
+        })
 
-        pending_row = QHBoxLayout()
-        pending_row.addWidget(pending_label)
-        pending_row.addStretch()
-        pending_row.addWidget(self.remove_pending_button)
+        layout.addWidget(self.milestone_hint)
+        layout.addLayout(toolbar)
+        layout.addWidget(table_card(tr("Milestone"), self.milestone_table), stretch=1)
 
-        layout.addLayout(target_row)
-        layout.addWidget(self.manual_hint)
-        layout.addLayout(self.form)
-        layout.addLayout(add_row)
-        layout.addLayout(pending_row)
-        layout.addWidget(self.pending_table, stretch=1)
-
-        self._reload_milestones()
-        self._on_target_changed()
+        self._ensure_milestone_trailing_row()
         return page
 
-    def _build_transfer_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
+    @staticmethod
+    def _style_history_table(table: QTableWidget) -> None:
+        """Match the look of the Milestone History table (table_widgets.SortableTable)."""
+        table.setAlternatingRowColors(True)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.verticalHeader().setVisible(False)
 
-        self.transfer_hint = QLabel(
-            tr(
-                "Records player transfer events such as contracts and trades. "
-                "Separate multiple players with commas."
-            )
-        )
-        self.transfer_hint.setWordWrap(True)
-        self.transfer_hint.setStyleSheet(hint_style())
-
-        self.transfer_date_edit = QLineEdit()
-        self.transfer_date_edit.setPlaceholderText("2026-03-01")
-        self.transfer_date_error = error_label()
-        self.transfer_date_error.hide()
-        self.transfer_date_edit.textChanged.connect(self._validate_transfer_date_field)
-
-        self.transfer_joining_combo = QComboBox()
-        self.transfer_leaving_combo = QComboBox()
-        self._configure_player_multipick_combo(self.transfer_joining_combo)
-        self._configure_player_multipick_combo(self.transfer_leaving_combo)
-
-        self.transfer_type_combo = QComboBox()
-        for key, label in TRANSFER_EVENT_LABELS.items():
-            self.transfer_type_combo.addItem(tr(label), key)
-        self.transfer_type_combo.currentIndexChanged.connect(
-            self._update_transfer_description
-        )
-        self.transfer_type_combo.currentIndexChanged.connect(
-            self._on_transfer_type_changed
-        )
-
-        self.transfer_join_team_combo = QComboBox()
-        self.transfer_counterpart_team_combo = QComboBox()
-        for _tc in (self.transfer_join_team_combo, self.transfer_counterpart_team_combo):
-            _tc.setEditable(True)
-            _tc.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._fill_mlb_team_combo(self.transfer_join_team_combo, tracked_first=True)
-        self._fill_mlb_team_combo(self.transfer_counterpart_team_combo)
-        self._apply_completer(self.transfer_join_team_combo)
-        self._apply_completer(self.transfer_counterpart_team_combo)
-        self.transfer_season_edit = QLineEdit(str(self.settings.current_season))
-        self.transfer_description_edit = QLineEdit()
-        self.transfer_description_edit.textEdited.connect(
-            self._on_transfer_description_edited
-        )
-        self.transfer_notes_edit = QLineEdit()
-        self._transfer_desc_auto = True
-
-        self.transfer_joining_combo.lineEdit().textChanged.connect(
-            self._update_transfer_description
-        )
-        self.transfer_leaving_combo.lineEdit().textChanged.connect(
-            self._update_transfer_description
-        )
-
-        transfer_form = QFormLayout()
-        transfer_form.addRow(tr("Date:"), self.transfer_date_edit)
-        transfer_form.addRow("", self.transfer_date_error)
-        transfer_form.addRow(tr("Joining:"), self.transfer_joining_combo)
-        transfer_form.addRow(tr("Leaving:"), self.transfer_leaving_combo)
-        transfer_form.addRow(tr("Type:"), self.transfer_type_combo)
-        transfer_form.addRow(tr("Join Team:"), self.transfer_join_team_combo)
-        transfer_form.addRow(tr("Counterpart Team:"), self.transfer_counterpart_team_combo)
-        transfer_form.addRow(tr("Season:"), self.transfer_season_edit)
-        transfer_form.addRow(tr("Description:"), self.transfer_description_edit)
-        transfer_form.addRow(tr("Notes:"), self.transfer_notes_edit)
-
-        layout.addWidget(self.transfer_hint)
-        layout.addLayout(transfer_form)
-        layout.addStretch()
-        return page
-
-    def _build_injury_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-
-        self.injury_hint = QLabel(
-            tr("Records injury events such as player injuries and returns.")
-        )
-        self.injury_hint.setWordWrap(True)
-        self.injury_hint.setStyleSheet(hint_style())
-
-        self.injury_date_edit = QLineEdit()
-        self.injury_date_edit.setPlaceholderText("2026-03-01")
-        self.injury_date_error = error_label()
-        self.injury_date_error.hide()
-        self.injury_date_edit.textChanged.connect(self._validate_injury_date_field)
-
-        self.injury_player_combo = QComboBox()
-        self.injury_player_combo.setEditable(True)
-        self.injury_player_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._fill_player_combo(self.injury_player_combo)
-        self._apply_completer(self.injury_player_combo)
-
-        self.injury_label_edit = QLineEdit()
-        self.injury_label_edit.setPlaceholderText(
-            tr("e.g., Hamstring, shoulder surgery")
-        )
-        self.injury_duration_edit = QLineEdit()
-        self.injury_duration_edit.setPlaceholderText(
-            tr("e.g., 3 days, 3 weeks, 5-6 months")
-        )
-        self.injury_team_combo = QComboBox()
-        self.injury_team_combo.setEditable(True)
-        self.injury_team_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._fill_tracked_team_combo(self.injury_team_combo)
-        self._apply_completer(self.injury_team_combo)
-        self.injury_season_edit = QLineEdit(str(self.settings.current_season))
-        self.injury_description_edit = QLineEdit()
-        self.injury_notes_edit = QLineEdit()
-
-        self.injury_label_edit.textChanged.connect(self._update_injury_description)
-        self.injury_duration_edit.textChanged.connect(self._update_injury_description)
-
-        injury_form = QFormLayout()
-        injury_form.addRow(tr("Date:"), self.injury_date_edit)
-        injury_form.addRow("", self.injury_date_error)
-        injury_form.addRow(tr("Player:"), self.injury_player_combo)
-        injury_form.addRow(tr("Injury:"), self.injury_label_edit)
-        injury_form.addRow(tr("Duration:"), self.injury_duration_edit)
-        injury_form.addRow(tr("Affil. Team:"), self.injury_team_combo)
-        injury_form.addRow(tr("Season:"), self.injury_season_edit)
-        injury_form.addRow(tr("Description:"), self.injury_description_edit)
-        injury_form.addRow(tr("Notes:"), self.injury_notes_edit)
-
-        layout.addWidget(self.injury_hint)
-        layout.addLayout(injury_form)
-        layout.addStretch()
-        return page
-
-    def _current_category(self) -> ManualEntryCategory:
+    def _current_category(self) -> Literal["milestone", "award"]:
         return "award" if self.tabs.currentIndex() == _TAB_AWARD else "milestone"
 
-    def _on_tab_changed(self, index: int) -> None:
-        if index in (_TAB_MILESTONE, _TAB_AWARD):
-            self.stack.setCurrentIndex(0)
-            self._reload_milestones()
-            self._update_milestone_hint()
-            self._update_award_mode_fields()
-        elif index == _TAB_TRANSFER:
-            self.stack.setCurrentIndex(1)
-            self._on_transfer_type_changed()
-        elif index == _TAB_INJURY:
-            self.stack.setCurrentIndex(2)
-
-    def _update_award_mode_fields(self) -> None:
-        """Hide fields irrelevant to award entries."""
-        is_award = self.tabs.currentIndex() == _TAB_AWARD
-        self.form.setRowVisible(self.opponent_player_edit, not is_award)
-
-    def _player_registry(self) -> PlayerRegistry:
-        return PlayerRegistry(self.aggregator)
-
-    def _fill_players(self) -> None:
-        self._fill_player_combo(self.player_combo)
-
-    def _fill_player_combo(self, combo: QComboBox) -> None:
-        current = combo.currentText()
-        combo.blockSignals(True)
-        combo.clear()
-        seen_ids: set[int] = set()
-        mapper = load_korean_name_mapper()
-        roster_names = load_roster_player_names(
-            self.settings.import_export_dir or self.settings.initial_stats_dir or None
+    def _milestone_pool(self) -> list[MilestoneDefinition]:
+        category = self._current_category()
+        player_pool = milestones_for_manual_entry(
+            self.milestones.all_milestones, "player", category=category
         )
-        players = self.aggregator.get_tracked_players(
-            self.settings.tracked_teams,
-            custom_teams=self.settings.custom_mlb_teams,
+        team_pool = milestones_for_manual_entry(
+            self.milestones.all_milestones, "team", category=category
         )
-        for player in players:
-            player_id = int(player["player_id"])
-            seen_ids.add(player_id)
-            base_label = format_player_list_label(player)
-            korean = korean_display_for_player(
-                mapper,
-                full_name=str(player.get("full_name") or ""),
-                player_id=player_id,
-                roster_names=roster_names,
-            )
-            label = f"{base_label} / {korean}" if korean else base_label
-            combo.addItem(label, player_id)
-            combo.setItemData(combo.count() - 1, base_label, Qt.ItemDataRole.UserRole + 1)
-        for player in self._player_registry().list_manual_players():
-            player_id = int(player["player_id"])
-            if player_id in seen_ids:
+        seen: set[str] = set()
+        combined: list[MilestoneDefinition] = []
+        for milestone in player_pool + team_pool:
+            if milestone.key in seen:
                 continue
-            player["is_manual"] = True
-            combo.addItem(format_manual_entry_label(player), player_id)
-        combo.blockSignals(False)
-        if current:
-            combo.setEditText(current)
-        if combo.isEditable():
-            self._apply_completer(combo)
+            seen.add(milestone.key)
+            combined.append(milestone)
+        return combined
 
-    def _mlb_team_names(self) -> list[str]:
-        team_map = merge_team_maps(
-            CANONICAL_MLB_TEAMS,
-            self.settings.custom_mlb_teams,
-        )
-        return sorted(set(team_map.values()), key=str.lower)
-
-    def _tracked_team_names(self) -> list[str]:
-        name_map = merge_team_maps(
-            CANONICAL_MLB_TEAMS,
-            self.settings.custom_mlb_teams,
-        )
-        names: set[str] = set()
-        for token in self.settings.tracked_teams:
-            raw = token.strip()
-            if not raw:
-                continue
-            upper = raw.upper()
-            if upper in name_map:
-                names.add(name_map[upper])
-            elif raw in name_map.values():
-                names.add(raw)
-            else:
-                names.add(raw)
-        if not names:
-            names.update(expand_tracked_teams(
-                self.settings.tracked_teams,
-                self.settings.custom_mlb_teams,
-            ))
-        return sorted(names, key=str.lower)
-
-    def _on_transfer_type_changed(self) -> None:
-        if str(self.transfer_type_combo.currentData()) != "fa_contract":
-            return
-        if self.transfer_join_team_combo.currentText().strip():
-            return
-        tracked = self._tracked_team_names()
-        if tracked:
-            self.transfer_join_team_combo.setEditText(tracked[0])
-
-    def _fill_mlb_team_combo(self, combo: QComboBox, *, tracked_first: bool = False) -> None:
+    def _fill_target_team_combo(self, combo: QComboBox) -> None:
         combo.clear()
         combo.addItem("", "")
-        if tracked_first:
-            tracked = self._tracked_team_names()
-            tracked_set = set(tracked)
-            for name in tracked:
-                combo.addItem(name, name)
-            for name in self._mlb_team_names():
-                if name not in tracked_set:
-                    combo.addItem(name, name)
-        else:
-            for name in self._mlb_team_names():
-                combo.addItem(name, name)
-
-    def _fill_tracked_team_combo(self, combo: QComboBox) -> None:
-        combo.clear()
-        for name in self._tracked_team_names():
+        for name in tracked_team_names(self.settings):
             combo.addItem(name, name)
 
-    def _configure_player_multipick_combo(self, combo: QComboBox) -> None:
-        combo.setEditable(True)
-        combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self._fill_player_combo(combo)
-        line = combo.lineEdit()
-        if line is not None:
-            line.setPlaceholderText(
-                tr("e.g., Dong-ju Moon, A. Judge (comma-separated)")
-            )
-        snapshot = {"text": ""}
+    def _add_milestone_row(self) -> int:
+        table = self.milestone_table
+        row = table.rowCount()
+        table.insertRow(row)
 
-        original_show_popup = combo.showPopup
+        date_edit = QLineEdit()
+        date_edit.setPlaceholderText("2026-03-01")
+        table.setCellWidget(row, _M_DATE, date_edit)
 
-        def show_popup() -> None:
-            snapshot["text"] = combo.currentText()
-            original_show_popup()
+        player_combo = QComboBox()
+        configure_player_combo(player_combo, self.aggregator, self.settings)
+        table.setCellWidget(row, _M_PLAYER, player_combo)
 
-        combo.showPopup = show_popup  # type: ignore[method-assign]
+        team_combo = QComboBox()
+        team_combo.setEditable(False)
+        self._fill_target_team_combo(team_combo)
+        table.setCellWidget(row, _M_TEAM, team_combo)
 
-        def on_activated(index: int) -> None:
-            if index < 0:
-                return
-            canonical = combo.itemData(index, Qt.ItemDataRole.UserRole + 1)
-            canonical_text = str(canonical) if canonical is not None else combo.itemText(index)
-            picked_parts = parse_player_name_list(canonical_text)
-            if not picked_parts:
-                return
-            picked = picked_parts[0]
-            parts = parse_player_name_list(snapshot["text"])
-            if picked not in parts:
-                parts.append(picked)
-            text = ", ".join(parts)
-            if line is not None:
-                line.setText(text)
-            snapshot["text"] = text
-            self._update_transfer_description()
+        milestone_combo = QComboBox()
+        milestone_combo.setEditable(True)
+        milestone_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        for milestone in self._milestone_pool():
+            milestone_combo.addItem(milestone.label, milestone.key)
+        apply_completer(milestone_combo)
+        milestone_combo.currentIndexChanged.connect(self._on_milestone_row_milestone_changed)
+        table.setCellWidget(row, _M_MILESTONE, milestone_combo)
 
-        combo.activated.connect(on_activated)
+        value_combo = QComboBox()
+        value_combo.setEditable(True)
+        value_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        table.setCellWidget(row, _M_VALUE, value_combo)
 
-    def _apply_completer(self, combo: QComboBox) -> None:
-        """Attach a case-insensitive substring-match completer to an editable combo."""
-        completer = QCompleter(combo.model(), combo)
-        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
-        completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        combo.setCompleter(completer)
+        season_edit = QLineEdit()
+        table.setCellWidget(row, _M_SEASON, season_edit)
 
-    def _combo_text(self, combo: QComboBox) -> str:
-        return combo.currentText().strip()
+        games_edit = QLineEdit()
+        table.setCellWidget(row, _M_GAMES, games_edit)
 
-    def _canonical_player_text(self, combo: QComboBox) -> str:
-        """Return canonical player name (without Korean suffix) from player combo."""
-        text = combo.currentText().strip()
-        for i in range(combo.count()):
-            if combo.itemText(i).strip() == text:
-                canonical = combo.itemData(i, Qt.ItemDataRole.UserRole + 1)
-                if canonical is not None:
-                    return str(canonical)
-                break
-        return text
+        opponent_combo = QComboBox()
+        configure_mlb_team_combo(opponent_combo, self.settings)
+        table.setCellWidget(row, _M_OPP_TEAM, opponent_combo)
 
-    def _fill_teams(self) -> None:
-        self.team_combo.clear()
-        names = expand_tracked_teams(
-            self.settings.tracked_teams,
-            self.settings.custom_mlb_teams,
-        )
-        for name in sorted(set(names)):
-            self.team_combo.addItem(name, name)
+        opp_player_combo = QComboBox()
+        configure_player_combo(opp_player_combo, self.aggregator, self.settings)
+        opp_player_combo.setCurrentText("")
+        table.setCellWidget(row, _M_OPP_PLAYER, opp_player_combo)
 
-    def _reload_milestones(self) -> None:
-        target = "player" if self.player_radio.isChecked() else "team"
-        pool = milestones_for_manual_entry(
-            self.milestones.all_milestones,
-            target,
-            category=self._current_category(),
-        )
-        current_key = self.milestone_combo.currentData()
-        self.milestone_combo.blockSignals(True)
-        self.milestone_combo.clear()
-        for milestone in pool:
-            self.milestone_combo.addItem(milestone.label, milestone.key)
-        if current_key:
-            index = self.milestone_combo.findData(current_key)
-            if index >= 0:
-                self.milestone_combo.setCurrentIndex(index)
-        self.milestone_combo.blockSignals(False)
-        self._on_milestone_changed()
+        table.setCellWidget(row, _M_DESC, QLineEdit())
+        table.setCellWidget(row, _M_NOTES, QLineEdit())
 
-    def _on_target_changed(self) -> None:
-        is_player = self.player_radio.isChecked()
-        self.player_row_widget.setVisible(is_player)
-        self.team_row_widget.setVisible(not is_player)
-        self._reload_milestones()
+        self._refresh_milestone_row_values(row)
+        return row
 
-    def _selected_milestone(self) -> MilestoneDefinition | None:
-        key = self.milestone_combo.currentData()
-        if not key:
-            return None
-        return self.milestones.get_by_key(str(key))
-
-    def _update_milestone_hint(self) -> None:
-        if self.tabs.currentIndex() == _TAB_AWARD:
-            self.manual_hint.setText(
-                tr(
-                    "Awards, league leaders, and other items not auto-detected from boxscores."
-                )
-            )
-            milestone = self._selected_milestone()
-            if milestone is not None:
-                self.manual_hint.setText(manual_entry_hint(milestone))
+    def _on_milestone_row_milestone_changed(self) -> None:
+        combo = self.sender()
+        if not isinstance(combo, QComboBox):
             return
+        row = _row_of_widget(self.milestone_table, combo)
+        if row >= 0:
+            self._refresh_milestone_row_values(row)
 
-        milestone = self._selected_milestone()
-        if milestone is not None and requires_external_data(milestone):
-            self.manual_hint.setText(manual_entry_hint(milestone))
-        else:
-            self.manual_hint.setText(
-                tr(
-                    "Can be auto-detected from boxscores, but use this to supplement or correct."
-                )
-            )
-
-    def _on_milestone_changed(self) -> None:
-        milestone = self._selected_milestone()
-        if milestone is None:
+    def _refresh_milestone_row_values(self, row: int) -> None:
+        milestone_combo = self.milestone_table.cellWidget(row, _M_MILESTONE)
+        value_combo = self.milestone_table.cellWidget(row, _M_VALUE)
+        if not isinstance(milestone_combo, QComboBox) or not isinstance(value_combo, QComboBox):
             return
-        self._update_milestone_hint()
-        scope = milestone.scope
-        self.season_row_widget.setVisible(scope_needs_season(scope))
-        self.season_label.setVisible(scope_needs_season(scope))
-        self.games_row_widget.setVisible(scope_needs_games_at_achievement(scope))
-        self.games_label.setVisible(scope_needs_games_at_achievement(scope))
+        key = milestone_combo.currentData()
+        milestone = self.milestones.get_by_key(str(key)) if key else None
+        value_combo.blockSignals(True)
+        value_combo.clear()
+        if milestone is not None:
+            for candidate in get_achieved_value_candidates(milestone):
+                value_combo.addItem(candidate)
+            if value_combo.count():
+                value_combo.setCurrentIndex(0)
+        value_combo.blockSignals(False)
 
-        self.value_combo.blockSignals(True)
-        self.value_combo.clear()
-        for candidate in get_achieved_value_candidates(milestone):
-            self.value_combo.addItem(candidate)
-        if self.value_combo.count():
-            self.value_combo.setCurrentIndex(0)
-        self.value_combo.blockSignals(False)
+    def _row_is_blank_milestone(self, row: int) -> bool:
+        date_edit = self.milestone_table.cellWidget(row, _M_DATE)
+        return not (isinstance(date_edit, QLineEdit) and date_edit.text().strip())
 
-    def _validate_date_field(self) -> None:
-        self._show_date_error(self.date_edit, self.date_error)
+    def _ensure_milestone_trailing_row(self) -> None:
+        """Guarantee at least one row exists (rows are otherwise only added by button)."""
+        if self.milestone_table.rowCount() == 0:
+            self._add_milestone_row()
 
-    def _validate_transfer_date_field(self) -> None:
-        self._show_date_error(self.transfer_date_edit, self.transfer_date_error)
-
-    def _validate_injury_date_field(self) -> None:
-        self._show_date_error(self.injury_date_edit, self.injury_date_error)
-
-    def _update_transfer_description(self) -> None:
-        if str(self.transfer_type_combo.currentData()) != "trade":
-            return
-        if not self._transfer_desc_auto:
-            return
-        joining = parse_player_name_list(self._combo_text(self.transfer_joining_combo))
-        leaving = parse_player_name_list(self._combo_text(self.transfer_leaving_combo))
-        self.transfer_description_edit.blockSignals(True)
-        self.transfer_description_edit.setText(build_trade_description(joining, leaving))
-        self.transfer_description_edit.blockSignals(False)
-
-    def _on_transfer_description_edited(self, _text: str) -> None:
-        joining = parse_player_name_list(self._combo_text(self.transfer_joining_combo))
-        leaving = parse_player_name_list(self._combo_text(self.transfer_leaving_combo))
-        auto = build_trade_description(joining, leaving)
-        if self.transfer_description_edit.text().strip() != auto.strip():
-            self._transfer_desc_auto = False
-
-    def _update_injury_description(self) -> None:
-        text = build_injury_description(
-            self.injury_label_edit.text(),
-            self.injury_duration_edit.text(),
-        )
-        self.injury_description_edit.setText(text)
-
-    def _show_date_error(self, field: QLineEdit, error_label: QLabel) -> None:
-        text = field.text().strip()
-        if not text:
-            error_label.hide()
-            return
-        if parse_flexible_date(text) is None:
-            error_label.setText(tr("Check date format"))
-            error_label.show()
-        else:
-            error_label.hide()
-
-    def _on_add_player(self) -> None:
-        name, ok = QInputDialog.getText(
-            self,
-            tr("Add Player"),
-            tr("Enter full name (e.g., Dong-ju Moon):"),
-        )
-        if not ok:
-            return
-        try:
-            player_id = self._player_registry().add_manual_player(name)
-        except ValueError as exc:
-            QMessageBox.warning(self, tr("Input Error"), str(exc))
-            return
-        for combo in (
-            self.player_combo,
-            self.opponent_player_edit,
-            self.injury_player_combo,
-            self.transfer_joining_combo,
-            self.transfer_leaving_combo,
-        ):
-            self._fill_player_combo(combo)
-            index = combo.findData(player_id)
-            if index >= 0 and combo is self.player_combo:
-                combo.setCurrentIndex(index)
-
-    def _resolve_player_id_from_combo(self, combo: QComboBox) -> int | None:
-        text = combo.currentText().strip()
-        if not text:
-            return None
-        for index in range(combo.count()):
-            if combo.itemText(index).strip() == text:
-                data = combo.itemData(index)
-                if data is not None:
-                    return int(data)
-        return self._player_registry().resolve_player(text)
-
-    def _ensure_player_id_from_combo(self, combo: QComboBox) -> int | None:
-        player_id = self._resolve_player_id_from_combo(combo)
-        if player_id is not None:
-            return player_id
-        text = combo.currentText().strip()
-        if not text:
-            return None
-        try:
-            return self._player_registry().ensure_player(text)
-        except ValueError:
-            return None
-
-    def _on_add_to_list(self) -> None:
-        form = self._build_milestone_form()
-        if form is None:
-            return
-        milestone = self.milestones.get_by_key(form.milestone_key)
-        assert milestone is not None
-        self._pending_milestone_entries.append((form, milestone))
-        self._refresh_pending_table()
-        self._reset_entry_fields_after_add()
-
-    def _on_remove_pending(self) -> None:
-        rows = sorted({index.row() for index in self.pending_table.selectedIndexes()}, reverse=True)
+    def _on_remove_milestone_rows(self) -> None:
+        rows = sorted({index.row() for index in self.milestone_table.selectedIndexes()}, reverse=True)
         for row in rows:
-            del self._pending_milestone_entries[row]
-        self._refresh_pending_table()
+            self.milestone_table.removeRow(row)
+        self._ensure_milestone_trailing_row()
 
-    def _refresh_pending_table(self) -> None:
-        self.pending_table.setRowCount(len(self._pending_milestone_entries))
-        for row, (form, milestone) in enumerate(self._pending_milestone_entries):
-            target_text = (
-                self._display_player_label(form.player_id)
-                if form.target == "player"
-                else str(form.team or "")
-            )
-            values = [
-                form.achieved_date.isoformat(),
-                target_text,
-                milestone.label,
-                self._format_achieved_value(form.achieved_value),
-                form.opponent_team or "",
-                form.description or "",
-                form.notes or "",
-            ]
-            for col, text in enumerate(values):
-                item = QTableWidgetItem(text)
-                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-                self.pending_table.setItem(row, col, item)
+    def _refresh_milestone_pool_for_all_rows(self) -> None:
+        pool = self._milestone_pool()
+        for row in range(self.milestone_table.rowCount()):
+            combo = self.milestone_table.cellWidget(row, _M_MILESTONE)
+            if not isinstance(combo, QComboBox):
+                continue
+            current_key = combo.currentData()
+            combo.blockSignals(True)
+            combo.clear()
+            for milestone in pool:
+                combo.addItem(milestone.label, milestone.key)
+            if current_key:
+                index = combo.findData(current_key)
+                if index >= 0:
+                    combo.setCurrentIndex(index)
+            combo.blockSignals(False)
+            self._refresh_milestone_row_values(row)
 
-    def _display_player_label(self, player_id: int | None) -> str:
+    def _open_single_milestone_dialog(self) -> None:
+        common_date = ""
+        if self.milestone_table.rowCount() > 1:
+            first_date = self.milestone_table.cellWidget(0, _M_DATE)
+            if isinstance(first_date, QLineEdit):
+                common_date = first_date.text().strip()
+        dialog = SingleMilestoneEntryDialog(
+            self._current_category(),
+            self.aggregator,
+            self.milestones,
+            self.settings,
+            self,
+            initial_date=common_date,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted or dialog.form is None:
+            return
+        self._populate_milestone_row_from_form(dialog.form, dialog.milestone)
+
+    def _populate_milestone_row_from_form(
+        self, form: ManualMilestoneFormData, milestone: MilestoneDefinition
+    ) -> None:
+        row = self.milestone_table.rowCount() - 1
+        if not self._row_is_blank_milestone(row):
+            row = self._add_milestone_row()
+
+        date_edit = self.milestone_table.cellWidget(row, _M_DATE)
+        if isinstance(date_edit, QLineEdit):
+            date_edit.blockSignals(True)
+            date_edit.setText(form.achieved_date.isoformat())
+            date_edit.blockSignals(False)
+
+        player_combo = self.milestone_table.cellWidget(row, _M_PLAYER)
+        team_combo = self.milestone_table.cellWidget(row, _M_TEAM)
+        if form.target == "player" and isinstance(player_combo, QComboBox):
+            index = player_combo.findData(form.player_id)
+            if index < 0:
+                # Player was just registered (e.g. via "+ Add Player" in the
+                # popup) after this row's combo was populated — refresh it.
+                configure_player_combo(player_combo, self.aggregator, self.settings)
+                index = player_combo.findData(form.player_id)
+            if index >= 0:
+                player_combo.setCurrentIndex(index)
+            else:
+                player_combo.setCurrentText(self._player_display_name(form.player_id))
+        elif form.target == "team" and isinstance(team_combo, QComboBox):
+            index = team_combo.findData(form.team)
+            if index >= 0:
+                team_combo.setCurrentIndex(index)
+
+        milestone_combo = self.milestone_table.cellWidget(row, _M_MILESTONE)
+        if isinstance(milestone_combo, QComboBox):
+            index = milestone_combo.findData(milestone.key)
+            if index >= 0:
+                milestone_combo.setCurrentIndex(index)
+
+        self._refresh_milestone_row_values(row)
+
+        value_combo = self.milestone_table.cellWidget(row, _M_VALUE)
+        if isinstance(value_combo, QComboBox):
+            value_combo.setCurrentText(self._format_achieved_value(form.achieved_value))
+
+        if form.season is not None:
+            season_edit = self.milestone_table.cellWidget(row, _M_SEASON)
+            if isinstance(season_edit, QLineEdit):
+                season_edit.setText(str(form.season))
+        if form.games_at_achievement is not None:
+            games_edit = self.milestone_table.cellWidget(row, _M_GAMES)
+            if isinstance(games_edit, QLineEdit):
+                games_edit.setText(str(form.games_at_achievement))
+
+        opponent_combo = self.milestone_table.cellWidget(row, _M_OPP_TEAM)
+        if isinstance(opponent_combo, QComboBox) and form.opponent_team:
+            opponent_combo.setCurrentText(form.opponent_team)
+
+        opp_player_combo = self.milestone_table.cellWidget(row, _M_OPP_PLAYER)
+        if isinstance(opp_player_combo, QComboBox) and form.opponent_player:
+            opp_player_combo.setCurrentText(form.opponent_player)
+
+        desc_edit = self.milestone_table.cellWidget(row, _M_DESC)
+        if isinstance(desc_edit, QLineEdit):
+            desc_edit.setText(form.description)
+        notes_edit = self.milestone_table.cellWidget(row, _M_NOTES)
+        if isinstance(notes_edit, QLineEdit):
+            notes_edit.setText(form.notes)
+
+        self._ensure_milestone_trailing_row()
+
+    def _player_display_name(self, player_id: int | None) -> str:
         if player_id is None:
             return ""
-        index = self.player_combo.findData(player_id)
-        if index >= 0:
-            return self.player_combo.itemText(index)
         row = self.aggregator.conn.execute(
             "SELECT full_name, short_name FROM players WHERE player_id = ?",
             (player_id,),
@@ -825,167 +453,632 @@ class ManualMilestoneDialog(QDialog):
             return str(int(value))
         return str(value)
 
-    def _reset_entry_fields_after_add(self) -> None:
-        """Clear per-record fields after queuing, keeping date/milestone for the next entry."""
-        self.player_combo.setCurrentIndex(-1)
-        self.player_combo.setCurrentText("")
-        self.value_combo.setCurrentIndex(0 if self.value_combo.count() else -1)
-        self.games_edit.clear()
-        self.opponent_team_edit.setCurrentText("")
-        self.opponent_player_edit.setCurrentText("")
-        self.description_edit.clear()
-        self.notes_edit.clear()
-        self.player_combo.setFocus()
+    def _collect_milestone_entries(
+        self,
+    ) -> list[tuple[ManualMilestoneFormData, MilestoneDefinition]] | None:
+        entries: list[tuple[ManualMilestoneFormData, MilestoneDefinition]] = []
+        for row in range(self.milestone_table.rowCount()):
+            if self._row_is_blank_milestone(row):
+                continue
+            result = self._build_milestone_row_form(row)
+            if result is None:
+                return None
+            entries.append(result)
+        return entries
 
-    def _entry_fields_have_content(self) -> bool:
-        """Whether the on-screen entry fields hold an unqueued record worth saving too."""
-        if self.player_radio.isChecked():
-            return bool(self.player_combo.currentText().strip())
-        return bool(self.team_combo.currentText().strip())
+    def _build_milestone_row_form(
+        self, row: int
+    ) -> tuple[ManualMilestoneFormData, MilestoneDefinition] | None:
+        row_label = tr("Row {n}").format(n=row + 1)
 
-    def _build_milestone_form(self) -> ManualMilestoneFormData | None:
-        parsed = parse_flexible_date(self.date_edit.text())
+        date_edit = self.milestone_table.cellWidget(row, _M_DATE)
+        date_text = date_edit.text() if isinstance(date_edit, QLineEdit) else ""
+        parsed = parse_flexible_date(date_text)
         if parsed is None:
-            self.date_error.setText(tr("Check date format"))
-            self.date_error.show()
+            QMessageBox.warning(
+                self, tr("Input Error"), f"{row_label}: " + tr("Check date format")
+            )
             return None
 
-        milestone = self._selected_milestone()
+        milestone_combo = self.milestone_table.cellWidget(row, _M_MILESTONE)
+        key = milestone_combo.currentData() if isinstance(milestone_combo, QComboBox) else None
+        milestone = self.milestones.get_by_key(str(key)) if key else None
         if milestone is None:
-            QMessageBox.warning(self, tr("Input Required"), tr("Please select a milestone."))
+            QMessageBox.warning(
+                self, tr("Input Required"), f"{row_label}: " + tr("Please select a milestone.")
+            )
             return None
 
+        value_combo = self.milestone_table.cellWidget(row, _M_VALUE)
+        value_text = value_combo.currentText().strip() if isinstance(value_combo, QComboBox) else ""
         try:
-            achieved_value = float(self.value_combo.currentText().strip())
+            achieved_value = float(value_text)
         except ValueError:
-            QMessageBox.warning(self, tr("Input Error"), tr("Achieved value must be a number."))
+            QMessageBox.warning(
+                self, tr("Input Error"), f"{row_label}: " + tr("Achieved value must be a number.")
+            )
             return None
 
         season: int | None = None
         if scope_needs_season(milestone.scope):
+            season_edit = self.milestone_table.cellWidget(row, _M_SEASON)
+            season_text = season_edit.text().strip() if isinstance(season_edit, QLineEdit) else ""
             try:
-                season = int(self.season_edit.text().strip())
+                season = int(season_text)
             except ValueError:
-                QMessageBox.warning(self, tr("Input Error"), tr("Season must be a number."))
+                QMessageBox.warning(
+                    self, tr("Input Error"), f"{row_label}: " + tr("Season must be a number.")
+                )
                 return None
 
         games_at: int | None = None
         if scope_needs_games_at_achievement(milestone.scope):
-            text = self.games_edit.text().strip()
-            if text:
+            games_edit = self.milestone_table.cellWidget(row, _M_GAMES)
+            games_text = games_edit.text().strip() if isinstance(games_edit, QLineEdit) else ""
+            if games_text:
                 try:
-                    games_at = int(text)
+                    games_at = int(games_text)
                 except ValueError:
-                    QMessageBox.warning(self, tr("Input Error"), tr("Games must be an integer."))
+                    QMessageBox.warning(
+                        self, tr("Input Error"), f"{row_label}: " + tr("Games must be an integer.")
+                    )
                     return None
             elif self._current_category() != "award":
-                QMessageBox.warning(self, tr("Input Error"), tr("Games must be an integer."))
+                QMessageBox.warning(
+                    self, tr("Input Error"), f"{row_label}: " + tr("Games must be an integer.")
+                )
                 return None
 
-        is_player = self.player_radio.isChecked()
+        player_combo = self.milestone_table.cellWidget(row, _M_PLAYER)
+        team_combo = self.milestone_table.cellWidget(row, _M_TEAM)
+        player_text = player_combo.currentText().strip() if isinstance(player_combo, QComboBox) else ""
+        team_value = team_combo.currentData() if isinstance(team_combo, QComboBox) else ""
+
+        is_player = bool(player_text)
         player_id: int | None = None
+        team: str | None = None
         if is_player:
-            player_id = self._ensure_player_id_from_combo(self.player_combo)
+            player_id = ensure_player_id_from_combo(player_combo, self.aggregator)
             if player_id is None:
                 QMessageBox.warning(
                     self,
                     tr("Input Required"),
-                    tr("Select a player or enter a full name."),
+                    f"{row_label}: " + tr("Select a player or enter a full name."),
                 )
                 return None
-        team = self.team_combo.currentData() if not is_player else None
+        elif team_value:
+            team = str(team_value)
+        else:
+            QMessageBox.warning(
+                self,
+                tr("Input Required"),
+                f"{row_label}: " + tr("Select a player or enter a full name."),
+            )
+            return None
+
+        opponent_combo = self.milestone_table.cellWidget(row, _M_OPP_TEAM)
+        opp_player_combo = self.milestone_table.cellWidget(row, _M_OPP_PLAYER)
+        desc_edit = self.milestone_table.cellWidget(row, _M_DESC)
+        notes_edit = self.milestone_table.cellWidget(row, _M_NOTES)
 
         form = ManualMilestoneFormData(
             target="player" if is_player else "team",
             achieved_date=parsed,
             player_id=player_id,
-            team=str(team) if team else None,
+            team=team,
             milestone_key=milestone.key,
             season=season,
             achieved_value=achieved_value,
             games_at_achievement=games_at,
-            opponent_team=self._combo_text(self.opponent_team_edit),
-            opponent_player=self._canonical_player_text(self.opponent_player_edit),
-            description=self.description_edit.text().strip(),
-            notes=self.notes_edit.text().strip(),
+            opponent_team=opponent_combo.currentText().strip() if isinstance(opponent_combo, QComboBox) else "",
+            opponent_player=canonical_player_text(opp_player_combo) if isinstance(opp_player_combo, QComboBox) else "",
+            description=desc_edit.text().strip() if isinstance(desc_edit, QLineEdit) else "",
+            notes=notes_edit.text().strip() if isinstance(notes_edit, QLineEdit) else "",
         )
         errors = validate_manual_entry(form, milestone)
         if errors:
-            QMessageBox.warning(self, tr("Input Error"), "\n".join(errors))
+            QMessageBox.warning(self, tr("Input Error"), f"{row_label}:\n" + "\n".join(errors))
             return None
-        return form
+        return form, milestone
 
-    def _parse_optional_season(self, text: str) -> int | None:
-        raw = text.strip()
-        if not raw:
-            return None
-        try:
-            return int(raw)
-        except ValueError:
-            return None
+    # ── Transfer page ────────────────────────────────────────────────────
 
-    def _build_transfer_form(self) -> ManualTransferFormData | None:
-        parsed = parse_flexible_date(self.transfer_date_edit.text())
+    def _build_transfer_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+
+        hint = QLabel(
+            tr(
+                "Records player transfer events such as contracts and trades. "
+                "Separate multiple players with commas."
+            )
+        )
+        hint.setWordWrap(True)
+
+        toolbar = QHBoxLayout()
+        self.transfer_add_row_button = QPushButton(tr("Add Row"))
+        self.transfer_add_row_button.clicked.connect(lambda: self._add_transfer_row())
+        self.transfer_add_one_button = QPushButton(tr("Add One at a Time"))
+        self.transfer_add_one_button.clicked.connect(self._open_single_transfer_dialog)
+        self.transfer_remove_button = QPushButton(tr("Remove Selected"))
+        self.transfer_remove_button.clicked.connect(self._on_remove_transfer_rows)
+        toolbar.addWidget(self.transfer_add_row_button)
+        toolbar.addWidget(self.transfer_add_one_button)
+        toolbar.addStretch()
+        toolbar.addWidget(self.transfer_remove_button)
+
+        self.transfer_table = QTableWidget(0, 9)
+        self.transfer_table.setHorizontalHeaderLabels(
+            [
+                tr("Date"),
+                tr("Joining"),
+                tr("Leaving"),
+                tr("Type"),
+                tr("Join Team"),
+                tr("Counterpart Team"),
+                tr("Season"),
+                tr("Description"),
+                tr("Notes"),
+            ]
+        )
+        self._style_history_table(self.transfer_table)
+        self.transfer_table.horizontalHeader().setSectionResizeMode(
+            _T_DESC, QHeaderView.ResizeMode.Stretch
+        )
+        _scaled_column_widths(self.transfer_table, {
+            _T_DATE: 100, _T_JOINING: 190, _T_LEAVING: 190, _T_TYPE: 150,
+            _T_JOIN_TEAM: 150, _T_COUNTERPART: 150, _T_SEASON: 70, _T_NOTES: 160,
+        })
+
+        layout.addWidget(hint)
+        layout.addLayout(toolbar)
+        layout.addWidget(table_card(tr("Team Move"), self.transfer_table), stretch=1)
+
+        self._ensure_transfer_trailing_row()
+        return page
+
+    def _add_transfer_row(self) -> int:
+        table = self.transfer_table
+        row = table.rowCount()
+        table.insertRow(row)
+
+        date_edit = QLineEdit()
+        date_edit.setPlaceholderText("2026-03-01")
+        table.setCellWidget(row, _T_DATE, date_edit)
+
+        joining_combo = QComboBox()
+        configure_player_multipick_combo(
+            joining_combo, self.aggregator, self.settings, lambda: self._update_transfer_row_description(row)
+        )
+        joining_combo.lineEdit().textChanged.connect(lambda: self._update_transfer_row_description(row))
+        table.setCellWidget(row, _T_JOINING, joining_combo)
+
+        leaving_combo = QComboBox()
+        configure_player_multipick_combo(
+            leaving_combo, self.aggregator, self.settings, lambda: self._update_transfer_row_description(row)
+        )
+        leaving_combo.lineEdit().textChanged.connect(lambda: self._update_transfer_row_description(row))
+        table.setCellWidget(row, _T_LEAVING, leaving_combo)
+
+        type_combo = QComboBox()
+        for key, label in TRANSFER_EVENT_LABELS.items():
+            type_combo.addItem(tr(label), key)
+        type_combo.currentIndexChanged.connect(lambda: self._update_transfer_row_description(row))
+        table.setCellWidget(row, _T_TYPE, type_combo)
+
+        join_team_combo = QComboBox()
+        configure_mlb_team_combo(join_team_combo, self.settings, tracked_first=True)
+        table.setCellWidget(row, _T_JOIN_TEAM, join_team_combo)
+
+        counterpart_combo = QComboBox()
+        configure_mlb_team_combo(counterpart_combo, self.settings)
+        table.setCellWidget(row, _T_COUNTERPART, counterpart_combo)
+
+        table.setCellWidget(row, _T_SEASON, QLineEdit(str(self.settings.current_season)))
+
+        desc_edit = QLineEdit()
+        table.setCellWidget(row, _T_DESC, desc_edit)
+        table.setCellWidget(row, _T_NOTES, QLineEdit())
+
+        return row
+
+    def _update_transfer_row_description(self, row: int) -> None:
+        table = self.transfer_table
+        if row >= table.rowCount():
+            return
+        type_combo = table.cellWidget(row, _T_TYPE)
+        desc_edit = table.cellWidget(row, _T_DESC)
+        joining_combo = table.cellWidget(row, _T_JOINING)
+        leaving_combo = table.cellWidget(row, _T_LEAVING)
+        if not all(
+            isinstance(w, (QComboBox, QLineEdit))
+            for w in (type_combo, desc_edit, joining_combo, leaving_combo)
+        ):
+            return
+        if str(type_combo.currentData()) != "trade":
+            return
+        joining = parse_player_name_list(joining_combo.currentText().strip())
+        leaving = parse_player_name_list(leaving_combo.currentText().strip())
+        auto = build_trade_description(joining, leaving)
+        if not desc_edit.text().strip() or desc_edit.text().strip() == desc_edit.property("_auto_text"):
+            desc_edit.blockSignals(True)
+            desc_edit.setText(auto)
+            desc_edit.setProperty("_auto_text", auto)
+            desc_edit.blockSignals(False)
+
+    def _row_is_blank_transfer(self, row: int) -> bool:
+        date_edit = self.transfer_table.cellWidget(row, _T_DATE)
+        return not (isinstance(date_edit, QLineEdit) and date_edit.text().strip())
+
+    def _ensure_transfer_trailing_row(self) -> None:
+        """Guarantee at least one row exists (rows are otherwise only added by button)."""
+        if self.transfer_table.rowCount() == 0:
+            self._add_transfer_row()
+
+    def _on_remove_transfer_rows(self) -> None:
+        rows = sorted({index.row() for index in self.transfer_table.selectedIndexes()}, reverse=True)
+        for row in rows:
+            self.transfer_table.removeRow(row)
+        self._ensure_transfer_trailing_row()
+
+    def _open_single_transfer_dialog(self) -> None:
+        common_date = ""
+        if self.transfer_table.rowCount() > 1:
+            first_date = self.transfer_table.cellWidget(0, _T_DATE)
+            if isinstance(first_date, QLineEdit):
+                common_date = first_date.text().strip()
+        dialog = SingleTransferEntryDialog(
+            self.aggregator, self.settings, self, initial_date=common_date
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted or dialog.form is None:
+            return
+        self._populate_transfer_row_from_form(dialog.form)
+
+    def _populate_transfer_row_from_form(self, form: ManualTransferFormData) -> None:
+        row = self.transfer_table.rowCount() - 1
+        if not self._row_is_blank_transfer(row):
+            row = self._add_transfer_row()
+
+        date_edit = self.transfer_table.cellWidget(row, _T_DATE)
+        if isinstance(date_edit, QLineEdit):
+            date_edit.blockSignals(True)
+            date_edit.setText(form.achieved_date.isoformat())
+            date_edit.blockSignals(False)
+
+        joining_combo = self.transfer_table.cellWidget(row, _T_JOINING)
+        if isinstance(joining_combo, QComboBox):
+            joining_combo.setCurrentText(form.joining_players)
+        leaving_combo = self.transfer_table.cellWidget(row, _T_LEAVING)
+        if isinstance(leaving_combo, QComboBox):
+            leaving_combo.setCurrentText(form.leaving_players)
+
+        type_combo = self.transfer_table.cellWidget(row, _T_TYPE)
+        if isinstance(type_combo, QComboBox):
+            index = type_combo.findData(form.event_type)
+            if index >= 0:
+                type_combo.setCurrentIndex(index)
+
+        join_team_combo = self.transfer_table.cellWidget(row, _T_JOIN_TEAM)
+        if isinstance(join_team_combo, QComboBox) and form.join_team:
+            join_team_combo.setCurrentText(form.join_team)
+        counterpart_combo = self.transfer_table.cellWidget(row, _T_COUNTERPART)
+        if isinstance(counterpart_combo, QComboBox) and form.counterpart_team:
+            counterpart_combo.setCurrentText(form.counterpart_team)
+
+        if form.season is not None:
+            season_edit = self.transfer_table.cellWidget(row, _T_SEASON)
+            if isinstance(season_edit, QLineEdit):
+                season_edit.setText(str(form.season))
+
+        desc_edit = self.transfer_table.cellWidget(row, _T_DESC)
+        if isinstance(desc_edit, QLineEdit):
+            desc_edit.setText(form.description)
+        notes_edit = self.transfer_table.cellWidget(row, _T_NOTES)
+        if isinstance(notes_edit, QLineEdit):
+            notes_edit.setText(form.notes)
+
+        self._ensure_transfer_trailing_row()
+
+    def _collect_transfer_entries(self) -> list[ManualTransferFormData] | None:
+        entries: list[ManualTransferFormData] = []
+        for row in range(self.transfer_table.rowCount()):
+            if self._row_is_blank_transfer(row):
+                continue
+            result = self._build_transfer_row_form(row)
+            if result is None:
+                return None
+            entries.append(result)
+        return entries
+
+    def _build_transfer_row_form(self, row: int) -> ManualTransferFormData | None:
+        row_label = tr("Row {n}").format(n=row + 1)
+        table = self.transfer_table
+
+        date_edit = table.cellWidget(row, _T_DATE)
+        parsed = parse_flexible_date(date_edit.text() if isinstance(date_edit, QLineEdit) else "")
         if parsed is None:
-            self.transfer_date_error.setText(tr("Check date format"))
-            self.transfer_date_error.show()
+            QMessageBox.warning(self, tr("Input Error"), f"{row_label}: " + tr("Check date format"))
             return None
 
-        season = self._parse_optional_season(self.transfer_season_edit.text())
-        if self.transfer_season_edit.text().strip() and season is None:
-            QMessageBox.warning(self, tr("Input Error"), tr("Season must be a number."))
-            return None
+        season_edit = table.cellWidget(row, _T_SEASON)
+        season_text = season_edit.text().strip() if isinstance(season_edit, QLineEdit) else ""
+        season: int | None = None
+        if season_text:
+            try:
+                season = int(season_text)
+            except ValueError:
+                QMessageBox.warning(
+                    self, tr("Input Error"), f"{row_label}: " + tr("Season must be a number.")
+                )
+                return None
 
-        join_team = self._combo_text(self.transfer_join_team_combo)
-        if not join_team and str(self.transfer_type_combo.currentData()) == "fa_contract":
-            tracked = self._tracked_team_names()
+        type_combo = table.cellWidget(row, _T_TYPE)
+        event_type = str(type_combo.currentData()) if isinstance(type_combo, QComboBox) else ""
+
+        join_team_combo = table.cellWidget(row, _T_JOIN_TEAM)
+        join_team = join_team_combo.currentText().strip() if isinstance(join_team_combo, QComboBox) else ""
+        if not join_team and event_type == "fa_contract":
+            tracked = tracked_team_names(self.settings)
             if tracked:
                 join_team = tracked[0]
 
+        counterpart_combo = table.cellWidget(row, _T_COUNTERPART)
+        joining_combo = table.cellWidget(row, _T_JOINING)
+        leaving_combo = table.cellWidget(row, _T_LEAVING)
+        desc_edit = table.cellWidget(row, _T_DESC)
+        notes_edit = table.cellWidget(row, _T_NOTES)
+
         form = ManualTransferFormData(
             achieved_date=parsed,
-            joining_players=self._combo_text(self.transfer_joining_combo),
-            leaving_players=self._combo_text(self.transfer_leaving_combo),
-            event_type=str(self.transfer_type_combo.currentData()),
+            joining_players=joining_combo.currentText().strip() if isinstance(joining_combo, QComboBox) else "",
+            leaving_players=leaving_combo.currentText().strip() if isinstance(leaving_combo, QComboBox) else "",
+            event_type=event_type,
             join_team=join_team,
-            counterpart_team=self._combo_text(self.transfer_counterpart_team_combo),
+            counterpart_team=counterpart_combo.currentText().strip() if isinstance(counterpart_combo, QComboBox) else "",
             season=season,
-            description=self.transfer_description_edit.text().strip(),
-            notes=self.transfer_notes_edit.text().strip(),
+            description=desc_edit.text().strip() if isinstance(desc_edit, QLineEdit) else "",
+            notes=notes_edit.text().strip() if isinstance(notes_edit, QLineEdit) else "",
         )
         errors = validate_manual_transfer(form)
         if errors:
-            QMessageBox.warning(self, tr("Input Error"), "\n".join(errors))
+            QMessageBox.warning(self, tr("Input Error"), f"{row_label}:\n" + "\n".join(errors))
             return None
         return form
 
-    def _build_injury_form(self) -> ManualInjuryFormData | None:
-        parsed = parse_flexible_date(self.injury_date_edit.text())
+    # ── Injury page ──────────────────────────────────────────────────────
+
+    def _build_injury_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+
+        hint = QLabel(tr("Records injury events such as player injuries and returns."))
+        hint.setWordWrap(True)
+
+        toolbar = QHBoxLayout()
+        self.injury_add_row_button = QPushButton(tr("Add Row"))
+        self.injury_add_row_button.clicked.connect(lambda: self._add_injury_row())
+        self.injury_add_one_button = QPushButton(tr("Add One at a Time"))
+        self.injury_add_one_button.clicked.connect(self._open_single_injury_dialog)
+        self.injury_remove_button = QPushButton(tr("Remove Selected"))
+        self.injury_remove_button.clicked.connect(self._on_remove_injury_rows)
+        toolbar.addWidget(self.injury_add_row_button)
+        toolbar.addWidget(self.injury_add_one_button)
+        toolbar.addStretch()
+        toolbar.addWidget(self.injury_remove_button)
+
+        self.injury_table = QTableWidget(0, 8)
+        self.injury_table.setHorizontalHeaderLabels(
+            [
+                tr("Date"),
+                tr("Player"),
+                tr("Injury"),
+                tr("Duration"),
+                tr("Affil. Team"),
+                tr("Season"),
+                tr("Description"),
+                tr("Notes"),
+            ]
+        )
+        self._style_history_table(self.injury_table)
+        self.injury_table.horizontalHeader().setSectionResizeMode(
+            _I_DESC, QHeaderView.ResizeMode.Stretch
+        )
+        _scaled_column_widths(self.injury_table, {
+            _I_DATE: 100, _I_PLAYER: 190, _I_LABEL: 160, _I_DURATION: 140,
+            _I_TEAM: 130, _I_SEASON: 70, _I_NOTES: 160,
+        })
+
+        layout.addWidget(hint)
+        layout.addLayout(toolbar)
+        layout.addWidget(table_card(tr("Injury"), self.injury_table), stretch=1)
+
+        self._ensure_injury_trailing_row()
+        return page
+
+    def _add_injury_row(self) -> int:
+        table = self.injury_table
+        row = table.rowCount()
+        table.insertRow(row)
+
+        date_edit = QLineEdit()
+        date_edit.setPlaceholderText("2026-03-01")
+        table.setCellWidget(row, _I_DATE, date_edit)
+
+        player_combo = QComboBox()
+        configure_player_combo(player_combo, self.aggregator, self.settings)
+        table.setCellWidget(row, _I_PLAYER, player_combo)
+
+        label_edit = QLineEdit()
+        label_edit.setPlaceholderText(tr("e.g., Hamstring, shoulder surgery"))
+        label_edit.textChanged.connect(lambda: self._update_injury_row_description(row))
+        table.setCellWidget(row, _I_LABEL, label_edit)
+
+        duration_edit = QLineEdit()
+        duration_edit.setPlaceholderText(tr("e.g., 3 days, 3 weeks, 5-6 months"))
+        duration_edit.textChanged.connect(lambda: self._update_injury_row_description(row))
+        table.setCellWidget(row, _I_DURATION, duration_edit)
+
+        team_combo = QComboBox()
+        team_combo.setEditable(False)
+        self._fill_target_team_combo(team_combo)
+        table.setCellWidget(row, _I_TEAM, team_combo)
+
+        table.setCellWidget(row, _I_SEASON, QLineEdit(str(self.settings.current_season)))
+        table.setCellWidget(row, _I_DESC, QLineEdit())
+        table.setCellWidget(row, _I_NOTES, QLineEdit())
+
+        return row
+
+    def _update_injury_row_description(self, row: int) -> None:
+        table = self.injury_table
+        if row >= table.rowCount():
+            return
+        label_edit = table.cellWidget(row, _I_LABEL)
+        duration_edit = table.cellWidget(row, _I_DURATION)
+        desc_edit = table.cellWidget(row, _I_DESC)
+        if not all(isinstance(w, QLineEdit) for w in (label_edit, duration_edit, desc_edit)):
+            return
+        auto = build_injury_description(label_edit.text(), duration_edit.text())
+        desc_edit.blockSignals(True)
+        desc_edit.setText(auto)
+        desc_edit.blockSignals(False)
+
+    def _row_is_blank_injury(self, row: int) -> bool:
+        date_edit = self.injury_table.cellWidget(row, _I_DATE)
+        return not (isinstance(date_edit, QLineEdit) and date_edit.text().strip())
+
+    def _ensure_injury_trailing_row(self) -> None:
+        """Guarantee at least one row exists (rows are otherwise only added by button)."""
+        if self.injury_table.rowCount() == 0:
+            self._add_injury_row()
+
+    def _on_remove_injury_rows(self) -> None:
+        rows = sorted({index.row() for index in self.injury_table.selectedIndexes()}, reverse=True)
+        for row in rows:
+            self.injury_table.removeRow(row)
+        self._ensure_injury_trailing_row()
+
+    def _open_single_injury_dialog(self) -> None:
+        common_date = ""
+        if self.injury_table.rowCount() > 1:
+            first_date = self.injury_table.cellWidget(0, _I_DATE)
+            if isinstance(first_date, QLineEdit):
+                common_date = first_date.text().strip()
+        dialog = SingleInjuryEntryDialog(
+            self.aggregator, self.settings, self, initial_date=common_date
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted or dialog.form is None:
+            return
+        self._populate_injury_row_from_form(dialog.form)
+
+    def _populate_injury_row_from_form(self, form: ManualInjuryFormData) -> None:
+        row = self.injury_table.rowCount() - 1
+        if not self._row_is_blank_injury(row):
+            row = self._add_injury_row()
+
+        date_edit = self.injury_table.cellWidget(row, _I_DATE)
+        if isinstance(date_edit, QLineEdit):
+            date_edit.blockSignals(True)
+            date_edit.setText(form.achieved_date.isoformat())
+            date_edit.blockSignals(False)
+
+        player_combo = self.injury_table.cellWidget(row, _I_PLAYER)
+        if isinstance(player_combo, QComboBox) and form.player_name:
+            player_combo.setCurrentText(form.player_name)
+
+        label_edit = self.injury_table.cellWidget(row, _I_LABEL)
+        if isinstance(label_edit, QLineEdit):
+            label_edit.setText(form.injury_label)
+        duration_edit = self.injury_table.cellWidget(row, _I_DURATION)
+        if isinstance(duration_edit, QLineEdit):
+            duration_edit.setText(form.duration)
+
+        team_combo = self.injury_table.cellWidget(row, _I_TEAM)
+        if isinstance(team_combo, QComboBox) and form.team:
+            index = team_combo.findData(form.team)
+            if index >= 0:
+                team_combo.setCurrentIndex(index)
+
+        if form.season is not None:
+            season_edit = self.injury_table.cellWidget(row, _I_SEASON)
+            if isinstance(season_edit, QLineEdit):
+                season_edit.setText(str(form.season))
+
+        desc_edit = self.injury_table.cellWidget(row, _I_DESC)
+        if isinstance(desc_edit, QLineEdit):
+            desc_edit.setText(form.description)
+        notes_edit = self.injury_table.cellWidget(row, _I_NOTES)
+        if isinstance(notes_edit, QLineEdit):
+            notes_edit.setText(form.notes)
+
+        self._ensure_injury_trailing_row()
+
+    def _collect_injury_entries(self) -> list[ManualInjuryFormData] | None:
+        entries: list[ManualInjuryFormData] = []
+        for row in range(self.injury_table.rowCount()):
+            if self._row_is_blank_injury(row):
+                continue
+            result = self._build_injury_row_form(row)
+            if result is None:
+                return None
+            entries.append(result)
+        return entries
+
+    def _build_injury_row_form(self, row: int) -> ManualInjuryFormData | None:
+        row_label = tr("Row {n}").format(n=row + 1)
+        table = self.injury_table
+
+        date_edit = table.cellWidget(row, _I_DATE)
+        parsed = parse_flexible_date(date_edit.text() if isinstance(date_edit, QLineEdit) else "")
         if parsed is None:
-            self.injury_date_error.setText(tr("Check date format"))
-            self.injury_date_error.show()
+            QMessageBox.warning(self, tr("Input Error"), f"{row_label}: " + tr("Check date format"))
             return None
 
-        season = self._parse_optional_season(self.injury_season_edit.text())
-        if self.injury_season_edit.text().strip() and season is None:
-            QMessageBox.warning(self, tr("Input Error"), tr("Season must be a number."))
-            return None
+        season_edit = table.cellWidget(row, _I_SEASON)
+        season_text = season_edit.text().strip() if isinstance(season_edit, QLineEdit) else ""
+        season: int | None = None
+        if season_text:
+            try:
+                season = int(season_text)
+            except ValueError:
+                QMessageBox.warning(
+                    self, tr("Input Error"), f"{row_label}: " + tr("Season must be a number.")
+                )
+                return None
+
+        player_combo = table.cellWidget(row, _I_PLAYER)
+        label_edit = table.cellWidget(row, _I_LABEL)
+        duration_edit = table.cellWidget(row, _I_DURATION)
+        team_combo = table.cellWidget(row, _I_TEAM)
+        desc_edit = table.cellWidget(row, _I_DESC)
+        notes_edit = table.cellWidget(row, _I_NOTES)
 
         form = ManualInjuryFormData(
-            player_name=self._canonical_player_text(self.injury_player_combo),
+            player_name=canonical_player_text(player_combo) if isinstance(player_combo, QComboBox) else "",
             achieved_date=parsed,
-            injury_label=self.injury_label_edit.text().strip(),
-            duration=self.injury_duration_edit.text().strip(),
-            team=self._combo_text(self.injury_team_combo),
+            injury_label=label_edit.text().strip() if isinstance(label_edit, QLineEdit) else "",
+            duration=duration_edit.text().strip() if isinstance(duration_edit, QLineEdit) else "",
+            team=team_combo.currentText().strip() if isinstance(team_combo, QComboBox) else "",
             season=season,
-            description=self.injury_description_edit.text().strip(),
-            notes=self.injury_notes_edit.text().strip(),
+            description=desc_edit.text().strip() if isinstance(desc_edit, QLineEdit) else "",
+            notes=notes_edit.text().strip() if isinstance(notes_edit, QLineEdit) else "",
         )
         errors = validate_manual_injury(form)
         if errors:
-            QMessageBox.warning(self, tr("Input Error"), "\n".join(errors))
+            QMessageBox.warning(self, tr("Input Error"), f"{row_label}:\n" + "\n".join(errors))
             return None
         return form
+
+    # ── Shared ───────────────────────────────────────────────────────────
+
+    def _on_tab_changed(self, index: int) -> None:
+        if index in (_TAB_MILESTONE, _TAB_AWARD):
+            self.stack.setCurrentIndex(0)
+            self._refresh_milestone_pool_for_all_rows()
+        elif index == _TAB_TRANSFER:
+            self.stack.setCurrentIndex(1)
+        elif index == _TAB_INJURY:
+            self.stack.setCurrentIndex(2)
 
     def _checker(self) -> MilestoneChecker:
         return MilestoneChecker(
@@ -1002,21 +1095,14 @@ class ManualMilestoneDialog(QDialog):
         checker = self._checker()
 
         if tab in (_TAB_MILESTONE, _TAB_AWARD):
-            entries = list(self._pending_milestone_entries)
-            if self._entry_fields_have_content():
-                form = self._build_milestone_form()
-                if form is None:
-                    return
-                milestone = self.milestones.get_by_key(form.milestone_key)
-                assert milestone is not None
-                entries.append((form, milestone))
-
+            entries = self._collect_milestone_entries()
+            if entries is None:
+                return
             if not entries:
                 QMessageBox.warning(
                     self, tr("Input Required"), tr("Please add at least one record.")
                 )
                 return
-
             for form, milestone in entries:
                 dup_kind, dup_msg = check_duplicate(self.aggregator.conn, form, milestone)
                 if dup_kind == "warn":
@@ -1029,29 +1115,41 @@ class ManualMilestoneDialog(QDialog):
                     if reply != QMessageBox.StandardButton.Yes:
                         continue
                 checker.record_manual_milestone(form)
-
             self.accept()
             return
 
         if tab == _TAB_TRANSFER:
-            form = self._build_transfer_form()
-            if form is None:
+            entries = self._collect_transfer_entries()
+            if entries is None:
                 return
-            try:
-                checker.record_manual_transfer(form)
-            except ValueError as exc:
-                QMessageBox.warning(self, tr("Input Error"), str(exc))
+            if not entries:
+                QMessageBox.warning(
+                    self, tr("Input Required"), tr("Please add at least one record.")
+                )
                 return
+            for form in entries:
+                try:
+                    checker.record_manual_transfer(form)
+                except ValueError as exc:
+                    QMessageBox.warning(self, tr("Input Error"), str(exc))
+                    return
             self.accept()
             return
 
         if tab == _TAB_INJURY:
-            form = self._build_injury_form()
-            if form is None:
+            entries = self._collect_injury_entries()
+            if entries is None:
                 return
-            try:
-                checker.record_manual_injury(form)
-            except ValueError as exc:
-                QMessageBox.warning(self, tr("Input Error"), str(exc))
+            if not entries:
+                QMessageBox.warning(
+                    self, tr("Input Required"), tr("Please add at least one record.")
+                )
                 return
+            for form in entries:
+                try:
+                    checker.record_manual_injury(form)
+                except ValueError as exc:
+                    QMessageBox.warning(self, tr("Input Error"), str(exc))
+                    return
             self.accept()
+            return
