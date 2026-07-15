@@ -44,6 +44,7 @@ from core.milestone.manual_entry import (
     parse_player_name_list,
     scope_needs_games_at_achievement,
     scope_needs_season,
+    season_if_in_season,
     validate_manual_entry,
     validate_manual_injury,
     validate_manual_transfer,
@@ -62,8 +63,14 @@ from gui.widgets.manual_entry_fields import (
     ensure_player_id_from_combo,
     fill_mlb_team_combo,
     fill_tracked_team_combo,
+    first_tracked_team_name,
     tracked_team_names,
 )
+
+
+def _required_label(text: str) -> str:
+    """Form label with a red asterisk marking a required field."""
+    return f'{text} <span style="color:#d32f2f; font-weight:bold">*</span>'
 
 
 class SingleMilestoneEntryDialog(QDialog):
@@ -142,7 +149,8 @@ class SingleMilestoneEntryDialog(QDialog):
         self.manual_hint.setWordWrap(True)
         self.manual_hint.setStyleSheet(hint_style())
 
-        self.season_edit = QLineEdit(str(settings.current_season))
+        self.season_edit = QLineEdit()
+        self.season_edit.setPlaceholderText(tr("Auto (date year)"))
         self.season_label = QLabel(tr("Season:"))
         self.season_row_widget = QWidget()
         season_layout = QHBoxLayout(self.season_row_widget)
@@ -170,15 +178,17 @@ class SingleMilestoneEntryDialog(QDialog):
         self.description_edit = QLineEdit()
         self.notes_edit = QLineEdit()
 
+        if category != "award":
+            self.games_label.setText(_required_label(tr("Games in:")))
         self.form_layout = QFormLayout()
-        self.form_layout.addRow(tr("Date:"), self.date_edit)
+        self.form_layout.addRow(_required_label(tr("Date:")), self.date_edit)
         self.form_layout.addRow("", self.date_error)
-        self.form_layout.addRow(tr("Player:"), self.player_row_widget)
-        self.form_layout.addRow(tr("Team:"), self.team_row_widget)
-        self.form_layout.addRow(tr("Milestone:"), self.milestone_combo)
+        self.form_layout.addRow(_required_label(tr("Player:")), self.player_row_widget)
+        self.form_layout.addRow(_required_label(tr("Team:")), self.team_row_widget)
+        self.form_layout.addRow(_required_label(tr("Milestone:")), self.milestone_combo)
         self.form_layout.addRow(self.season_label, self.season_row_widget)
         self.form_layout.addRow(self.games_label, self.games_row_widget)
-        self.form_layout.addRow(tr("Achieved Value:"), self.value_combo)
+        self.form_layout.addRow(_required_label(tr("Achieved Value:")), self.value_combo)
         self.form_layout.addRow(tr("Opponent:"), self.opponent_team_edit)
         self.form_layout.addRow(tr("Opp. Player:"), self.opponent_player_edit)
         self.form_layout.addRow(tr("Description:"), self.description_edit)
@@ -318,13 +328,16 @@ class SingleMilestoneEntryDialog(QDialog):
             QMessageBox.warning(self, tr("Input Error"), tr("Achieved value must be a number."))
             return
 
-        season: int | None = None
-        if scope_needs_season(milestone.scope):
+        season_text = self.season_edit.text().strip()
+        if season_text:
             try:
-                season = int(self.season_edit.text().strip())
+                season: int | None = int(season_text)
             except ValueError:
                 QMessageBox.warning(self, tr("Input Error"), tr("Season must be a number."))
                 return
+        else:
+            # Blank season defaults to the year of the achieved date.
+            season = parsed.year
 
         games_at: int | None = None
         if scope_needs_games_at_achievement(milestone.scope):
@@ -348,7 +361,11 @@ class SingleMilestoneEntryDialog(QDialog):
                     self, tr("Input Required"), tr("Select a player or enter a full name.")
                 )
                 return
-        team = self.team_combo.currentData() if not is_player else None
+        if is_player:
+            # Player milestones record the topmost tracked team as affiliation.
+            team = first_tracked_team_name(self.settings) or None
+        else:
+            team = self.team_combo.currentData()
 
         form = ManualMilestoneFormData(
             target="player" if is_player else "team",
@@ -441,7 +458,8 @@ class SingleTransferEntryDialog(QDialog):
         self.transfer_counterpart_team_combo = QComboBox()
         configure_mlb_team_combo(self.transfer_join_team_combo, settings, tracked_first=True)
         configure_mlb_team_combo(self.transfer_counterpart_team_combo, settings)
-        self.transfer_season_edit = QLineEdit(str(settings.current_season))
+        self.transfer_season_edit = QLineEdit()
+        self.transfer_season_edit.setPlaceholderText(tr("Auto in-season"))
         self.transfer_description_edit = QLineEdit()
         self.transfer_description_edit.textEdited.connect(self._on_transfer_description_edited)
         self.transfer_notes_edit = QLineEdit()
@@ -454,12 +472,12 @@ class SingleTransferEntryDialog(QDialog):
         )
 
         form_layout = QFormLayout()
-        form_layout.addRow(tr("Date:"), self.transfer_date_edit)
+        form_layout.addRow(_required_label(tr("Date:")), self.transfer_date_edit)
         form_layout.addRow("", self.transfer_date_error)
         form_layout.addRow(tr("Joining:"), self.transfer_joining_combo)
         form_layout.addRow(tr("Leaving:"), self.transfer_leaving_combo)
-        form_layout.addRow(tr("Type:"), self.transfer_type_combo)
-        form_layout.addRow(tr("Join Team:"), self.transfer_join_team_combo)
+        form_layout.addRow(_required_label(tr("Type:")), self.transfer_type_combo)
+        form_layout.addRow(_required_label(tr("Join Team:")), self.transfer_join_team_combo)
         form_layout.addRow(tr("Counterpart Team:"), self.transfer_counterpart_team_combo)
         form_layout.addRow(tr("Season:"), self.transfer_season_edit)
         form_layout.addRow(tr("Description:"), self.transfer_description_edit)
@@ -540,6 +558,17 @@ class SingleTransferEntryDialog(QDialog):
         if self.transfer_season_edit.text().strip() and season is None:
             QMessageBox.warning(self, tr("Input Error"), tr("Season must be a number."))
             return
+        if season is None:
+            # In-season transfers derive the season from the date; off-season
+            # (or unknown) transfers require an explicit season.
+            season = season_if_in_season(self.aggregator.conn, parsed)
+            if season is None:
+                QMessageBox.warning(
+                    self,
+                    tr("Input Required"),
+                    tr("Off-season transfer: please enter the season directly."),
+                )
+                return
 
         join_team = self._combo_text(self.transfer_join_team_combo)
         if not join_team and str(self.transfer_type_combo.currentData()) == "fa_contract":
@@ -607,7 +636,8 @@ class SingleInjuryEntryDialog(QDialog):
         self.injury_duration_edit.setPlaceholderText(tr("e.g., 3 days, 3 weeks, 5-6 months"))
         self.injury_team_combo = QComboBox()
         configure_tracked_team_combo(self.injury_team_combo, settings)
-        self.injury_season_edit = QLineEdit(str(settings.current_season))
+        self.injury_season_edit = QLineEdit()
+        self.injury_season_edit.setPlaceholderText(tr("Auto (date year)"))
         self.injury_description_edit = QLineEdit()
         self.injury_notes_edit = QLineEdit()
 
@@ -615,10 +645,10 @@ class SingleInjuryEntryDialog(QDialog):
         self.injury_duration_edit.textChanged.connect(self._update_injury_description)
 
         form_layout = QFormLayout()
-        form_layout.addRow(tr("Date:"), self.injury_date_edit)
+        form_layout.addRow(_required_label(tr("Date:")), self.injury_date_edit)
         form_layout.addRow("", self.injury_date_error)
-        form_layout.addRow(tr("Player:"), self.injury_player_combo)
-        form_layout.addRow(tr("Injury:"), self.injury_label_edit)
+        form_layout.addRow(_required_label(tr("Player:")), self.injury_player_combo)
+        form_layout.addRow(_required_label(tr("Injury:")), self.injury_label_edit)
         form_layout.addRow(tr("Duration:"), self.injury_duration_edit)
         form_layout.addRow(tr("Affil. Team:"), self.injury_team_combo)
         form_layout.addRow(tr("Season:"), self.injury_season_edit)
@@ -674,13 +704,21 @@ class SingleInjuryEntryDialog(QDialog):
         if self.injury_season_edit.text().strip() and season is None:
             QMessageBox.warning(self, tr("Input Error"), tr("Season must be a number."))
             return
+        if season is None:
+            # Blank season defaults to the year of the date.
+            season = parsed.year
+
+        team = self._combo_text(self.injury_team_combo)
+        if not team:
+            # Blank affiliation defaults to the topmost tracked team.
+            team = first_tracked_team_name(self.settings)
 
         form = ManualInjuryFormData(
             player_name=canonical_player_text(self.injury_player_combo),
             achieved_date=parsed,
             injury_label=self.injury_label_edit.text().strip(),
             duration=self.injury_duration_edit.text().strip(),
-            team=self._combo_text(self.injury_team_combo),
+            team=team,
             season=season,
             description=self.injury_description_edit.text().strip(),
             notes=self.injury_notes_edit.text().strip(),

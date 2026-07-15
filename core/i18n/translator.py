@@ -676,6 +676,11 @@ _KO: dict[str, str] = {
     "Add Team Move":                     "이적 추가",
     "Add Injury":                        "부상 추가",
     "Add":                               "추가",
+    "Required":                          "필수 입력",
+    "Auto (date year)":                  "자동 (날짜의 연도)",
+    "Auto in-season":                    "시즌 중 자동",
+    "Off-season transfer: please enter the season directly.":
+        "비시즌 이적입니다. 시즌을 직접 입력해주세요.",
     "Translating via Gemini...":         "제미나이로 번역 중...",
     "Please add at least one record.":   "기록을 하나 이상 추가하세요.",
 

@@ -61,6 +61,21 @@ def tracked_team_names(settings: AppSettings) -> list[str]:
     return sorted(names, key=str.lower)
 
 
+def first_tracked_team_name(settings: AppSettings) -> str:
+    """Canonical name of the topmost tracked team, in settings order (not sorted)."""
+    name_map = merge_team_maps(CANONICAL_MLB_TEAMS, settings.custom_mlb_teams)
+    for token in settings.tracked_teams:
+        raw = token.strip()
+        if not raw:
+            continue
+        upper = raw.upper()
+        if upper in name_map:
+            return name_map[upper]
+        return raw
+    names = tracked_team_names(settings)
+    return names[0] if names else ""
+
+
 def fill_player_combo(combo: QComboBox, aggregator: Aggregator, settings: AppSettings) -> None:
     current = combo.currentText()
     combo.blockSignals(True)

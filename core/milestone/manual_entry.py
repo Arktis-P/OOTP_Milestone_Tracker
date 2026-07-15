@@ -117,6 +117,25 @@ def get_achieved_value_candidates(milestone: MilestoneDefinition) -> list[str]:
     return [str(threshold + offset) for offset in range(0, 4)]
 
 
+def season_if_in_season(conn: Any, when: date) -> int | None:
+    """Return the season for `when` if it falls inside that season's schedule.
+
+    "In season" means the date lies within the min/max game dates already
+    imported for season == when.year. Returns None when the date is outside
+    that range or no games exist for the year (off-season / unknown).
+    """
+    row = conn.execute(
+        "SELECT MIN(date) AS lo, MAX(date) AS hi FROM games WHERE season = ?",
+        (when.year,),
+    ).fetchone()
+    if not row or not row["lo"] or not row["hi"]:
+        return None
+    iso = when.isoformat()
+    if str(row["lo"]) <= iso <= str(row["hi"]):
+        return when.year
+    return None
+
+
 def scope_needs_season(scope: str) -> bool:
     return scope in ("season", "season_ratio", "team_season", "team_manual")
 
@@ -162,10 +181,16 @@ def validate_manual_entry(
     if form.target == "team" and not (form.team or "").strip():
         errors.append(tr("Please select a team."))
 
+    from core.milestone.implementation import is_award_milestone
+
     scope = milestone.scope
     if scope_needs_season(scope) and form.season is None:
         errors.append(tr("Please enter a season."))
-    if scope_needs_games_at_achievement(scope) and form.games_at_achievement is None:
+    if (
+        scope_needs_games_at_achievement(scope)
+        and form.games_at_achievement is None
+        and not is_award_milestone(milestone)
+    ):
         errors.append(tr("Please enter games at achievement."))
 
     return errors

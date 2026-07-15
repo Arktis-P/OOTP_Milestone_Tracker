@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Literal
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -47,7 +48,7 @@ from core.milestone.manual_entry import (
     parse_flexible_date,
     parse_player_name_list,
     scope_needs_games_at_achievement,
-    scope_needs_season,
+    season_if_in_season,
     validate_manual_entry,
     validate_manual_injury,
     validate_manual_transfer,
@@ -62,6 +63,7 @@ from gui.widgets.manual_entry_fields import (
     configure_player_combo,
     configure_player_multipick_combo,
     ensure_player_id_from_combo,
+    first_tracked_team_name,
     tracked_team_names,
     apply_completer,
 )
@@ -86,6 +88,44 @@ _T_DATE, _T_JOINING, _T_LEAVING, _T_TYPE, _T_JOIN_TEAM, _T_COUNTERPART, \
 
 # Injury table columns
 _I_DATE, _I_PLAYER, _I_LABEL, _I_DURATION, _I_TEAM, _I_SEASON, _I_DESC, _I_NOTES = range(8)
+
+
+_required_icon_cache: QIcon | None = None
+
+
+def _required_icon() -> QIcon:
+    """A red asterisk icon used to mark required columns in table headers."""
+    global _required_icon_cache
+    if _required_icon_cache is None:
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        font = QFont()
+        font.setBold(True)
+        font.setPointSize(14)
+        painter.setFont(font)
+        painter.setPen(QColor("#d32f2f"))
+        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "*")
+        painter.end()
+        _required_icon_cache = QIcon(pixmap)
+    return _required_icon_cache
+
+
+def _set_header_required(table: QTableWidget, col: int, required: bool) -> None:
+    item = table.horizontalHeaderItem(col)
+    if item is None:
+        return
+    if required:
+        item.setIcon(_required_icon())
+        item.setToolTip(tr("Required"))
+    else:
+        item.setIcon(QIcon())
+        item.setToolTip("")
+
+
+def _mark_required_columns(table: QTableWidget, cols: tuple[int, ...]) -> None:
+    for col in cols:
+        _set_header_required(table, col, True)
 
 
 def _scaled_column_widths(table: QTableWidget, widths: dict[int, int]) -> None:
@@ -198,6 +238,9 @@ class ManualMilestoneDialog(QDialog):
             _M_VALUE: 90, _M_SEASON: 70, _M_GAMES: 90, _M_OPP_TEAM: 130,
             _M_OPP_PLAYER: 160, _M_NOTES: 160,
         })
+        _mark_required_columns(
+            self.milestone_table, (_M_DATE, _M_PLAYER, _M_MILESTONE, _M_VALUE)
+        )
 
         layout.addWidget(self.milestone_hint)
         layout.addLayout(toolbar)
@@ -499,17 +542,19 @@ class ManualMilestoneDialog(QDialog):
             )
             return None
 
-        season: int | None = None
-        if scope_needs_season(milestone.scope):
-            season_edit = self.milestone_table.cellWidget(row, _M_SEASON)
-            season_text = season_edit.text().strip() if isinstance(season_edit, QLineEdit) else ""
+        season_edit = self.milestone_table.cellWidget(row, _M_SEASON)
+        season_text = season_edit.text().strip() if isinstance(season_edit, QLineEdit) else ""
+        if season_text:
             try:
-                season = int(season_text)
+                season: int | None = int(season_text)
             except ValueError:
                 QMessageBox.warning(
                     self, tr("Input Error"), f"{row_label}: " + tr("Season must be a number.")
                 )
                 return None
+        else:
+            # Blank season defaults to the year of the achieved date.
+            season = parsed.year
 
         games_at: int | None = None
         if scope_needs_games_at_achievement(milestone.scope):
@@ -536,7 +581,7 @@ class ManualMilestoneDialog(QDialog):
 
         is_player = bool(player_text)
         player_id: int | None = None
-        team: str | None = None
+        team: str | None = str(team_value) if team_value else None
         if is_player:
             player_id = ensure_player_id_from_combo(player_combo, self.aggregator)
             if player_id is None:
@@ -546,9 +591,10 @@ class ManualMilestoneDialog(QDialog):
                     f"{row_label}: " + tr("Select a player or enter a full name."),
                 )
                 return None
-        elif team_value:
-            team = str(team_value)
-        else:
+            if team is None:
+                # Blank affiliation defaults to the topmost tracked team.
+                team = first_tracked_team_name(self.settings) or None
+        elif team is None:
             QMessageBox.warning(
                 self,
                 tr("Input Required"),
@@ -629,6 +675,7 @@ class ManualMilestoneDialog(QDialog):
             _T_DATE: 100, _T_JOINING: 190, _T_LEAVING: 190, _T_TYPE: 150,
             _T_JOIN_TEAM: 150, _T_COUNTERPART: 150, _T_SEASON: 70, _T_NOTES: 160,
         })
+        _mark_required_columns(self.transfer_table, (_T_DATE, _T_TYPE, _T_JOIN_TEAM))
 
         layout.addWidget(hint)
         layout.addLayout(toolbar)
@@ -674,7 +721,9 @@ class ManualMilestoneDialog(QDialog):
         configure_mlb_team_combo(counterpart_combo, self.settings)
         table.setCellWidget(row, _T_COUNTERPART, counterpart_combo)
 
-        table.setCellWidget(row, _T_SEASON, QLineEdit(str(self.settings.current_season)))
+        season_edit = QLineEdit()
+        season_edit.setPlaceholderText(tr("Auto in-season"))
+        table.setCellWidget(row, _T_SEASON, season_edit)
 
         desc_edit = QLineEdit()
         table.setCellWidget(row, _T_DESC, desc_edit)
@@ -811,6 +860,18 @@ class ManualMilestoneDialog(QDialog):
                     self, tr("Input Error"), f"{row_label}: " + tr("Season must be a number.")
                 )
                 return None
+        else:
+            # In-season transfers derive the season from the date; off-season
+            # (or unknown) transfers require an explicit season.
+            season = season_if_in_season(self.aggregator.conn, parsed)
+            if season is None:
+                QMessageBox.warning(
+                    self,
+                    tr("Input Required"),
+                    f"{row_label}: "
+                    + tr("Off-season transfer: please enter the season directly."),
+                )
+                return None
 
         type_combo = table.cellWidget(row, _T_TYPE)
         event_type = str(type_combo.currentData()) if isinstance(type_combo, QComboBox) else ""
@@ -887,6 +948,7 @@ class ManualMilestoneDialog(QDialog):
             _I_DATE: 100, _I_PLAYER: 190, _I_LABEL: 160, _I_DURATION: 140,
             _I_TEAM: 130, _I_SEASON: 70, _I_NOTES: 160,
         })
+        _mark_required_columns(self.injury_table, (_I_DATE, _I_PLAYER, _I_LABEL))
 
         layout.addWidget(hint)
         layout.addLayout(toolbar)
@@ -923,7 +985,9 @@ class ManualMilestoneDialog(QDialog):
         self._fill_target_team_combo(team_combo)
         table.setCellWidget(row, _I_TEAM, team_combo)
 
-        table.setCellWidget(row, _I_SEASON, QLineEdit(str(self.settings.current_season)))
+        season_edit = QLineEdit()
+        season_edit.setPlaceholderText(tr("Auto (date year)"))
+        table.setCellWidget(row, _I_SEASON, season_edit)
         table.setCellWidget(row, _I_DESC, QLineEdit())
         table.setCellWidget(row, _I_NOTES, QLineEdit())
 
@@ -1036,15 +1100,17 @@ class ManualMilestoneDialog(QDialog):
 
         season_edit = table.cellWidget(row, _I_SEASON)
         season_text = season_edit.text().strip() if isinstance(season_edit, QLineEdit) else ""
-        season: int | None = None
         if season_text:
             try:
-                season = int(season_text)
+                season: int | None = int(season_text)
             except ValueError:
                 QMessageBox.warning(
                     self, tr("Input Error"), f"{row_label}: " + tr("Season must be a number.")
                 )
                 return None
+        else:
+            # Blank season defaults to the year of the date.
+            season = parsed.year
 
         player_combo = table.cellWidget(row, _I_PLAYER)
         label_edit = table.cellWidget(row, _I_LABEL)
@@ -1053,12 +1119,17 @@ class ManualMilestoneDialog(QDialog):
         desc_edit = table.cellWidget(row, _I_DESC)
         notes_edit = table.cellWidget(row, _I_NOTES)
 
+        team = team_combo.currentText().strip() if isinstance(team_combo, QComboBox) else ""
+        if not team:
+            # Blank affiliation defaults to the topmost tracked team.
+            team = first_tracked_team_name(self.settings)
+
         form = ManualInjuryFormData(
             player_name=canonical_player_text(player_combo) if isinstance(player_combo, QComboBox) else "",
             achieved_date=parsed,
             injury_label=label_edit.text().strip() if isinstance(label_edit, QLineEdit) else "",
             duration=duration_edit.text().strip() if isinstance(duration_edit, QLineEdit) else "",
-            team=team_combo.currentText().strip() if isinstance(team_combo, QComboBox) else "",
+            team=team,
             season=season,
             description=desc_edit.text().strip() if isinstance(desc_edit, QLineEdit) else "",
             notes=notes_edit.text().strip() if isinstance(notes_edit, QLineEdit) else "",
@@ -1074,6 +1145,8 @@ class ManualMilestoneDialog(QDialog):
     def _on_tab_changed(self, index: int) -> None:
         if index in (_TAB_MILESTONE, _TAB_AWARD):
             self.stack.setCurrentIndex(0)
+            # Games count is only mandatory for milestones, not for awards.
+            _set_header_required(self.milestone_table, _M_GAMES, index == _TAB_MILESTONE)
             self._refresh_milestone_pool_for_all_rows()
         elif index == _TAB_TRANSFER:
             self.stack.setCurrentIndex(1)

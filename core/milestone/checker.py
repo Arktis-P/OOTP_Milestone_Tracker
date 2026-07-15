@@ -295,10 +295,15 @@ class MilestoneChecker:
         if season is not None:
             query += " AND mr.season = ?"
             params.append(season)
+        # Player records may carry an affiliation team, so subject is decided
+        # by player_id (team records are stored with player_id = 0).
         if subject == "personal":
-            query += " AND (mr.team IS NULL OR mr.team = '')"
+            query += " AND mr.player_id IS NOT NULL AND mr.player_id != 0"
         elif subject == "team":
-            query += " AND mr.team IS NOT NULL AND mr.team != ''"
+            query += (
+                " AND (mr.player_id IS NULL OR mr.player_id = 0)"
+                " AND mr.team IS NOT NULL AND mr.team != ''"
+            )
         if team:
             query += " AND mr.team = ?"
             params.append(team)
@@ -325,11 +330,10 @@ class MilestoneChecker:
             raise ValueError(f"Unknown milestone: {form.milestone_key}")
 
         player_id = int(form.player_id or 0)
+        # For player milestones, team (if given) is the player's affiliation.
         team = (form.team or "").strip() or None
         if form.target == "team":
             player_id = 0
-        else:
-            team = None
 
         conn = self.aggregator.conn
         conn.execute(
