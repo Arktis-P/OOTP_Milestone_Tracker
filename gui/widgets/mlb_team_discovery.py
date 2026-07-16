@@ -17,13 +17,16 @@ def prompt_unknown_mlb_teams(
     *,
     batting_path: str | None,
     pitching_path: str | None,
+    discovered_teams: dict[str, str] | None = None,
 ) -> AppSettings:
     """Ask to add newly discovered MLB teams to custom_mlb_teams."""
-    unknown = importer.discover_unknown_mlb_teams(
-        batting_path,
-        pitching_path,
-        settings.team_name_map(),
-    )
+    unknown = discovered_teams
+    if unknown is None:
+        unknown = importer.discover_unknown_mlb_teams(
+            batting_path,
+            pitching_path,
+            settings.team_name_map(),
+        )
     if not unknown:
         return settings
 

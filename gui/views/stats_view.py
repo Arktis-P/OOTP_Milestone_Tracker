@@ -303,6 +303,42 @@ class StatsView(QWidget):
         """Backward-compatible alias."""
         self.reload_players()
 
+    def focus_player(self, player_id: int) -> bool:
+        """Reveal and select a player, clearing list filters when necessary."""
+        if player_id <= 0:
+            self.banner.show_warning(tr("This record is not linked to a player."))
+            return False
+
+        # Reload so navigation also works immediately after an import/merge.
+        self.reload_players()
+        if player_id not in self._players_by_id:
+            self.banner.show_warning(
+                tr(
+                    "Player details are unavailable. The player may have been deleted "
+                    "or may be outside the currently tracked teams."
+                )
+            )
+            return False
+
+        self.player_search.blockSignals(True)
+        self.player_search.clear()
+        self.player_search.blockSignals(False)
+        self.position_combo.blockSignals(True)
+        self.position_combo.setCurrentIndex(0)
+        self.position_combo.blockSignals(False)
+        self._apply_player_filter()
+        for row in range(self.player_list.count()):
+            item = self.player_list.item(row)
+            if item and int(item.data(Qt.ItemDataRole.UserRole)) == player_id:
+                self.player_list.setCurrentRow(row)
+                self.banner.hide()
+                return True
+
+        self.banner.show_warning(
+            tr("Player details could not be opened. Refresh the player data and try again.")
+        )
+        return False
+
     def _apply_player_filter(self) -> None:
         needle = self.player_search.text().strip().lower()
         position_group = str(self.position_combo.currentData() or "")

@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QStackedWidget,
@@ -96,7 +97,25 @@ class MainWindow(QMainWindow):
 
         self._check_overlap_warning()
 
-    def _build_pages(self) -> None:
+    def _initial_import_in_progress(self) -> bool:
+        return bool(
+            self._initial_import_view
+            and self._initial_import_view.has_active_operation()
+        )
+
+    def _show_initial_import_blocked(self, action: str) -> None:
+        QMessageBox.information(
+            self,
+            tr("Import In Progress"),
+            tr(
+                "The initial stats import is still running. Wait for it to finish before {action}."
+            ).format(action=action),
+        )
+
+    def _build_pages(self) -> bool:
+        if self._initial_import_in_progress():
+            self._show_initial_import_blocked(tr("reloading the application pages"))
+            return False
         while self._stack.count():
             widget = self._stack.widget(0)
             self._stack.removeWidget(widget)
@@ -125,6 +144,9 @@ class MainWindow(QMainWindow):
             self.settings_manager,
         )
         self._milestone_view.import_finished.connect(self._on_boxscore_import_finished)
+        self._milestone_view.player_detail_requested.connect(
+            self._navigate_to_player_details
+        )
         self._stack.addWidget(self._milestone_view)
 
         self._stats_view = StatsView(
@@ -138,6 +160,9 @@ class MainWindow(QMainWindow):
 
         self._predict_view = PredictView(
             self._aggregator, self._milestones, self.settings
+        )
+        self._predict_view.player_detail_requested.connect(
+            self._navigate_to_player_details
         )
         self._stack.addWidget(self._predict_view)
 
@@ -171,6 +196,7 @@ class MainWindow(QMainWindow):
         self._sidebar.set_current_index(min(previous, self._stack.count() - 1), emit=False)
         self._stack.setCurrentIndex(self._sidebar.current_index())
         self._refresh_settings_tab_badge()
+        return True
 
     def _set_current_page(self, widget: QWidget) -> None:
         index = self._stack.indexOf(widget)
@@ -212,13 +238,20 @@ class MainWindow(QMainWindow):
             record_id = record.get("id") if record else None
             if record_id:
                 self._milestone_view.highlight_record(int(record_id))
+            elif record and record.get("scope"):
+                self._milestone_view.focus_scope(str(record["scope"]))
             self._set_current_page(self._milestone_view)
 
-    def _navigate_to_predict(self, player_id: int, _milestone_key: str) -> None:
+    def _navigate_to_predict(self, player_id: int, milestone_key: str) -> None:
         if self._predict_view:
             self._set_current_page(self._predict_view)
             pid = player_id if player_id >= 0 else None
-            self._predict_view.focus_player(pid, near_only=True)
+            self._predict_view.focus_player(pid, near_only=bool(milestone_key))
+
+    def _navigate_to_player_details(self, player_id: int) -> None:
+        if self._stats_view:
+            self._set_current_page(self._stats_view)
+            self._stats_view.focus_player(player_id)
 
     def _navigate_to_initial_import(self) -> None:
         if self._initial_import_view:
@@ -281,7 +314,10 @@ class MainWindow(QMainWindow):
             if hasattr(view, "importer"):
                 view.importer = InitialImporter(self._aggregator)
 
-    def _apply_settings_changes(self, settings: AppSettings) -> None:
+    def _apply_settings_changes(self, settings: AppSettings) -> bool:
+        if self._initial_import_in_progress():
+            self._show_initial_import_blocked(tr("applying settings"))
+            return False
         settings = self.settings_manager.ensure_derived_paths(settings)
         self.settings = settings
         self._reload_aggregator()
@@ -289,6 +325,7 @@ class MainWindow(QMainWindow):
         self._update_status_message()
         self._build_pages()
         self.data_refreshed.emit("all")
+        return True
 
     def _on_setup_tab_saved(self, settings: AppSettings) -> None:
         self._apply_settings_changes(settings)
@@ -413,8 +450,15 @@ class MainWindow(QMainWindow):
         dialog.exec()
 
     def _apply_settings(self, dialog: QDialog, settings: AppSettings) -> None:
-        self._apply_settings_changes(settings)
-        dialog.accept()
+        if self._apply_settings_changes(settings):
+            dialog.accept()
+
+    def closeEvent(self, event) -> None:
+        if self._initial_import_in_progress():
+            self._show_initial_import_blocked(tr("closing the application"))
+            event.ignore()
+            return
+        super().closeEvent(event)
 
 
 class _LanguageSelectDialog(QDialog):

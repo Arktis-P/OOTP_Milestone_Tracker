@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtGui import QCloseEvent
 from PyQt6.QtWidgets import (
     QButtonGroup,
     QFileDialog,
@@ -45,8 +46,11 @@ class InitialImportView(QWidget):
         self.settings = settings
         self.settings_manager = settings_manager
         self.importer = InitialImporter(aggregator)
+        self._preview_worker: InitialImportWorker | None = None
         self._import_worker: InitialImportWorker | None = None
         self._pending_import: dict | None = None
+        self._preview_unknown_teams: dict[str, str] = {}
+        self._active_stage: str | None = None
 
         self.status_label = QLabel()
         self.progress_label = QLabel()
@@ -179,6 +183,14 @@ class InitialImportView(QWidget):
         return "first_time"
 
     def _run_import(self, kind: str) -> None:
+        if self._active_stage is not None:
+            QMessageBox.information(
+                self,
+                tr("Import In Progress"),
+                tr("The current import step is still running. Please wait for it to finish."),
+            )
+            return
+
         mode = self._selected_mode()
         season = self.settings.current_season
 
@@ -207,45 +219,64 @@ class InitialImportView(QWidget):
             QMessageBox.warning(self, tr("File Required"), tr("Please select a batting or pitching file."))
             return
 
-        preview = kind == "all"
-        if preview:
-            batting_result, pitching_result = self.importer.import_all(
-                batting_path,
-                pitching_path,
-                mode,
-                season,
-                persist=False,
-            )
-            results = [r for r in (batting_result, pitching_result) if r]
-        else:
-            path = batting_path if kind == "batting" else pitching_path
-            fn = self.importer.import_batting if kind == "batting" else self.importer.import_pitching
-            results = [fn(path, mode, season, persist=False)]
-
-        if not self._should_persist_after_preview(results, mode, season):
-            self._update_status()
+        selected_batting = batting_path if kind in ("batting", "all") else None
+        selected_pitching = pitching_path if kind in ("pitching", "all") else None
+        if not self._validate_paths(selected_batting, selected_pitching):
             return
 
-        self.settings = prompt_unknown_mlb_teams(
-            self,
-            self.importer,
-            self.settings,
-            batting_path=batting_path,
-            pitching_path=pitching_path,
-        )
-        self.settings_manager.save(self.settings)
-
         self._pending_import = {
-            "batting_path": batting_path if kind in ("batting", "all") else None,
-            "pitching_path": pitching_path if kind in ("pitching", "all") else None,
+            "batting_path": selected_batting,
+            "pitching_path": selected_pitching,
             "mode": mode,
             "season": season,
         }
-        self._start_persist_worker()
+        self._start_preview_worker()
+
+    def _validate_paths(
+        self, batting_path: str | None, pitching_path: str | None
+    ) -> bool:
+        for label, raw_path in (
+            (tr("Batting"), batting_path),
+            (tr("Pitching"), pitching_path),
+        ):
+            if not raw_path:
+                continue
+            path = Path(raw_path)
+            try:
+                if not path.is_file():
+                    raise FileNotFoundError
+                if path.stat().st_size == 0:
+                    QMessageBox.warning(
+                        self,
+                        tr("Empty Export File"),
+                        tr("The {kind} export is empty. Export it again from OOTP and retry.\n\n{path}").format(
+                            kind=label, path=path
+                        ),
+                    )
+                    return False
+            except OSError:
+                QMessageBox.warning(
+                    self,
+                    tr("File Not Available"),
+                    tr("The {kind} export cannot be read. Check the path and permissions, then retry.\n\n{path}").format(
+                        kind=label, path=path
+                    ),
+                )
+                return False
+        return True
 
     def _set_import_busy(self, busy: bool) -> None:
         for button in self._import_buttons:
             button.setEnabled(not busy)
+
+    def has_active_operation(self) -> bool:
+        """Return whether this view currently owns a running import operation."""
+        if self._active_stage is not None:
+            return True
+        return any(
+            worker is not None and worker.isRunning()
+            for worker in (self._preview_worker, self._import_worker)
+        )
 
     def _release_db_for_worker(self) -> None:
         self.aggregator.close()
@@ -254,16 +285,90 @@ class InitialImportView(QWidget):
         self.aggregator.reopen()
         self.importer = InitialImporter(self.aggregator)
 
-    def _start_persist_worker(self) -> None:
-        if not self._pending_import:
+    def _start_preview_worker(self) -> None:
+        if not self._pending_import or self._active_stage is not None:
             return
+        payload = self._pending_import
+        self._active_stage = "preview"
+        self._preview_unknown_teams = {}
+        self._set_import_busy(True)
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setVisible(True)
+        self.progress_label.setText(
+            tr("Analyzing export files... Keep this window open until the step finishes.")
+        )
+        self.progress_label.setVisible(True)
+        worker = InitialImportWorker(
+            self.aggregator.db_path,
+            batting_path=payload["batting_path"],
+            pitching_path=payload["pitching_path"],
+            mode=payload["mode"],
+            current_season=payload["season"],
+            persist=False,
+            known_teams=self.settings.team_name_map(),
+            parent=self,
+        )
+        self._preview_worker = worker
+        worker.progress.connect(self._on_import_progress)
+        worker.discovered_teams.connect(self._on_teams_discovered)
+        worker.completed.connect(self._on_preview_finished)
+        worker.error.connect(self._on_preview_error)
+        worker.finished.connect(lambda: self._on_thread_stopped(worker))
+        worker.start()
+
+    def _on_teams_discovered(self, teams: object) -> None:
+        self._preview_unknown_teams = dict(teams) if isinstance(teams, dict) else {}
+
+    def _on_preview_finished(self, results: object) -> None:
+        if self._active_stage != "preview" or not self._pending_import:
+            return
+        self.progress_bar.setVisible(False)
+        self.progress_label.setVisible(False)
+        result_list = list(results) if isinstance(results, list) else []
+        payload = self._pending_import
+        if not self._should_persist_after_preview(
+            result_list, payload["mode"], payload["season"]
+        ):
+            self._reset_operation()
+            self._update_status()
+            return
+
+        self.settings = prompt_unknown_mlb_teams(
+            self,
+            self.importer,
+            self.settings,
+            batting_path=payload["batting_path"],
+            pitching_path=payload["pitching_path"],
+            discovered_teams=self._preview_unknown_teams,
+        )
+        self.settings_manager.save(self.settings)
+        self._active_stage = None
+        self._start_persist_worker()
+
+    def _on_preview_error(self, message: str) -> None:
+        self._reset_operation()
+        QMessageBox.critical(
+            self,
+            tr("Preview Failed"),
+            tr("The export could not be analyzed. No data was changed.\n\n{error}\n\nCheck the selected file and retry.").format(
+                error=message
+            ),
+        )
+
+    def _start_persist_worker(self) -> None:
+        if not self._pending_import or self._active_stage is not None:
+            return
+        self._active_stage = "import"
         self._set_import_busy(True)
         self._release_db_for_worker()
         self.progress_bar.setVisible(True)
         self.progress_label.setVisible(True)
-        self.progress_bar.setValue(0)
+        self.progress_bar.setRange(0, 0)
+        self.progress_label.setText(
+            tr("Saving import... Keep this window open until the step finishes.")
+        )
         payload = self._pending_import
-        self._import_worker = InitialImportWorker(
+        worker = InitialImportWorker(
             self.aggregator.db_path,
             batting_path=payload["batting_path"],
             pitching_path=payload["pitching_path"],
@@ -272,37 +377,95 @@ class InitialImportView(QWidget):
             persist=True,
             parent=self,
         )
-        self._import_worker.progress.connect(self._on_import_progress)
-        self._import_worker.finished.connect(self._on_import_finished)
-        self._import_worker.error.connect(self._on_import_error)
-        self._import_worker.start()
+        self._import_worker = worker
+        worker.progress.connect(self._on_import_progress)
+        worker.completed.connect(self._on_import_finished)
+        worker.error.connect(self._on_import_error)
+        worker.finished.connect(lambda: self._on_thread_stopped(worker))
+        worker.start()
 
     def _finish_import_worker(self) -> None:
         self.progress_bar.setVisible(False)
         self.progress_label.setVisible(False)
         self._restore_db_after_worker()
+        self._active_stage = None
         self._set_import_busy(False)
 
     def _on_import_progress(self, current: int, total: int, filename: str) -> None:
+        stage = tr("Analyzing") if self._active_stage == "preview" else tr("Saving")
         self.progress_bar.setMaximum(max(total, 1))
         self.progress_bar.setValue(current)
         self.progress_label.setText(
-            tr("Saving... ({current}/{total}) {filename}").format(
-                current=current, total=total, filename=filename
+            tr("{stage}... ({current}/{total}) {filename} — keep this window open").format(
+                stage=stage, current=current, total=total, filename=filename
             )
         )
 
     def _on_import_finished(self, _results: object) -> None:
+        results = list(_results) if isinstance(_results, list) else []
+        failures: list[str] = []
+        if not results:
+            failures.append(tr("No import result was returned."))
+        for result in results:
+            kind = tr("Batting") if result.kind == "batting" else tr("Pitching")
+            if result.errors:
+                failures.extend(f"{kind}: {error}" for error in result.errors[:8])
+            if result.total_scanned == 0:
+                failures.append(tr("{kind}: no player records were found.").format(kind=kind))
+            if not result.saved:
+                failures.append(tr("{kind}: no data was saved.").format(kind=kind))
+
         self._pending_import = None
         self._finish_import_worker()
         self._update_status()
+        if failures:
+            QMessageBox.critical(
+                self,
+                tr("Import Incomplete"),
+                tr(
+                    "The import did not complete for every selected file. Some data may already have been saved; no completion notification was sent.\n\n"
+                    "{details}\n\nReview the import status or restore a backup if needed, correct the export, and retry."
+                ).format(details="\n".join(failures)),
+            )
+            return
         self.import_finished.emit()
         QMessageBox.information(self, tr("Done"), tr("Import completed successfully."))
 
     def _on_import_error(self, message: str) -> None:
         self._pending_import = None
         self._finish_import_worker()
-        QMessageBox.critical(self, tr("Import Failed"), message)
+        QMessageBox.critical(
+            self,
+            tr("Import Failed"),
+            tr("The import could not be completed. The database connection was restored, but data from an earlier file may already have been saved.\n\n{error}\n\nReview the import status or restore a backup if needed, then retry.").format(
+                error=message
+            ),
+        )
+
+    def _reset_operation(self) -> None:
+        self._pending_import = None
+        self._active_stage = None
+        self.progress_bar.setVisible(False)
+        self.progress_label.setVisible(False)
+        self._set_import_busy(False)
+
+    def _on_thread_stopped(self, worker: InitialImportWorker) -> None:
+        if self._preview_worker is worker:
+            self._preview_worker = None
+        if self._import_worker is worker:
+            self._import_worker = None
+        worker.deleteLater()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        if self.has_active_operation():
+            QMessageBox.information(
+                self,
+                tr("Import In Progress"),
+                tr("This window must remain open until the current import step finishes."),
+            )
+            event.ignore()
+            return
+        super().closeEvent(event)
 
     def _should_persist_after_preview(
         self, results: list[InitImportResult], mode: ImportMode, season: int
@@ -314,6 +477,13 @@ class InitialImportView(QWidget):
                     self,
                     tr("Error"),
                     "\n".join(result.errors[:8]),
+                )
+                return False
+            if result.total_scanned == 0:
+                QMessageBox.warning(
+                    self,
+                    tr("No Player Records Found"),
+                    tr("No player records were found in the export. No data was changed. Export the file again from OOTP and retry."),
                 )
                 return False
             all_diffs.extend(result.diffs)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QShowEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -34,6 +34,8 @@ from gui.widgets.table_widgets import SortableTable
 
 
 class PredictView(QWidget):
+    player_detail_requested = pyqtSignal(int)
+
     def __init__(
         self,
         aggregator: Aggregator,
@@ -100,6 +102,8 @@ class PredictView(QWidget):
                 tr("This Season"),
             ]
         )
+        self.table.setToolTip(tr("Double-click a prediction to open player details."))
+        self.table.cellDoubleClicked.connect(self._open_player_details)
         table_card = CardPanel(tr("Career Achievement Predictions"))
         table_card.add_widget(self.table)
 
@@ -213,6 +217,7 @@ class PredictView(QWidget):
             for col_idx, value in enumerate(values):
                 cell = QTableWidgetItem(str(value))
                 cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                cell.setData(Qt.ItemDataRole.UserRole, int(item.player_id))
                 if item.is_near:
                     cell.setBackground(near_row_bg)
                     if col_idx != 3:
@@ -223,6 +228,14 @@ class PredictView(QWidget):
                         cell.setBackground(near_row_bg)
                 self.table.setItem(row_idx, col_idx, cell)
         self.table.setSortingEnabled(True)
+
+    def _open_player_details(self, row: int, _column: int) -> None:
+        cell = self.table.item(row, 0)
+        if cell is None:
+            return
+        player_id = int(cell.data(Qt.ItemDataRole.UserRole) or 0)
+        if player_id > 0:
+            self.player_detail_requested.emit(player_id)
 
     def focus_player(
         self, player_id: int | None = None, *, near_only: bool = False

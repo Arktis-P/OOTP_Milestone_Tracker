@@ -5,10 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from PyQt6.QtCore import Qt
 
 from core.db.meta import get_init_season_coverage
 from core.stats.aggregator import Aggregator
 from core.stats.initial_import import InitialImporter
+from gui.workers.initial_import_worker import InitialImportWorker
 
 ROOT = Path(__file__).resolve().parent.parent
 SAMPLES_STATS = ROOT / "samples" / "player_stats_txt"
@@ -211,3 +213,43 @@ def test_init_only_season_stats_without_boxscore(aggregator: Aggregator) -> None
     player_ids = {p["player_id"] for p in players}
     assert 28987 in player_ids
     assert 50432 in player_ids
+
+
+def test_preview_worker_uses_snapshot_and_leaves_live_db_unchanged(
+    aggregator: Aggregator,
+) -> None:
+    before = {
+        table: aggregator.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in (
+            "career_batting_init",
+            "players",
+            "player_roster",
+            "player_team_affiliations",
+        )
+    }
+    completed: list[object] = []
+    errors: list[str] = []
+    worker = InitialImportWorker(
+        aggregator.db_path,
+        batting_path=str(SAMPLES_STATS / "player_batting_stats.txt"),
+        pitching_path=None,
+        mode="first_time",
+        current_season=2026,
+        persist=False,
+    )
+    worker.completed.connect(completed.append, Qt.ConnectionType.DirectConnection)
+    worker.error.connect(errors.append, Qt.ConnectionType.DirectConnection)
+
+    worker.start()
+    assert worker.wait(5_000)
+
+    assert errors == []
+    assert completed
+    results = completed[0]
+    assert isinstance(results, list)
+    assert results[0].total_scanned > 0
+    after = {
+        table: aggregator.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+        for table in before
+    }
+    assert after == before

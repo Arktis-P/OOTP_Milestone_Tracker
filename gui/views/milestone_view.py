@@ -34,6 +34,7 @@ from core.config.settings_manager import SettingsManager
 from core.i18n import tr
 from core.milestone.checker import MilestoneChecker
 from core.milestone.definitions import MilestoneDefinitions
+from core.milestone.implementation import is_award_milestone
 from core.roster.korean_names import (
     korean_display_for_player,
     load_korean_name_mapper,
@@ -53,7 +54,92 @@ from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.widgets.card_panel import CardPanel, section_label
 from gui.theme import AMBER_TEXT, RED_TEXT, TEXT_SECONDARY, hint_style, meta_panel_style
 from gui.widgets.grade_styles import GRADE_COLORS
+from gui.widgets.empty_state import EmptyStateWidget
 from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
+
+
+EVENT_TYPE_OPTIONS = (
+    ("official", "Official Milestone"),
+    ("quasi", "Quasi Milestone"),
+    ("personal", "Personal Best"),
+    ("team", "Team Record"),
+    ("streak", "Streak"),
+    ("award", "Award"),
+    ("transfer", "Transfer"),
+    ("injury", "Injury"),
+    ("other", "Other"),
+)
+
+
+def milestone_event_type(record: dict, definition=None) -> str:
+    """Derive a timeline event type without overloading milestone grade.
+
+    The key/scope checks also keep legacy and future quasi-milestone/personal-best
+    rows useful even though today's database does not store a dedicated type.
+    """
+    key = str(record.get("milestone_key") or "").lower()
+    scope = str(record.get("scope") or "").lower()
+    category = str(getattr(definition, "category", "") or "").lower()
+    stat = str(getattr(definition, "stat", "") or "").lower()
+    template = str(getattr(definition, "description_template", "") or "").lower()
+    metadata = " ".join((key, scope, category, stat, template))
+
+    if key == "manual_injury" or "injury" in key:
+        return "injury"
+    if key.startswith("manual_transfer_") or "transfer" in key:
+        return "transfer"
+    is_team_subject = int(record.get("player_id") or 0) == 0 and bool(
+        record.get("team")
+    )
+    if scope.startswith("team_") or is_team_subject:
+        return "team"
+    if (definition is not None and is_award_milestone(definition)) or "award" in metadata:
+        return "award"
+    if scope == "streak" or key.startswith("streak_"):
+        return "streak"
+    if any(
+        token in metadata
+        for token in ("personal_best", "career_best", "season_best", "game_best")
+    ):
+        return "personal"
+    if any(token in metadata for token in ("near_milestone", "quasi_milestone", "quasi")):
+        return "quasi"
+    if scope in ("game", "season", "career", "season_ratio"):
+        return "official"
+    return "other"
+
+
+def milestone_record_matches(
+    record: dict,
+    definition=None,
+    *,
+    event_type: str = "",
+    grade: str = "",
+    source: str = "",
+) -> bool:
+    """Apply the three timeline-only filters to a milestone record."""
+    if event_type and milestone_event_type(record, definition) != event_type:
+        return False
+    record_grade = str(getattr(definition, "grade", "common") or "common")
+    if grade and record_grade != grade:
+        return False
+    is_manual = bool(record.get("is_manual"))
+    if source == "manual" and not is_manual:
+        return False
+    if source == "automatic" and is_manual:
+        return False
+    return True
+
+
+def select_record_row(table, record_id: int) -> bool:
+    """Select a record by table metadata, independent of the current sort order."""
+    for row in range(table.rowCount()):
+        item = table.item(row, 0)
+        if item is not None and item.data(Qt.ItemDataRole.UserRole) == record_id:
+            table.selectRow(row)
+            table.scrollToItem(item)
+            return True
+    return False
 
 def _table_columns() -> list[str]:
     return [
@@ -73,6 +159,7 @@ def _table_columns() -> list[str]:
 class MilestoneView(QWidget):
     records_changed = pyqtSignal()
     import_finished = pyqtSignal(str)
+    player_detail_requested = pyqtSignal(int)
 
     def __init__(
         self,
@@ -133,6 +220,28 @@ class MilestoneView(QWidget):
         self.scope_combo.addItem(tr("Streak"), "streak")
         self.scope_combo.currentIndexChanged.connect(self.refresh)
 
+        self.event_type_combo = QComboBox()
+        self.event_type_combo.addItem(tr("All Event Types"), "")
+        for value, label in EVENT_TYPE_OPTIONS:
+            self.event_type_combo.addItem(tr(label), value)
+        self.event_type_combo.currentIndexChanged.connect(self.refresh)
+
+        self.grade_combo = QComboBox()
+        self.grade_combo.addItem(tr("All Grades"), "")
+        for grade in ("common", "uncommon", "rare", "epic", "legendary"):
+            self.grade_combo.addItem(grade, grade)
+        self.grade_combo.currentIndexChanged.connect(self.refresh)
+
+        self.source_combo = QComboBox()
+        self.source_combo.addItem(tr("All Sources"), "")
+        self.source_combo.addItem(tr("Automatic"), "automatic")
+        self.source_combo.addItem(tr("Manual"), "manual")
+        self.source_combo.currentIndexChanged.connect(self.refresh)
+
+        self.reset_filters_button = QPushButton(tr("Reset Filters"))
+        self.reset_filters_button.setObjectName("linkButton")
+        self.reset_filters_button.clicked.connect(self.reset_filters)
+
         self.season_spin = QSpinBox()
         self.season_spin.setRange(1900, 2100)
         self.season_spin.setSpecialValueText(tr("All"))
@@ -152,6 +261,9 @@ class MilestoneView(QWidget):
         self.game_log_button = QPushButton(tr("🌐 Open Game Log"))
         self.game_log_button.setEnabled(False)
         self.game_log_button.clicked.connect(self._open_selected_game_log)
+        self.player_detail_button = QPushButton(tr("View Player Details"))
+        self.player_detail_button.setEnabled(False)
+        self.player_detail_button.clicked.connect(self._open_selected_player)
 
         self.log_hint_panel = QTextEdit()
         self.log_hint_panel.setReadOnly(True)
@@ -220,6 +332,17 @@ class MilestoneView(QWidget):
         filter_row.addWidget(section_label(tr("Search")))
         filter_row.addWidget(self.table_panel.filter_bar.search_input, stretch=1)
 
+        type_filter_row = QHBoxLayout()
+        type_filter_row.setSpacing(10)
+        type_filter_row.addWidget(section_label(tr("Event Type")))
+        type_filter_row.addWidget(self.event_type_combo)
+        type_filter_row.addWidget(section_label(tr("Grade")))
+        type_filter_row.addWidget(self.grade_combo)
+        type_filter_row.addWidget(section_label(tr("Source")))
+        type_filter_row.addWidget(self.source_combo)
+        type_filter_row.addStretch()
+        type_filter_row.addWidget(self.reset_filters_button)
+
         action_row = QHBoxLayout()
         action_row.setSpacing(6)
         action_row.addWidget(self.import_button)
@@ -240,14 +363,22 @@ class MilestoneView(QWidget):
 
         filter_card = CardPanel()
         filter_card.content_layout.addLayout(filter_row)
+        filter_card.content_layout.addLayout(type_filter_row)
         filter_card.content_layout.addLayout(action_row)
         filter_card.content_layout.addWidget(hint)
 
         table_card = CardPanel(tr("Milestone History"))
         table_card.add_widget(self.table_panel.table)
+        self.empty_state = EmptyStateWidget()
+        self.empty_state.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self.empty_state.hide()
+        table_card.add_widget(self.empty_state)
 
         meta_row = QHBoxLayout()
         meta_row.addWidget(self.meta_label, stretch=1)
+        meta_row.addWidget(self.player_detail_button)
         meta_row.addWidget(self.game_log_button)
         self.meta_card = CardPanel()
         self.meta_card.content_layout.addLayout(meta_row)
@@ -384,13 +515,44 @@ class MilestoneView(QWidget):
         search = self.table_panel.filter_bar.search_input.text().strip()
         subject = self.subject_combo.currentData() or "all"
         team = self.team_filter.currentData() or None
-        self._records = checker.get_recorded_milestones(
+        records = checker.get_recorded_milestones(
             scope=scope or None,
             season=season,
             search=search,
             subject=subject,
             team=team or None,
         )
+        event_type = str(self.event_type_combo.currentData() or "")
+        grade_filter = str(self.grade_combo.currentData() or "")
+        source_filter = str(self.source_combo.currentData() or "")
+        self._records = []
+        for record in records:
+            definition = self.milestones.get_by_key(str(record.get("milestone_key") or ""))
+            if not milestone_record_matches(
+                record,
+                definition,
+                event_type=event_type,
+                grade=grade_filter,
+                source=source_filter,
+            ):
+                continue
+            self._records.append(record)
+
+        total_count = len(checker.get_recorded_milestones())
+        self.table_panel.table.setVisible(bool(self._records))
+        self.empty_state.setVisible(not self._records)
+        if not self._records:
+            if total_count == 0:
+                self.empty_state.set_content(
+                    "⚾", tr("No milestone records yet"),
+                    tr("Import boxscores or add a manual record to build the history."),
+                )
+            else:
+                self.empty_state.set_content(
+                    "⌕", tr("No records match these filters"),
+                    tr("Try a broader event type, grade, source, season, or search."),
+                    [(tr("Reset Filters"), self.reset_filters)],
+                )
         mapper = load_korean_name_mapper()
         full_names = load_player_full_names(self.aggregator)
         roster_names = load_roster_player_names(
@@ -465,16 +627,39 @@ class MilestoneView(QWidget):
                 self.table_panel.table.setItem(row_idx, col_idx, item)
         self.table_panel.table.setSortingEnabled(True)
         if self._highlight_id is not None:
-            for row_idx, record in enumerate(self._records):
-                if record.get("id") == self._highlight_id:
-                    self.table_panel.table.selectRow(row_idx)
-                    break
+            select_record_row(self.table_panel.table, self._highlight_id)
             self._highlight_id = None
         self._update_selection_actions()
+
+    def reset_filters(self) -> None:
+        """Clear every history filter in one action."""
+        combos = (
+            self.subject_combo, self.team_filter, self.scope_combo,
+            self.event_type_combo, self.grade_combo, self.source_combo,
+        )
+        for combo in combos:
+            combo.blockSignals(True)
+            combo.setCurrentIndex(0)
+            combo.blockSignals(False)
+        self.season_spin.blockSignals(True)
+        self.season_spin.setValue(0)
+        self.season_spin.blockSignals(False)
+        self.table_panel.filter_bar.search_input.blockSignals(True)
+        self.table_panel.filter_bar.search_input.clear()
+        self.table_panel.filter_bar.search_input.blockSignals(False)
+        self.refresh()
 
     def highlight_record(self, record_id: int | None) -> None:
         self._highlight_id = record_id
         self.refresh()
+
+    def focus_scope(self, scope: str) -> bool:
+        """Select a history scope when navigating from another view."""
+        index = self.scope_combo.findData(scope)
+        if index < 0:
+            return False
+        self.scope_combo.setCurrentIndex(index)
+        return True
 
     def export_history_csv(self) -> None:
         confirm = QMessageBox.question(
@@ -758,12 +943,28 @@ class MilestoneView(QWidget):
         self.edit_button.setEnabled(has_selection)
         self.delete_button.setEnabled(has_selection)
 
+    def _record_has_player(self, record: dict | None) -> bool:
+        player_id = int((record or {}).get("player_id") or 0)
+        if player_id <= 0:
+            return False
+        row = self.aggregator.conn.execute(
+            "SELECT 1 FROM players WHERE player_id = ?", (player_id,)
+        ).fetchone()
+        return row is not None
+
+    def _open_selected_player(self) -> None:
+        record = self._selected_record()
+        if not self._record_has_player(record):
+            return
+        self.player_detail_requested.emit(int(record["player_id"]))
+
     def _update_meta_panel(self) -> None:
         record = self._selected_record()
         if record is None:
             self._selected_record_id = None
             self.meta_label.setText("")
             self.game_log_button.setEnabled(False)
+            self.player_detail_button.setEnabled(False)
             self.log_hint_panel.hide()
             self.meta_card.setVisible(False)
             return
@@ -782,6 +983,7 @@ class MilestoneView(QWidget):
             parts.append(tr("Manual entry"))
         self.meta_label.setText(" · ".join(parts))
         self.game_log_button.setEnabled(bool(record.get("game_id")))
+        self.player_detail_button.setEnabled(self._record_has_player(record))
         self._update_log_hint_panel(record)
 
     def _update_log_hint_panel(self, record: dict) -> None:
