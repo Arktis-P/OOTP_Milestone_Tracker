@@ -25,6 +25,7 @@ from core.config.settings_manager import SettingsManager
 from core.i18n import tr
 from core.db.meta import get_init_season_coverage
 from core.milestone.definitions import MilestoneDefinitions
+from core.stats.player_detail import load_player_detail
 from core.stats.aggregator import Aggregator
 from core.stats.ip_utils import outs_to_ip_str
 from core.roster.korean_names import (
@@ -44,6 +45,7 @@ from core.stats.position_filter import (
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.widgets.player_game_log_dialog import PlayerGameLogDialog
+from gui.widgets.player_detail_summary import PlayerDetailSummary
 from gui.widgets.player_milestone_timeline import PlayerMilestoneTimeline
 from gui.widgets.table_widgets import SortableTable
 from gui.theme import TEXT_SECONDARY, header_panel_style, hint_style
@@ -158,6 +160,7 @@ class StatsView(QWidget):
         self.milestone_timeline = PlayerMilestoneTimeline(
             self.aggregator, self.milestones, self.settings
         )
+        self.player_detail_summary = PlayerDetailSummary(self.settings)
 
         self.stats_tabs = QTabWidget()
         batting_page = QWidget()
@@ -197,6 +200,7 @@ class StatsView(QWidget):
 
         detail_card = CardPanel()
         detail_card.content_layout.addWidget(self.player_header)
+        detail_card.content_layout.addWidget(self.player_detail_summary)
         detail_card.content_layout.addWidget(self.info_label)
         detail_card.content_layout.addWidget(self.stats_tabs, stretch=1)
 
@@ -281,6 +285,12 @@ class StatsView(QWidget):
         self._players_by_id = {int(p["player_id"]): p for p in self._players}
         if not self._players:
             self.player_list.clear()
+            self.player_header.setText(tr("Please select a player."))
+            self.info_label.setText("")
+            self.batting_table.setRowCount(0)
+            self.pitching_table.setRowCount(0)
+            self.player_detail_summary.clear()
+            self.milestone_timeline.load_player(None)
             if self.settings.tracked_teams:
                 self.banner.show_info(
                     tr(
@@ -374,6 +384,7 @@ class StatsView(QWidget):
             self.info_label.setText("")
             self.batting_table.setRowCount(0)
             self.pitching_table.setRowCount(0)
+            self.player_detail_summary.clear()
             self.milestone_timeline.load_player(None)
 
     def _on_list_selection(self, row: int) -> None:
@@ -400,6 +411,7 @@ class StatsView(QWidget):
             self.info_label.setText("")
             self.batting_table.setRowCount(0)
             self.pitching_table.setRowCount(0)
+            self.player_detail_summary.clear()
             self.milestone_timeline.load_player(None)
             return
 
@@ -414,6 +426,15 @@ class StatsView(QWidget):
             roster_names=roster_names,
         )
         self.player_header.setText(format_player_header(player, korean_name=korean_name))
+        self.player_detail_summary.load_detail(
+            load_player_detail(
+                self.aggregator,
+                self.milestones,
+                self.settings,
+                player,
+                season=self._detail_season(),
+            )
+        )
         self.milestone_timeline.load_player(player_id)
 
         postseason_mode = self._postseason_mode
@@ -456,6 +477,12 @@ class StatsView(QWidget):
                     )
                 )
             self._fill_season_tables(player_id, season)
+
+    def _detail_season(self) -> int:
+        season_data = self.season_combo.currentData()
+        if isinstance(season_data, int):
+            return season_data
+        return int(self.settings.current_season)
 
     def _fill_season_tables(self, player_id: int, season: int) -> None:
         batting = self.aggregator.get_batting_season(player_id, season)
