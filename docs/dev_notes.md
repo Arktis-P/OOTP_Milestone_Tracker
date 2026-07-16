@@ -2,6 +2,8 @@
 
 ## 백로그 (TODO)
 
+- [ ] **공개 품질 후속 작업** — 통합 기록·선수 상세·연속 기록 센터·설명 가능한 예측·데이터 정책은 [`public_release_followups.md`](public_release_followups.md)에서 추적
+
 - [x] **레이팅 일괄 편집** — MLB+KBO 통합 팝업, 인지도/유망주 규칙, `mod_*_rosters.txt` 저장
 - [x] **마일스톤 기준 재정의** — `milestones_v1.csv` 반영 (266건), `boolean`·복합 threshold 로더 지원
 - [x] **앱 내 마일스톤 기준 편집** — 설정 탭 팝업에서 기준 확인·추가·수정·삭제 (`milestones.csv`)
