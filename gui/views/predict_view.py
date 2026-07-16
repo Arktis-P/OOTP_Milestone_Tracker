@@ -18,7 +18,11 @@ from PyQt6.QtWidgets import (
 from core.config import AppSettings
 from core.i18n import tr
 from core.milestone.definitions import MilestoneDefinitions
-from core.milestone.prediction_store import PredictionStore, render_season_note
+from core.milestone.prediction_store import (
+    PredictionStore,
+    render_season_basis,
+    render_season_note,
+)
 from core.roster.korean_names import (
     korean_display_for_player,
     load_korean_name_mapper,
@@ -202,6 +206,7 @@ class PredictView(QWidget):
                 player_id=item.player_id,
                 roster_names=roster_names,
             )
+            season_col = 9  # "This Season" is the last table column
             values = [
                 item.player_name,
                 korean_name,
@@ -226,6 +231,8 @@ class PredictView(QWidget):
                     apply_grade_style(cell, grade)
                     if item.is_near:
                         cell.setBackground(near_row_bg)
+                if col_idx == season_col:
+                    cell.setToolTip(render_season_basis(item.season_note))
                 self.table.setItem(row_idx, col_idx, cell)
         self.table.setSortingEnabled(True)
 

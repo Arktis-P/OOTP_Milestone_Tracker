@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.i18n import tr
+from core.milestone import estimate as pace_estimate
 from core.milestone.checker import CAREER_BATTING_STATS, CAREER_PITCHING_STATS, MilestoneChecker
 from core.milestone.definitions import MilestoneDefinition, MilestoneDefinitions
 from core.milestone.predictor import is_near, qualifies_for_watch
@@ -13,16 +14,15 @@ from core.stats.aggregator import Aggregator
 
 _PITCHING_TOTALS_COL = {
     "career_wins": "w",
+    "career_gs": "gs",
     "career_k_pit": "k",
     "career_saves": "sv",
+    "career_holds": "holds",
     "career_era": "era",
 }
 
-_SEASON_PITCHING_COL = {
-    "career_wins": "w",
-    "career_k_pit": "k",
-    "career_saves": "sv",
-}
+_PITCHING_PLAYER_CAREER_STATS = {"career_gs", "career_holds"}
+_LogCache = dict[tuple[str, int], list[dict[str, Any]]]
 
 
 @dataclass
@@ -39,6 +39,7 @@ class CachedPrediction:
     season_note: str
     is_near: bool = False
     milestone: MilestoneDefinition | None = None
+    pace: pace_estimate.PaceEstimate | None = None
 
 
 class PredictionStore:
@@ -124,6 +125,7 @@ class PredictionStore:
 
         upserts: list[dict[str, Any]] = []
         deletes: list[tuple[int, str]] = []
+        log_cache: _LogCache = {}
 
         for player_id in player_ids:
             player = players_by_id.get(player_id)
@@ -156,8 +158,9 @@ class PredictionStore:
                     player_name,
                     milestone,
                     current,
-                    season_batting.get(player_id),
-                    season_pitching.get(player_id),
+                    season_batting,
+                    season_pitching,
+                    log_cache,
                 )
                 upserts.append(row)
 
@@ -186,6 +189,8 @@ class PredictionStore:
             milestone = self.milestones.get_by_key(row["milestone_key"])
             remaining = float(row["remaining"])
             near = bool(milestone and is_near(remaining, milestone))
+            raw_note = str(row["season_note"])
+            pace = pace_estimate.decode_pace_estimate(raw_note)
             results.append(
                 CachedPrediction(
                     player_id=int(row["player_id"]),
@@ -197,9 +202,10 @@ class PredictionStore:
                     threshold=float(row["threshold"]),
                     remaining=remaining,
                     progress_pct=float(row["progress_pct"]),
-                    season_note=str(row["season_note"]),
+                    season_note=raw_note,
                     is_near=near,
                     milestone=milestone,
+                    pace=pace,
                 )
             )
         results.sort(key=lambda item: (not item.is_near, -item.progress_pct))
@@ -240,18 +246,35 @@ class PredictionStore:
         }
 
         rows: list[dict[str, Any]] = []
+        log_cache: _LogCache = {}
+        pitching_career_by_id = (
+            {
+                player_id: self.aggregator.get_pitching_career(player_id)
+                for player_id in player_ids
+            }
+            if any(
+                milestone.stat in _PITCHING_PLAYER_CAREER_STATS
+                for milestone in self._career_milestones
+            )
+            else {}
+        )
         for player in players:
             player_id = int(player["player_id"])
             player_name = str(player.get("full_name") or player.get("short_name"))
             for milestone in self._career_milestones:
                 if (player_id, milestone.key) in achieved:
                     continue
-                current = self._career_value_from_totals(
-                    player_id,
-                    milestone,
-                    batting_by_id,
-                    pitching_by_id,
-                )
+                if milestone.stat in _PITCHING_PLAYER_CAREER_STATS:
+                    current = self._career_value_from_player(
+                        milestone, None, pitching_career_by_id.get(player_id)
+                    )
+                else:
+                    current = self._career_value_from_totals(
+                        player_id,
+                        milestone,
+                        batting_by_id,
+                        pitching_by_id,
+                    )
                 if current is None or not self._qualifies_for_watch(milestone, current):
                     continue
                 rows.append(
@@ -260,8 +283,9 @@ class PredictionStore:
                         player_name,
                         milestone,
                         current,
-                        season_batting_by_id.get(player_id),
-                        season_pitching_by_id.get(player_id),
+                        season_batting_by_id,
+                        season_pitching_by_id,
+                        log_cache,
                     )
                 )
         return rows
@@ -272,16 +296,23 @@ class PredictionStore:
         player_name: str,
         milestone: MilestoneDefinition,
         current: float,
-        season_batting: dict[str, Any] | None,
-        season_pitching: dict[str, Any] | None,
+        season_batting: dict[int, dict[str, Any]],
+        season_pitching: dict[int, dict[str, Any]],
+        log_cache: _LogCache | None = None,
     ) -> dict[str, Any]:
         remaining = milestone.threshold - current
         progress = (
             (current / milestone.threshold * 100) if milestone.threshold else 0.0
         )
-        season_note = self._season_note(
-            milestone, remaining, season_batting, season_pitching
+        estimate = self._pace_estimate(
+            player_id,
+            milestone,
+            remaining,
+            season_batting,
+            season_pitching,
+            log_cache,
         )
+        season_note = pace_estimate.encode_pace_estimate(estimate)
         return {
             "player_id": player_id,
             "milestone_key": milestone.key,
@@ -363,44 +394,96 @@ class PredictionStore:
             return float(pitching.get(key, 0) or 0)
         return None
 
-    def _season_note(
+    def _pace_estimate(
         self,
+        player_id: int,
         milestone: MilestoneDefinition,
         remaining: float,
-        season_batting: dict[str, Any] | None,
-        season_pitching: dict[str, Any] | None,
-    ) -> str:
+        season_batting: dict[int, dict[str, Any]],
+        season_pitching: dict[int, dict[str, Any]],
+        log_cache: _LogCache | None = None,
+    ) -> pace_estimate.PaceEstimate:
         stat_key = milestone.stat
+        if not pace_estimate.is_stat_supported(stat_key, milestone.direction, milestone.category):
+            return pace_estimate.PaceEstimate(
+                available=False, reason=pace_estimate.REASON_UNSUPPORTED, remaining=remaining
+            )
+
         if milestone.category == "batting":
-            season_stats = season_batting
-            col = CAREER_BATTING_STATS.get(stat_key, stat_key).replace("career_", "")
+            season_stats = season_batting.get(player_id)
+            col = pace_estimate.batting_season_column(stat_key)
         else:
-            season_stats = season_pitching
-            col = _SEASON_PITCHING_COL.get(stat_key, stat_key)
+            season_stats = season_pitching.get(player_id)
+            col = pace_estimate.pitching_season_column(stat_key)
 
         if not season_stats:
-            return "pre_season"
+            return pace_estimate.PaceEstimate(
+                available=False, reason=pace_estimate.REASON_NO_DATA, remaining=remaining
+            )
 
         games_played = int(
             season_stats.get("games_played") or season_stats.get("games") or 0
         )
-        if games_played == 0:
-            return "pre_season"
+        if games_played <= 0:
+            return pace_estimate.PaceEstimate(
+                available=False, reason=pace_estimate.REASON_NO_DATA, remaining=remaining
+            )
+        logs: list[dict[str, Any]] | None = None
+        recent_values: list[float] = []
+        if milestone.category == "pitching" and col not in season_stats:
+            logs = self._cached_game_logs(log_cache, "pitching", player_id)
+            recent_values = pace_estimate.pitching_recent_values(stat_key, logs) or []
+            current_val = float(sum(recent_values))
+        else:
+            current_val = float(season_stats.get(col, 0) or 0)
 
-        current_val = float(season_stats.get(col, 0) or 0)
-        per_game = current_val / games_played
-        games_remaining = max(self.season_games_total - games_played, 0)
-        projected_add = per_game * games_remaining
-        if projected_add >= remaining:
-            return f"achievable|{projected_add:.0f}"
-        after = max(remaining - projected_add, 0)
-        return f"not_achievable|{projected_add:.0f}|{after:.0f}"
+        if milestone.category == "batting":
+            logs = self._cached_game_logs(log_cache, "batting", player_id)
+            recent_values = pace_estimate.batting_recent_values(stat_key, logs) or []
+        else:
+            if logs is None:
+                logs = self._cached_game_logs(log_cache, "pitching", player_id)
+                recent_values = pace_estimate.pitching_recent_values(stat_key, logs) or []
+
+        return pace_estimate.estimate_pace(
+            current_value=current_val,
+            games_played_season=games_played,
+            season_games_total=self.season_games_total,
+            remaining=remaining,
+            recent_game_values=recent_values,
+            direction=milestone.direction,
+        )
+
+    def _cached_game_logs(
+        self,
+        log_cache: _LogCache | None,
+        category: str,
+        player_id: int,
+    ) -> list[dict[str, Any]]:
+        if log_cache is None:
+            log_cache = {}
+        key = (category, player_id)
+        if key not in log_cache:
+            if category == "batting":
+                logs = self.aggregator.get_player_batting_game_logs(
+                    player_id, self.season
+                )
+            else:
+                logs = self.aggregator.get_player_pitching_game_logs(
+                    player_id, self.season
+                )
+            log_cache[key] = list(logs)
+        return log_cache[key]
 
 
 def render_season_note(note: str) -> str:
-    """Translate a stored language-neutral season_note code for display."""
+    """Translate a stored season_note (pace-estimate encoding) for display."""
+    estimate = pace_estimate.decode_pace_estimate(note)
+    if estimate is not None:
+        return pace_estimate.render_pace_summary(estimate)
+    # Legacy encodings from before the pace-estimate module existed.
     if note == "pre_season":
-        return tr("Pre-season — achievability unknown")
+        return tr("No games yet")
     if note.startswith("achievable|"):
         amount = note[len("achievable|"):]
         return tr("Achievable (+{amount})").format(amount=amount)
@@ -411,3 +494,9 @@ def render_season_note(note: str) -> str:
                 amount=parts[1], after=parts[2]
             )
     return tr(note) if note else ""
+
+
+def render_season_basis(note: str) -> str:
+    """Full tooltip-style explanation of the basis behind ``note``."""
+    estimate = pace_estimate.decode_pace_estimate(note)
+    return pace_estimate.render_pace_basis(estimate)

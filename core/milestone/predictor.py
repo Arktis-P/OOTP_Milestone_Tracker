@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from core.i18n import tr
+from core.milestone import estimate as pace_estimate
 from core.milestone.checker import (
     CAREER_BATTING_STATS,
     CAREER_PITCHING_STATS,
@@ -19,12 +19,6 @@ _PITCHING_TOTALS_COL = {
     "career_k_pit": "k",
     "career_saves": "sv",
     "career_era": "era",
-}
-
-_SEASON_PITCHING_COL = {
-    "career_wins": "w",
-    "career_k_pit": "k",
-    "career_saves": "sv",
 }
 
 
@@ -214,94 +208,61 @@ class MilestonePredictor:
         season_batting_by_id: dict[int, dict[str, Any]],
         season_pitching_by_id: dict[int, dict[str, Any]],
     ) -> dict[str, Any]:
+        estimate = self._pace_estimate(
+            player_id, milestone, remaining, season_batting_by_id, season_pitching_by_id
+        )
+        return _estimate_to_legacy_dict(estimate)
+
+    def _pace_estimate(
+        self,
+        player_id: int,
+        milestone: MilestoneDefinition,
+        remaining: float,
+        season_batting_by_id: dict[int, dict[str, Any]],
+        season_pitching_by_id: dict[int, dict[str, Any]],
+    ) -> pace_estimate.PaceEstimate:
         stat_key = milestone.stat
+        if not pace_estimate.is_stat_supported(stat_key, milestone.direction, milestone.category):
+            return pace_estimate.PaceEstimate(
+                available=False, reason=pace_estimate.REASON_UNSUPPORTED, remaining=remaining
+            )
+
         if milestone.category == "batting":
             season_stats = season_batting_by_id.get(player_id)
-            col = CAREER_BATTING_STATS.get(stat_key, stat_key).replace("career_", "")
+            col = pace_estimate.batting_season_column(stat_key)
         else:
             season_stats = season_pitching_by_id.get(player_id)
-            col = _SEASON_PITCHING_COL.get(stat_key, stat_key)
+            col = pace_estimate.pitching_season_column(stat_key)
 
         if not season_stats:
-            return {
-                "possible": None,
-                "projected_add": 0.0,
-                "note": tr("No data"),
-            }
+            return pace_estimate.PaceEstimate(
+                available=False, reason=pace_estimate.REASON_NO_DATA, remaining=remaining
+            )
 
         games_played = int(
             season_stats.get("games_played") or season_stats.get("games") or 0
         )
-        current_val = float(season_stats.get(col, 0) or 0)
-        if games_played == 0:
-            return {
-                "possible": False,
-                "projected_add": 0.0,
-                "note": tr("No data"),
-            }
-
-        per_game = current_val / games_played
-        games_remaining = max(self.season_games_total - games_played, 0)
-        projected_add = per_game * games_remaining
-        possible = projected_add >= remaining
-        if possible:
-            note = tr("Achievable (+{amount})").format(amount=f"{projected_add:.0f}")
-        else:
-            after = max(remaining - projected_add, 0)
-            note = tr("Not achievable (+{amount}, {after} remaining after season)").format(
-                amount=f"{projected_add:.0f}", after=f"{after:.0f}"
+        if games_played <= 0:
+            return pace_estimate.PaceEstimate(
+                available=False, reason=pace_estimate.REASON_NO_DATA, remaining=remaining
             )
-        return {
-            "possible": possible,
-            "projected_add": round(projected_add, 1),
-            "note": note,
-        }
+        current_val = float(season_stats.get(col, 0) or 0)
 
-    def _estimate_this_season(
-        self, player_id: int, milestone: MilestoneDefinition, remaining: float
-    ) -> dict[str, Any]:
-        stat_key = milestone.stat
         if milestone.category == "batting":
-            season_stats = self.checker.aggregator.get_batting_season(player_id, self.season)
-            col = CAREER_BATTING_STATS.get(stat_key, stat_key).replace("career_", "")
+            logs = self.checker.aggregator.get_player_batting_game_logs(player_id, self.season)
+            recent_values = pace_estimate.batting_recent_values(stat_key, logs) or []
         else:
-            season_stats = self.checker.aggregator.get_pitching_season(player_id, self.season)
-            col = _SEASON_PITCHING_COL.get(stat_key, stat_key)
+            logs = self.checker.aggregator.get_player_pitching_game_logs(player_id, self.season)
+            recent_values = pace_estimate.pitching_recent_values(stat_key, logs) or []
 
-        if not season_stats:
-            return {
-                "possible": None,
-                "projected_add": 0.0,
-                "note": tr("No data"),
-            }
-
-        games_played = int(
-            season_stats.get("games_played") or season_stats.get("games") or 0
+        return pace_estimate.estimate_pace(
+            current_value=current_val,
+            games_played_season=games_played,
+            season_games_total=self.season_games_total,
+            remaining=remaining,
+            recent_game_values=recent_values,
+            direction=milestone.direction,
         )
-        current_val = float(season_stats.get(col, 0) or 0)
-        if games_played == 0:
-            return {
-                "possible": False,
-                "projected_add": 0.0,
-                "note": tr("No data"),
-            }
-
-        per_game = current_val / games_played
-        games_remaining = max(self.season_games_total - games_played, 0)
-        projected_add = per_game * games_remaining
-        possible = projected_add >= remaining
-        if possible:
-            note = tr("Achievable (+{amount})").format(amount=f"{projected_add:.0f}")
-        else:
-            after = max(remaining - projected_add, 0)
-            note = tr("Not achievable (+{amount}, {after} remaining after season)").format(
-                amount=f"{projected_add:.0f}", after=f"{after:.0f}"
-            )
-        return {
-            "possible": possible,
-            "projected_add": round(projected_add, 1),
-            "note": note,
-        }
 
     def _career_value(self, player_id: int, milestone: MilestoneDefinition) -> float | None:
         stat = milestone.stat
@@ -351,3 +312,12 @@ class MilestonePredictor:
             return None
         pace = current / games
         return pace * self.season_games_total
+
+
+def _estimate_to_legacy_dict(estimate: pace_estimate.PaceEstimate) -> dict[str, Any]:
+    """Adapt a PaceEstimate to the {possible, projected_add, note} shape."""
+    return {
+        "possible": estimate.possible_season,
+        "projected_add": round(estimate.projected_add_season or 0.0, 1),
+        "note": pace_estimate.render_pace_summary(estimate),
+    }
