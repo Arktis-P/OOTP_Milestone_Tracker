@@ -4,6 +4,7 @@ __pycache__/
 *.pyo
 .venv/
 venv/
+.test-tmp*/
 
 # 빌드 결과물
 dist/
@@ -19,6 +20,7 @@ data/saves/
 # 사용자 설정·로컬 편집 데이터
 data/settings.json
 data/korean_names_pending.csv
+.claude/settings.local.json
 
 # 앱 런타임 상태
 data/bundle_updates_state.json
