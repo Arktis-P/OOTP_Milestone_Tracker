@@ -118,6 +118,7 @@ class PlayerRegistry:
         *,
         short_name: str,
         full_name: str | None = None,
+        commit: bool = True,
     ) -> list[int]:
         """Merge manual stubs that refer to the same person as an imported player."""
         if player_id <= 0:
@@ -142,7 +143,7 @@ class PlayerRegistry:
                 real_short,
             ):
                 continue
-            self._merge_manual_into_real(manual_id, player_id)
+            self._merge_manual_into_real(manual_id, player_id, commit=commit)
             merged.append(manual_id)
         return merged
 
@@ -183,7 +184,9 @@ class PlayerRegistry:
             return int(min_id) - 1
         return -1
 
-    def _merge_manual_into_real(self, manual_id: int, real_id: int) -> None:
+    def _merge_manual_into_real(
+        self, manual_id: int, real_id: int, *, commit: bool = True
+    ) -> None:
         if manual_id == real_id:
             return
 
@@ -236,7 +239,8 @@ class PlayerRegistry:
             (merged_full, merged_short, real_id),
         )
         self.conn.execute("DELETE FROM players WHERE player_id = ?", (manual_id,))
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def _table_exists(self, table: str) -> bool:
         row = self.conn.execute(

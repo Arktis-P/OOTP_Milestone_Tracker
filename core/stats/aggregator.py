@@ -85,6 +85,8 @@ class Aggregator:
         return self
 
     def __exit__(self, *args: object) -> None:
+        if args and args[0] is not None and self._conn is not None:
+            self._conn.rollback()
         self.close()
 
     def game_exists(self, game_id: int) -> bool:
@@ -96,23 +98,32 @@ class Aggregator:
             return False
         try:
             self._conn.execute("BEGIN")
-            self._conn.execute("DELETE FROM batting_logs WHERE game_id = ?", (game_id,))
-            self._conn.execute("DELETE FROM pitching_logs WHERE game_id = ?", (game_id,))
-            self._conn.execute(
-                "DELETE FROM milestone_records WHERE game_id = ?", (game_id,)
-            )
-            self._conn.execute(
-                "DELETE FROM streak_processed_games WHERE game_id = ?", (game_id,)
-            )
-            self._conn.execute("DELETE FROM games WHERE game_id = ?", (game_id,))
-            self._conn.execute(
-                "DELETE FROM processed_boxscores WHERE game_id = ?", (game_id,)
-            )
+            self._delete_game_import_data_in_transaction(game_id)
             self._conn.commit()
             return True
         except Exception:
             self._conn.rollback()
             raise
+
+    def _delete_game_import_data_in_transaction(self, game_id: int) -> None:
+        """Delete generated data for a game without owning the transaction.
+
+        Manual milestone entries are user-authored data and must survive a source
+        file refresh, even when they happen to refer to the refreshed game.
+        """
+        self._conn.execute("DELETE FROM batting_logs WHERE game_id = ?", (game_id,))
+        self._conn.execute("DELETE FROM pitching_logs WHERE game_id = ?", (game_id,))
+        self._conn.execute(
+            "DELETE FROM milestone_records WHERE game_id = ? AND COALESCE(is_manual, 0) = 0",
+            (game_id,),
+        )
+        self._conn.execute(
+            "DELETE FROM streak_processed_games WHERE game_id = ?", (game_id,)
+        )
+        self._conn.execute("DELETE FROM games WHERE game_id = ?", (game_id,))
+        self._conn.execute(
+            "DELETE FROM processed_boxscores WHERE game_id = ?", (game_id,)
+        )
 
     def reimport_boxscore_file(
         self,
@@ -120,8 +131,14 @@ class Aggregator:
         season: int,
         *,
         mlb_only: bool = True,
+        commit: bool = True,
     ) -> ImportResult:
-        """Replace an existing import or import a single box score file."""
+        """Replace an existing import or import a single box score file.
+
+        Pass ``commit=False`` only when an external owner will finish the
+        milestone/streak pipeline and explicitly commit or roll back the open
+        transaction. ``commit=True`` is rejected inside an existing transaction.
+        """
         path = Path(filepath)
         game_id = _game_id_from_filename(path.name)
         if game_id < 0:
@@ -137,32 +154,168 @@ class Aggregator:
         if mlb_only and not peek_is_mlb_boxscore(path):
             return ImportResult(game_id=game_id, error=tr("Not an MLB boxscore."))
 
-        if self.game_exists(game_id):
-            self.delete_game_import_data(game_id)
-
         try:
             data = BoxscoreHTMLParser(path).parse()
             if data.meta.is_spring_training:
                 return ImportResult(game_id=game_id, error=tr("Spring training boxscore is not tracked."))
-            result = self.import_boxscore(data, season, is_mlb=mlb_only)
-            if not result.error:
-                try:
-                    mtime = path.stat().st_mtime
-                except OSError:
-                    mtime = 0.0
-                self._conn.execute(
-                    """
-                    INSERT OR REPLACE INTO processed_boxscores (filename, game_id, mtime, is_mlb)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (path.name, game_id, mtime, 1),
-                )
-                self._conn.commit()
-            return result
+            return self._replace_parsed_boxscore(
+                path, data, season, is_mlb=mlb_only, commit=commit
+            )
         except ParserError as exc:
             return ImportResult(game_id=game_id, error=str(exc))
         except Exception as exc:
             return ImportResult(game_id=game_id, error=str(exc))
+
+    def _find_reimport_target(
+        self, filename: str, filename_game_id: int, season: int, data: BoxscoreData
+    ) -> tuple[int | None, str | None]:
+        """Find the one existing DB game represented by this file, if any."""
+        processed = self._conn.execute(
+            "SELECT game_id FROM processed_boxscores WHERE filename = ?", (filename,)
+        ).fetchone()
+        if processed is not None:
+            candidate = self._conn.execute(
+                "SELECT game_id, season FROM games WHERE game_id = ?",
+                (int(processed["game_id"]),),
+            ).fetchone()
+            if candidate is not None and int(candidate["season"]) == season:
+                return int(candidate["game_id"]), None
+
+        direct = self._conn.execute(
+            """
+            SELECT game_id, date, away_team, home_team FROM games
+            WHERE game_id = ? AND season = ?
+            """,
+            (filename_game_id, season),
+        ).fetchone()
+        if direct is not None:
+            if (
+                str(direct["date"]) == data.meta.date
+                and str(direct["away_team"]) == data.meta.away_team
+                and str(direct["home_team"]) == data.meta.home_team
+            ):
+                return int(direct["game_id"]), None
+            return None, tr("The existing game does not match this file and season.")
+
+        matches = self._conn.execute(
+            """
+            SELECT game_id FROM games
+            WHERE season = ? AND date = ? AND away_team = ? AND home_team = ?
+            """,
+            (season, data.meta.date, data.meta.away_team, data.meta.home_team),
+        ).fetchall()
+        if len(matches) == 1:
+            return int(matches[0]["game_id"]), None
+        if len(matches) > 1:
+            return None, tr("The existing game could not be identified unambiguously.")
+        return None, None
+
+    def _replace_parsed_boxscore(
+        self,
+        path: Path,
+        data: BoxscoreData,
+        season: int,
+        *,
+        is_mlb: bool,
+        mtime: float | None = None,
+        commit: bool = True,
+    ) -> ImportResult:
+        """Insert or replace parsed data under caller-selectable ownership.
+
+        With ``commit=False`` the successful raw replacement remains uncommitted
+        for an external derived-data pipeline to commit or roll back atomically.
+        """
+        filename_game_id = _game_id_from_filename(path.name)
+        target_id, target_error = self._find_reimport_target(
+            path.name, filename_game_id, season, data
+        )
+        if target_error:
+            return ImportResult(game_id=filename_game_id, error=target_error)
+        if self._conn.in_transaction and commit:
+            return ImportResult(
+                game_id=target_id or filename_game_id,
+                error=tr(
+                    "Cannot auto-commit a re-import inside an existing transaction; use commit=False and let the external owner commit."
+                ),
+            )
+        replaced = target_id is not None
+        if replaced and self._has_later_season_game(target_id, season):
+            return ImportResult(
+                game_id=target_id,
+                error=tr(
+                    "Past or same-date ambiguous games cannot be replaced safely. A full-season reprocessing feature is required."
+                ),
+            )
+        old_player_ids: set[int] = set()
+        nested_transaction = self._conn.in_transaction
+        try:
+            if nested_transaction:
+                self._conn.execute("SAVEPOINT replace_boxscore")
+            else:
+                self._conn.execute("BEGIN")
+            if target_id is not None:
+                old_player_ids = {
+                    int(row["player_id"])
+                    for row in self._conn.execute(
+                        "SELECT player_id FROM batting_logs WHERE game_id = ?",
+                        (target_id,),
+                    ).fetchall()
+                }
+                self._delete_game_import_data_in_transaction(target_id)
+                data.meta.game_id = target_id
+            else:
+                data.meta.game_id = self._resolve_game_id_for_import(
+                    filename_game_id, season
+                )
+            inserted_id = self._import_boxscore_in_transaction(
+                data, season, is_mlb=is_mlb
+            )
+            new_player_ids = {
+                batter.player_id for batter in data.away_batting + data.home_batting
+            }
+            self.update_primary_positions(sorted(old_player_ids | new_player_ids))
+            if mtime is None:
+                try:
+                    mtime = path.stat().st_mtime
+                except OSError:
+                    mtime = 0.0
+            self._conn.execute(
+                """
+                INSERT OR REPLACE INTO processed_boxscores (filename, game_id, mtime, is_mlb)
+                VALUES (?, ?, ?, ?)
+                """,
+                (path.name, inserted_id, mtime, int(is_mlb)),
+            )
+            if nested_transaction:
+                self._conn.execute("RELEASE SAVEPOINT replace_boxscore")
+            if commit:
+                self._conn.commit()
+            return ImportResult(game_id=inserted_id, replaced=replaced)
+        except Exception as exc:
+            if nested_transaction:
+                self._conn.execute("ROLLBACK TO SAVEPOINT replace_boxscore")
+                self._conn.execute("RELEASE SAVEPOINT replace_boxscore")
+            else:
+                self._conn.rollback()
+            return ImportResult(game_id=target_id or filename_game_id, error=str(exc))
+
+    def _has_later_season_game(self, game_id: int, season: int) -> bool:
+        target = self._conn.execute(
+            "SELECT date, game_id FROM games WHERE game_id = ? AND season = ?",
+            (game_id, season),
+        ).fetchone()
+        if target is None:
+            return False
+        row = self._conn.execute(
+            """
+            SELECT 1 FROM games
+            WHERE season = ?
+              AND (date > ? OR (date = ? AND game_id <> ?))
+            LIMIT 1
+            """,
+            (season, target["date"], target["date"], game_id),
+        ).fetchone()
+        return row is not None
 
     def refresh_batting_events_from_file(
         self, filepath: str | Path, season: int
@@ -419,6 +572,7 @@ class Aggregator:
             player_id,
             short_name=new_short,
             full_name=new_full,
+            commit=False,
         )
 
     @staticmethod
@@ -472,63 +626,64 @@ class Aggregator:
 
         try:
             self._conn.execute("BEGIN")
-            from core.teams.registry import TeamRegistry
-
-            TeamRegistry(self._conn).sync_from_boxscore_meta(
-                away_team=data.meta.away_team,
-                home_team=data.meta.home_team,
-                away_team_id=data.meta.away_team_id,
-                home_team_id=data.meta.home_team_id,
-            )
-            self._insert_game(data, season, is_mlb=is_mlb)
-            away_events = assign_batting_events_to_lineup(
-                data.away_batting, data.away_batting_notes
-            )
-            home_events = assign_batting_events_to_lineup(
-                data.home_batting, data.home_batting_notes
-            )
-            away_pitch_events = self._pitching_events_for_team(data.away_pitching_notes)
-            home_pitch_events = self._pitching_events_for_team(data.home_pitching_notes)
-
-            for batter in data.away_batting:
-                self._insert_batting_log(
-                    data,
-                    batter,
-                    season,
-                    away_events.get(batter.player_id, BattingEventCounts()),
-                    data.away_batting,
-                )
-            for batter in data.home_batting:
-                self._insert_batting_log(
-                    data,
-                    batter,
-                    season,
-                    home_events.get(batter.player_id, BattingEventCounts()),
-                    data.home_batting,
-                )
-            for pitcher in data.away_pitching:
-                self._insert_pitching_log(
-                    data,
-                    pitcher,
-                    season,
-                    away_pitch_events.get(pitcher.player_name),
-                    data.away_pitching,
-                )
-            for pitcher in data.home_pitching:
-                self._insert_pitching_log(
-                    data,
-                    pitcher,
-                    season,
-                    home_pitch_events.get(pitcher.player_name),
-                    data.home_pitching,
-                )
-            batter_ids = [b.player_id for b in data.away_batting + data.home_batting]
-            self.update_primary_positions(batter_ids)
+            self._import_boxscore_in_transaction(data, season, is_mlb=is_mlb)
             self._conn.commit()
             return ImportResult(game_id=game_id, skipped=False)
         except Exception as exc:
             self._conn.rollback()
             return ImportResult(game_id=game_id, skipped=False, error=str(exc))
+
+    def _import_boxscore_in_transaction(
+        self, data: BoxscoreData, season: int, *, is_mlb: bool
+    ) -> int:
+        """Insert one parsed game while leaving commit/rollback to the caller."""
+        game_id = data.meta.game_id
+        if self.game_exists(game_id):
+            raise ValueError(f"Game {game_id} already exists.")
+
+        from core.teams.registry import TeamRegistry
+
+        TeamRegistry(self._conn).sync_from_boxscore_meta(
+            away_team=data.meta.away_team,
+            home_team=data.meta.home_team,
+            away_team_id=data.meta.away_team_id,
+            home_team_id=data.meta.home_team_id,
+        )
+        self._insert_game(data, season, is_mlb=is_mlb)
+        away_events = assign_batting_events_to_lineup(
+            data.away_batting, data.away_batting_notes
+        )
+        home_events = assign_batting_events_to_lineup(
+            data.home_batting, data.home_batting_notes
+        )
+        away_pitch_events = self._pitching_events_for_team(data.away_pitching_notes)
+        home_pitch_events = self._pitching_events_for_team(data.home_pitching_notes)
+
+        for batter in data.away_batting:
+            self._insert_batting_log(
+                data, batter, season,
+                away_events.get(batter.player_id, BattingEventCounts()),
+                data.away_batting,
+            )
+        for batter in data.home_batting:
+            self._insert_batting_log(
+                data, batter, season,
+                home_events.get(batter.player_id, BattingEventCounts()),
+                data.home_batting,
+            )
+        for pitcher in data.away_pitching:
+            self._insert_pitching_log(
+                data, pitcher, season,
+                away_pitch_events.get(pitcher.player_name), data.away_pitching,
+            )
+        for pitcher in data.home_pitching:
+            self._insert_pitching_log(
+                data, pitcher, season,
+                home_pitch_events.get(pitcher.player_name), data.home_pitching,
+            )
+        batter_ids = [b.player_id for b in data.away_batting + data.home_batting]
+        self.update_primary_positions(batter_ids)
+        return game_id
 
     def import_all_new(
         self,
@@ -594,7 +749,10 @@ class Aggregator:
                 # MLB check reads up to 8 KB; skipped only for still-fresh files.
                 if mlb_only and not peek_is_mlb_boxscore(file_path):
                     result.skipped_non_mlb += 1
-                    new_processed.append((fname, game_id, file_mtime, 0))
+                    processed_game_id = self._processed_game_id_for_filename(fname)
+                    new_processed.append(
+                        (fname, processed_game_id or game_id, file_mtime, 0)
+                    )
                     continue
 
                 result.candidates += 1
@@ -603,9 +761,35 @@ class Aggregator:
                     data = BoxscoreHTMLParser(file_path).parse()
                     if data.meta.is_spring_training:
                         result.skipped_spring_training += 1
-                        new_processed.append((fname, game_id, file_mtime, 1))
+                        processed_game_id = self._processed_game_id_for_filename(fname)
+                        new_processed.append(
+                            (fname, processed_game_id or game_id, file_mtime, 1)
+                        )
                         continue
-                    import_result = self.import_boxscore(data, season, is_mlb=mlb_only)
+                    if stored_mtime is not None:
+                        target_id, target_error = self._find_reimport_target(
+                            fname, game_id, season, data
+                        )
+                        if target_error:
+                            import_result = ImportResult(
+                                game_id=game_id, error=target_error
+                            )
+                        elif target_id is not None:
+                            import_result = ImportResult(
+                                game_id=target_id,
+                                error=tr(
+                                    "A changed imported game requires the safe single-game re-import workflow."
+                                ),
+                            )
+                        else:
+                            # A processed spring/non-MLB placeholder can become a
+                            # genuinely new regular-season game. No prior raw game
+                            # exists, so this remains a normal atomic insert.
+                            import_result = self.import_boxscore(
+                                data, season, is_mlb=mlb_only
+                            )
+                    else:
+                        import_result = self.import_boxscore(data, season, is_mlb=mlb_only)
                 except ParserError as exc:
                     result.errors.append(ImportResult(game_id=game_id, error=str(exc)))
                     continue
@@ -616,9 +800,11 @@ class Aggregator:
 
                 if import_result.error:
                     result.errors.append(import_result)
+                elif import_result.replaced:
+                    result.refreshed_game_ids.append(import_result.game_id)
                 elif import_result.skipped:
                     result.skipped += 1
-                    new_processed.append((fname, game_id, file_mtime, 1))
+                    new_processed.append((fname, import_result.game_id, file_mtime, 1))
                 else:
                     result.imported += 1
                     # Use the id actually inserted (may differ from the
@@ -626,7 +812,9 @@ class Aggregator:
                     # remapped it), so downstream milestone checks look at
                     # the right game.
                     result.imported_game_ids.append(import_result.game_id)
-                    new_processed.append((fname, game_id, file_mtime, 1))
+                    new_processed.append(
+                        (fname, import_result.game_id, file_mtime, 1)
+                    )
 
             finally:
                 if progress_callback:
@@ -651,12 +839,22 @@ class Aggregator:
 
         return result
 
+    def _processed_game_id_for_filename(self, filename: str) -> int | None:
+        row = self._conn.execute(
+            "SELECT game_id FROM processed_boxscores WHERE filename = ?", (filename,)
+        ).fetchone()
+        return int(row["game_id"]) if row is not None else None
+
     def update_primary_positions(self, player_ids: list[int] | None = None) -> int:
         """Set players.primary_position from most frequent batting_logs.position."""
         if player_ids:
             placeholders = ",".join("?" * len(player_ids))
             id_filter = f"AND bl.player_id IN ({placeholders})"
             params: tuple[Any, ...] = tuple(player_ids)
+            self._conn.execute(
+                f"UPDATE players SET primary_position = '' WHERE player_id IN ({placeholders})",
+                params,
+            )
         else:
             id_filter = ""
             params = ()

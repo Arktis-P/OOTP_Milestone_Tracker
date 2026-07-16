@@ -175,6 +175,7 @@ class StreakTracker:
         season: int,
         *,
         progress_callback: ProgressCallback | None = None,
+        commit_events: bool = True,
     ) -> list[StreakEvent]:
         if not game_ids:
             return []
@@ -185,7 +186,11 @@ class StreakTracker:
         for index, game_id in enumerate(ordered, start=1):
             if progress_callback:
                 progress_callback(index, total, f"streak game {game_id}")
-            all_events.extend(self._process_single_game(game_id, season))
+            all_events.extend(
+                self._process_single_game(
+                    game_id, season, commit_events=commit_events
+                )
+            )
         return all_events
 
     def _sort_game_ids(self, game_ids: list[int]) -> list[int]:
@@ -203,7 +208,12 @@ class StreakTracker:
         return [int(row["game_id"]) for row in rows]
 
     def _process_single_game(
-        self, game_id: int, season: int, *, replay: bool = False
+        self,
+        game_id: int,
+        season: int,
+        *,
+        replay: bool = False,
+        commit_events: bool = True,
     ) -> list[StreakEvent]:
         if not replay and self._game_already_processed(game_id, season):
             return []
@@ -250,7 +260,7 @@ class StreakTracker:
 
         if not replay:
             self._mark_game_processed(game_id, season)
-            if events:
+            if events and commit_events:
                 self.aggregator.conn.commit()
         return events
 
@@ -778,19 +788,20 @@ def rebuild_season_streaks(
     *,
     tracked_teams: list[str] | None = None,
     custom_teams: dict[str, str] | None = None,
+    commit: bool = True,
 ) -> int:
-    """Clear streak state for a season and reprocess all games (admin/backfill)."""
+    """Clear streak state for a season and reprocess all games.
+
+    Pass ``commit=False`` when an external re-import transaction owns the raw
+    and derived-data pipeline. ``commit=True`` is rejected if a transaction is
+    already active so this helper cannot accidentally commit caller-owned work.
+    """
     conn = aggregator.conn
-    conn.execute("DELETE FROM player_streak_state WHERE season = ?", (season,))
-    conn.execute("DELETE FROM streak_processed_games WHERE season = ?", (season,))
-    conn.execute(
-        """
-        DELETE FROM milestone_records
-        WHERE scope = 'streak' AND season = ?
-        """,
-        (season,),
-    )
-    conn.commit()
+    if conn.in_transaction and commit:
+        raise ValueError(
+            "Cannot auto-commit a streak rebuild inside an existing transaction; "
+            "use commit=False and let the external owner commit."
+        )
     rows = conn.execute(
         "SELECT game_id FROM games WHERE season = ? ORDER BY date, game_id",
         (season,),
@@ -801,6 +812,32 @@ def rebuild_season_streaks(
         tracked_teams=tracked_teams,
         custom_teams=custom_teams,
     )
-    events = tracker.process_new_games(game_ids, season)
-    conn.commit()
-    return len(events)
+    nested_transaction = conn.in_transaction
+    try:
+        if nested_transaction:
+            conn.execute("SAVEPOINT rebuild_season_streaks")
+        else:
+            conn.execute("BEGIN")
+        conn.execute("DELETE FROM player_streak_state WHERE season = ?", (season,))
+        conn.execute("DELETE FROM streak_processed_games WHERE season = ?", (season,))
+        conn.execute(
+            """
+            DELETE FROM milestone_records
+            WHERE scope = 'streak' AND season = ?
+              AND COALESCE(is_manual, 0) = 0
+            """,
+            (season,),
+        )
+        events = tracker.process_new_games(game_ids, season, commit_events=False)
+        if nested_transaction:
+            conn.execute("RELEASE SAVEPOINT rebuild_season_streaks")
+        if commit:
+            conn.commit()
+        return len(events)
+    except Exception:
+        if nested_transaction:
+            conn.execute("ROLLBACK TO SAVEPOINT rebuild_season_streaks")
+            conn.execute("RELEASE SAVEPOINT rebuild_season_streaks")
+        else:
+            conn.rollback()
+        raise

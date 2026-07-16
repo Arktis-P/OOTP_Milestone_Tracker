@@ -182,6 +182,7 @@ class ImportResult:
     game_id: int
     skipped: bool = False
     error: str | None = None
+    replaced: bool = False
 
 
 @dataclass

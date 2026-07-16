@@ -207,7 +207,13 @@ class MilestoneChecker:
         achievements: list[MilestoneAchievement],
         *,
         game_logs_dir: str | None = None,
+        commit: bool = True,
     ) -> int:
+        """Persist achievements, optionally leaving commit to an external owner.
+
+        ``commit=False`` is required when raw re-import and derived records must
+        share one caller-owned transaction.
+        """
         from core.milestone.record_context import enrich_achievement_for_record
 
         recorded = 0
@@ -249,7 +255,7 @@ class MilestoneChecker:
                 ),
             )
             recorded += 1
-        if recorded:
+        if recorded and commit:
             conn.commit()
         return recorded
 

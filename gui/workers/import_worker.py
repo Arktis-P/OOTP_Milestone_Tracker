@@ -94,6 +94,7 @@ class ImportWorker(QThread):
                     custom_teams=self.settings.custom_mlb_teams,
                 )
                 achievements: list[MilestoneAchievement] = []
+                recorded = 0
                 if game_ids_for_milestones:
                     achievements = checker.check_new_games(
                         game_ids_for_milestones,
@@ -102,10 +103,10 @@ class ImportWorker(QThread):
                             cur, total, name, "milestone"
                         ),
                     )
-                recorded = checker.record_achievements(
-                    achievements,
-                    game_logs_dir=self.settings.game_logs_dir or None,
-                )
+                    recorded = checker.record_achievements(
+                        achievements,
+                        game_logs_dir=self.settings.game_logs_dir or None,
+                    )
 
                 streak_recorded = 0
                 if game_ids_for_milestones:

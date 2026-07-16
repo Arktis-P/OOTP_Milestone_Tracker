@@ -11,7 +11,7 @@ from core.milestone.checker import MilestoneAchievement, MilestoneChecker
 from core.milestone.definitions import MilestoneDefinitions
 from core.milestone.prediction_store import PredictionStore
 from core.roster.korean_names import note_players_from_boxscore_import
-from core.streak.tracker import StreakTracker
+from core.streak.tracker import StreakTracker, rebuild_season_streaks
 from core.i18n import tr
 from core.stats.aggregator import Aggregator
 from core.stats.models import BatchImportResult, ImportResult
@@ -53,6 +53,7 @@ class ReimportBoxscoreWorker(QThread):
                     self.filepath,
                     self.season,
                     mlb_only=self.settings.import_mlb_only,
+                    commit=False,
                 )
 
                 batch = BatchImportResult(total_scanned=1, candidates=1)
@@ -60,13 +61,16 @@ class ReimportBoxscoreWorker(QThread):
                     batch.errors.append(import_result)
                 elif import_result.skipped:
                     batch.skipped = 1
+                elif import_result.replaced:
+                    batch.refreshed_game_ids.append(import_result.game_id)
                 else:
                     batch.imported = 1
                     batch.imported_game_ids.append(import_result.game_id)
 
                 achievements: list[MilestoneAchievement] = []
                 recorded = 0
-                if batch.imported_game_ids:
+                game_ids = batch.imported_game_ids + batch.refreshed_game_ids
+                if game_ids:
                     self.progress.emit(tr("Checking milestones..."))
                     checker = MilestoneChecker(
                         aggregator,
@@ -77,24 +81,36 @@ class ReimportBoxscoreWorker(QThread):
                         custom_teams=self.settings.custom_mlb_teams,
                     )
                     achievements = checker.check_new_games(
-                        batch.imported_game_ids,
+                        game_ids,
                         self.season,
                     )
                     recorded = checker.record_achievements(
                         achievements,
                         game_logs_dir=self.settings.game_logs_dir or None,
+                        commit=False,
                     )
 
                     self.progress.emit(tr("Processing streak records..."))
-                    streak_tracker = StreakTracker(
-                        aggregator,
-                        tracked_teams=self.settings.tracked_teams,
-                        custom_teams=self.settings.custom_mlb_teams,
-                    )
-                    streak_tracker.process_new_games(
-                        batch.imported_game_ids,
-                        self.season,
-                    )
+                    if batch.refreshed_game_ids:
+                        rebuild_season_streaks(
+                            aggregator,
+                            self.season,
+                            tracked_teams=self.settings.tracked_teams,
+                            custom_teams=self.settings.custom_mlb_teams,
+                            commit=False,
+                        )
+                    else:
+                        streak_tracker = StreakTracker(
+                            aggregator,
+                            tracked_teams=self.settings.tracked_teams,
+                            custom_teams=self.settings.custom_mlb_teams,
+                        )
+                        streak_tracker.process_new_games(
+                            game_ids, self.season, commit_events=False
+                        )
+
+                    # This is the single owner commit for raw replacement,
+                    # game-linked milestones, and rebuilt streak state.
                     aggregator.conn.commit()
 
                     self.progress.emit(tr("Updating prediction list..."))
@@ -105,10 +121,10 @@ class ReimportBoxscoreWorker(QThread):
                         season_games_total=self.settings.season_games_total,
                         tracked_teams=self.settings.tracked_teams,
                         custom_teams=self.settings.custom_mlb_teams,
-                    ).update_after_import(batch.imported_game_ids)
+                    ).update_after_import(game_ids)
                     note_players_from_boxscore_import(
                         aggregator,
-                        batch.imported_game_ids,
+                        game_ids,
                         import_export_dir=(
                             self.settings.import_export_dir
                             or self.settings.initial_stats_dir

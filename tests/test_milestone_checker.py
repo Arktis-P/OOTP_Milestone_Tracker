@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from core.db.meta import set_meta
-from core.milestone.checker import MilestoneChecker
+from core.milestone.checker import MilestoneAchievement, MilestoneChecker
 from core.milestone.definitions import MilestoneDefinition, MilestoneDefinitions, load_milestones
 from core.parser.boxscore_html import BoxscoreHTMLParser
 from core.stats.aggregator import Aggregator
@@ -70,6 +70,37 @@ def test_game_scope_multi_hr_not_triggered_on_single_hr(
     achievements = checker.check_new_games(game_ids, season=2026)
     hr2 = [item for item in achievements if item.milestone.key == "bat_game_hr_2"]
     assert hr2 == []
+
+
+def test_record_achievements_commit_false_respects_outer_transaction(
+    aggregator: Aggregator,
+    checker: MilestoneChecker,
+    milestones: MilestoneDefinitions,
+) -> None:
+    _import_games(aggregator, "game_box_13.html")
+    player_id = aggregator.conn.execute(
+        "SELECT player_id FROM batting_logs WHERE game_id = 13 LIMIT 1"
+    ).fetchone()[0]
+    definition = milestones.get_by_key("bat_game_hr_2")
+    assert definition is not None
+    item = MilestoneAchievement(
+        player_id=player_id,
+        player_name="Test",
+        milestone=definition,
+        current_value=2,
+        achieved=True,
+        achieved_date="2026-01-01",
+        game_id=13,
+        season=2026,
+    )
+
+    aggregator.conn.execute("BEGIN")
+    assert checker.record_achievements([item], commit=False) == 1
+    aggregator.conn.rollback()
+
+    assert aggregator.conn.execute(
+        "SELECT COUNT(*) FROM milestone_records WHERE milestone_key = 'bat_game_hr_2'"
+    ).fetchone()[0] == 0
 
 
 def test_game_scope_multi_hr_triggered(

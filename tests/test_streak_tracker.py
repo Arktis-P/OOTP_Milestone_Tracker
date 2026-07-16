@@ -15,7 +15,7 @@ from core.streak.policies import (
     should_record_streak_on_break,
     streak_record_label,
 )
-from core.streak.tracker import StreakTracker
+from core.streak.tracker import StreakTracker, rebuild_season_streaks
 
 
 @pytest.fixture
@@ -30,12 +30,12 @@ def test_should_record_streak_on_break_thresholds(policies) -> None:
     assert not should_record_streak_on_break(9, hit)
 
     hr = policies["batting"]["home_run_streak"]
-    assert should_record_streak_on_break(5, hr)
-    assert not should_record_streak_on_break(4, hr)
+    assert should_record_streak_on_break(3, hr)
+    assert not should_record_streak_on_break(2, hr)
 
     innings = policies["pitching"]["scoreless_innings_streak"]
-    assert should_record_streak_on_break(90, innings)
-    assert not should_record_streak_on_break(89, innings)
+    assert should_record_streak_on_break(45, innings)
+    assert not should_record_streak_on_break(44, innings)
 
 
 def test_streak_record_labels(policies) -> None:
@@ -186,6 +186,70 @@ def test_tracker_records_milestone_only_when_streak_ends(aggregator: Aggregator)
     assert int(rows[0]["game_id"]) == 11
     assert rows[0]["description"] == "2026-03-01 부터 2026-03-10 까지, 10경기 연속"
     assert rows[0]["achieved_date"] == "2026-03-11"
+
+
+def test_rebuild_season_streaks_preserves_manual_streak_record(
+    aggregator: Aggregator,
+) -> None:
+    _seed_game_with_hit_streak(aggregator, game_id=1, day=1, h=1)
+    aggregator.conn.execute(
+        """
+        INSERT INTO milestone_records (
+            player_id, milestone_key, milestone_label, scope, season, game_id,
+            achieved_date, achieved_value, is_manual
+        ) VALUES (42, 'manual_streak', 'Manual streak', 'streak', 2026, 1,
+                  '2026-03-01', 1, 1)
+        """
+    )
+    aggregator.conn.commit()
+
+    rebuild_season_streaks(aggregator, 2026)
+
+    assert aggregator.conn.execute(
+        "SELECT COUNT(*) FROM milestone_records WHERE milestone_key = 'manual_streak'"
+    ).fetchone()[0] == 1
+
+
+def test_rebuild_season_streaks_commit_false_uses_latest_raw_logs(
+    aggregator: Aggregator,
+) -> None:
+    _seed_game_with_hit_streak(aggregator, game_id=1, day=1, h=1)
+    _seed_game_with_hit_streak(aggregator, game_id=2, day=2, h=1)
+    StreakTracker(aggregator).process_new_games([1, 2], 2026)
+
+    aggregator.conn.execute(
+        "UPDATE batting_logs SET h = 0 WHERE game_id = 2 AND player_id = 42"
+    )
+    rebuild_season_streaks(aggregator, 2026, commit=False)
+    assert aggregator.conn.in_transaction
+    row = aggregator.conn.execute(
+        """
+        SELECT current_value FROM player_streak_state
+        WHERE season = 2026 AND player_id = 42 AND streak_type = 'hit_streak'
+        """
+    ).fetchone()
+    assert row is not None
+    assert int(row["current_value"]) == 0
+    aggregator.conn.commit()
+
+
+def test_rebuild_season_streaks_rejects_commit_inside_outer_transaction(
+    aggregator: Aggregator,
+) -> None:
+    _seed_game_with_hit_streak(aggregator, game_id=1, day=1, h=1)
+    aggregator.conn.execute("BEGIN")
+    aggregator.conn.execute(
+        "INSERT OR REPLACE INTO db_meta (key, value) VALUES ('outer_marker', '1')"
+    )
+
+    with pytest.raises(ValueError, match="commit=False"):
+        rebuild_season_streaks(aggregator, 2026)
+
+    assert aggregator.conn.in_transaction
+    aggregator.conn.rollback()
+    assert aggregator.conn.execute(
+        "SELECT value FROM db_meta WHERE key = 'outer_marker'"
+    ).fetchone() is None
 
 
 def _seed_batter_hit_log(
