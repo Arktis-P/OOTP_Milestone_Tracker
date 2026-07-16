@@ -24,20 +24,21 @@ from PyQt6.QtWidgets import (
 from core.i18n import tr
 from core.roster.age import age_from_row, get_reference_date
 from core.roster.bulk_rating import (
+    BulkRatingPlan,
     PlayerBulkSettings,
-    apply_bulk_rules_to_row,
+    apply_bulk_rating_plan,
+    build_bulk_rating_plan,
     should_modify_player,
 )
 from core.roster.combined import (
     load_combined_roster,
     resolve_combined_paths,
-    save_modified_rosters,
+    save_modified_rosters_safely,
     sync_player_rows_to_sources,
 )
 from core.roster.korean_names import KoreanNameMapper, load_korean_name_mapper
 from core.roster.ootp_format import player_display_name
 from core.roster.position_filter import POSITION_GROUP_OPTIONS, matches_position_group
-from core.roster.row_access import row_get
 from core.stats.aggregator import Aggregator
 from gui.ui_compact import scale_size
 from gui.widgets.app_dialog import (
@@ -88,18 +89,16 @@ class BulkRatingDialog(QDialog):
             raise ValueError(tr("No player data in roster."))
 
         self.reference_date = get_reference_date(aggregator, settings)
-        self._original_rows: dict[int, list[str]] = {}
         self._settings: dict[int, PlayerBulkSettings] = {}
         self._player_indices: list[BulkPlayerIndex] = []
-        self._players_by_id = {p.player_id: p for p in self.combined.players}
-        fieldnames = self.combined.fieldnames
         self._korean_names = load_korean_name_mapper()
 
         for player in self.combined.players:
+            fieldnames = player.fieldnames
             age = age_from_row(player.row, fieldnames, self.reference_date)
             if age is None:
                 age = 0
-            nation = row_get(player.row, fieldnames, "Nation").strip()
+            nation = player.value("Nation").strip()
             self._settings[player.player_id] = PlayerBulkSettings(
                 player_id=player.player_id,
                 age=age,
@@ -107,8 +106,8 @@ class BulkRatingDialog(QDialog):
                 nation=nation,
             )
             name = player_display_name(player.row, fieldnames)
-            last_name = row_get(player.row, fieldnames, "LastName").strip()
-            first_name = row_get(player.row, fieldnames, "FirstName").strip()
+            last_name = player.value("LastName").strip()
+            first_name = player.value("FirstName").strip()
             korean_name = self._korean_names.format_player_name(
                 last_name,
                 first_name,
@@ -121,9 +120,9 @@ class BulkRatingDialog(QDialog):
                     name_lower=name.lower(),
                     korean_name=korean_name,
                     korean_name_lower=korean_name.casefold(),
-                    team=row_get(player.row, fieldnames, "Team Name").strip(),
+                    team=player.value("Team Name").strip(),
                     nation=nation,
-                    position=row_get(player.row, fieldnames, "Position"),
+                    position=player.value("Position"),
                     source=player.source,
                 )
             )
@@ -131,7 +130,7 @@ class BulkRatingDialog(QDialog):
         self.prospect_boost = QCheckBox(
             tr("Apply prospect rating boost (nation filter: applies to that nation only)")
         )
-        self.prospect_boost.setChecked(True)
+        self.prospect_boost.setChecked(False)
 
         self.ref_label = muted_label(
             tr("Reference date: {date} (last import date takes priority)").format(
@@ -223,6 +222,14 @@ class BulkRatingDialog(QDialog):
         buttons = make_button_box(save=True, save_text="Apply and Save")
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
+        self._save_button = next(
+            button
+            for button in buttons.buttons()
+            if buttons.buttonRole(button) == QDialogButtonBox.ButtonRole.AcceptRole
+        )
+        self._save_button.setEnabled(False)
+        self.prospect_boost.toggled.connect(self._update_save_state)
+        self.model.dataChanged.connect(self._update_save_state)
 
         options_card = CardPanel(tr("Options"))
         options_card.add_widget(self.prospect_boost)
@@ -274,72 +281,171 @@ class BulkRatingDialog(QDialog):
         total = len(self._player_indices)
         shown = len(visible_positions)
         self.count_label.setText(
-            tr("Showing {shown:,} / {total:,} players").format(shown=shown, total=total)
+            tr("Apply scope: {shown:,} currently displayed / {total:,} total players").format(
+                shown=shown, total=total
+            )
         )
+        self._update_save_state()
 
-    def _snapshot_original(self, player_id: int) -> list[str]:
-        cached = self._original_rows.get(player_id)
-        if cached is not None:
-            return cached
-        player = self._players_by_id[player_id]
-        cached = deepcopy(player.row)
-        self._original_rows[player_id] = cached
-        return cached
-
-    def _save(self) -> None:
+    def _update_save_state(self, *_args) -> None:
+        if not hasattr(self, "_save_button"):
+            return
         prospect_boost = self.prospect_boost.isChecked()
         prospect_nation = self.nation_filter.currentData() or None
-        fieldnames = self.combined.fieldnames
-        to_modify = [
-            pid
-            for pid, cfg in self._settings.items()
-            if should_modify_player(
-                cfg,
-                prospect_boost=prospect_boost,
-                prospect_nation=prospect_nation,
+        self._save_button.setEnabled(
+            any(
+                should_modify_player(
+                    self._settings[player_id],
+                    prospect_boost=prospect_boost,
+                    prospect_nation=prospect_nation,
+                )
+                for player_id in self.model.visible_player_ids()
             )
-        ]
-        if not to_modify:
-            QMessageBox.information(
-                self, tr("No Changes"), tr("No rating changes to apply.")
+        )
+
+    def _preview_text(self, plan: BulkRatingPlan) -> str:
+        names = {meta.player_id: meta.display_name for meta in self._player_indices}
+        lines: list[str] = []
+        for player_change in plan.changes:
+            name = names.get(player_change.player_id, str(player_change.player_id))
+            lines.append(f"{name} (ID {player_change.player_id})")
+            for cell in player_change.cells:
+                occurrence = f" #{cell.occurrence + 1}" if cell.occurrence else ""
+                lines.append(f"  {cell.header}{occurrence}: {cell.before} -> {cell.after}")
+        if plan.unchanged:
+            lines.extend(("", tr("Unchanged targets:")))
+            lines.extend(
+                f"  {names.get(player_id, player_id)} (ID {player_id}): {reason}"
+                for player_id, reason in plan.unchanged
             )
+        if plan.skipped:
+            lines.extend(("", tr("Skipped targets:")))
+            lines.extend(
+                f"  {names.get(player_id, player_id)} (ID {player_id}): {reason}"
+                for player_id, reason in plan.skipped
+            )
+        if plan.skipped_cells:
+            lines.extend(("", tr("Skipped cells:")))
+            for cell in plan.skipped_cells:
+                occurrence = f" #{cell.occurrence + 1}" if cell.occurrence else ""
+                lines.append(
+                    f"  {names.get(cell.player_id, cell.player_id)} (ID {cell.player_id}) "
+                    f"{cell.header}{occurrence}: {cell.reason}"
+                )
+        return "\n".join(lines)
+
+    def _confirm_plan(self, plan: BulkRatingPlan) -> bool:
+        message = QMessageBox(self)
+        message.setIcon(QMessageBox.Icon.Question)
+        message.setWindowTitle(tr("Confirm Rating Changes"))
+        message.setText(
+            tr(
+                "Apply changes to {players:,} players / {cells:,} cells? "
+                "{unchanged:,} targets are unchanged, {skipped:,} players and "
+                "{skipped_cells:,} invalid cells are skipped."
+            ).format(
+                players=plan.changed_player_count,
+                cells=plan.changed_cell_count,
+                unchanged=len(plan.unchanged),
+                skipped=len(plan.skipped),
+                skipped_cells=plan.skipped_cell_count,
+            )
+        )
+        message.setDetailedText(self._preview_text(plan))
+        message.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
+        )
+        message.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        return message.exec() == QMessageBox.StandardButton.Yes
+
+    def _show_no_changes_plan(self, plan: BulkRatingPlan) -> None:
+        message = QMessageBox(self)
+        message.setIcon(QMessageBox.Icon.Information)
+        message.setWindowTitle(tr("No Changes"))
+        message.setText(
+            tr(
+                "No rating cells would change in the current displayed scope. "
+                "{skipped_players:,} players and {skipped_cells:,} invalid cells "
+                "were skipped; see details for reasons."
+            ).format(
+                skipped_players=len(plan.skipped),
+                skipped_cells=plan.skipped_cell_count,
+            )
+        )
+        message.setDetailedText(self._preview_text(plan))
+        message.setStandardButtons(QMessageBox.StandardButton.Ok)
+        message.exec()
+
+    def _save(self) -> None:
+        self._search_timer.stop()
+        self._apply_filters()
+        prospect_boost = self.prospect_boost.isChecked()
+        prospect_nation = self.nation_filter.currentData() or None
+        plan = build_bulk_rating_plan(
+            self.combined.players,
+            self.model.visible_player_ids(),
+            self._settings,
+            prospect_boost=prospect_boost,
+            prospect_nation=prospect_nation,
+        )
+        if not plan.changes:
+            self._show_no_changes_plan(plan)
+            return
+        if not self._confirm_plan(plan):
             return
 
         self.progress.setVisible(True)
         self.progress_label.setVisible(True)
-        self.progress.setMaximum(len(to_modify))
+        self.progress.setMaximum(plan.changed_player_count)
 
-        for index, player_id in enumerate(to_modify, start=1):
-            cfg = self._settings[player_id]
-            original = self._snapshot_original(player_id)
-            self._players_by_id[player_id].row = apply_bulk_rules_to_row(
-                original,
-                fieldnames,
-                cfg,
-                prospect_boost=prospect_boost,
-                prospect_nation=prospect_nation,
+        self.progress_label.setText(tr("Saving confirmed rating changes..."))
+        original_player_rows = {
+            player.player_id: deepcopy(player.row) for player in self.combined.players
+        }
+        original_mlb_rows = deepcopy(self.combined.mlb.rows) if self.combined.mlb else None
+        original_kbo_rows = deepcopy(self.combined.kbo.rows) if self.combined.kbo else None
+        try:
+            apply_bulk_rating_plan(self.combined.players, plan)
+            sync_player_rows_to_sources(self.combined)
+            result = save_modified_rosters_safely(self.combined)
+        except Exception as exc:
+            for player in self.combined.players:
+                player.row = original_player_rows[player.player_id]
+            if self.combined.mlb is not None and original_mlb_rows is not None:
+                self.combined.mlb.rows = original_mlb_rows
+            if self.combined.kbo is not None and original_kbo_rows is not None:
+                self.combined.kbo.rows = original_kbo_rows
+            self.progress.setVisible(False)
+            self.progress_label.setVisible(False)
+            QMessageBox.critical(
+                self,
+                tr("Save Failed"),
+                tr("No output changes were kept. {error}").format(error=str(exc)),
             )
-            self.progress.setValue(index)
-            self.progress_label.setText(
-                tr("Applying... {index}/{total}").format(index=index, total=len(to_modify))
+            return
+
+        self.progress.setValue(plan.changed_player_count)
+        parts = [
+            tr("Changed {players:,} players / {cells:,} cells").format(
+                players=plan.changed_player_count, cells=plan.changed_cell_count
             )
-
-        sync_player_rows_to_sources(self.combined)
-        mlb_out, kbo_out = save_modified_rosters(self.combined)
-
-        mlb_count = len(self.combined.mlb.rows) if self.combined.mlb else 0
-        kbo_count = len(self.combined.kbo.rows) if self.combined.kbo else 0
-        parts = []
-        if mlb_out:
-            parts.append(f"MLB {mlb_count:,} → {mlb_out.name}")
-        if kbo_out:
-            parts.append(f"KBO {kbo_count:,} → {kbo_out.name}")
+        ]
+        if result.mlb_output:
+            parts.append(f"MLB: {result.mlb_output.name}")
+        if result.kbo_output:
+            parts.append(f"KBO: {result.kbo_output.name}")
+        if result.backups:
+            parts.append(
+                tr("Backups: {names}").format(
+                    names=", ".join(path.name for path in result.backups)
+                )
+            )
 
         self.progress.setVisible(False)
         self.progress_label.setVisible(False)
         QMessageBox.information(
             self,
             tr("Saved"),
-            " · ".join(parts) if parts else tr("Saved"),
+            "\n".join(parts),
         )
         self.accept()

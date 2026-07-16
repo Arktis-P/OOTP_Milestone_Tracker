@@ -67,6 +67,52 @@ class PlayerBulkSettings:
     prospect_fame: FameLevel = FameLevel.NONE
 
 
+@dataclass(frozen=True)
+class RatingCellChange:
+    header: str
+    occurrence: int
+    before: str
+    after: str
+
+
+@dataclass(frozen=True)
+class PlayerRatingChange:
+    player_id: int
+    original_row: tuple[str, ...]
+    updated_row: tuple[str, ...]
+    fieldnames: tuple[str, ...]
+    cells: tuple[RatingCellChange, ...]
+
+
+@dataclass(frozen=True)
+class RatingCellSkip:
+    player_id: int
+    header: str
+    occurrence: int
+    reason: str
+
+
+@dataclass(frozen=True)
+class BulkRatingPlan:
+    scope_player_ids: tuple[int, ...]
+    changes: tuple[PlayerRatingChange, ...]
+    unchanged: tuple[tuple[int, str], ...]
+    skipped: tuple[tuple[int, str], ...]
+    skipped_cells: tuple[RatingCellSkip, ...] = ()
+
+    @property
+    def changed_player_count(self) -> int:
+        return len(self.changes)
+
+    @property
+    def changed_cell_count(self) -> int:
+        return sum(len(change.cells) for change in self.changes)
+
+    @property
+    def skipped_cell_count(self) -> int:
+        return len(self.skipped_cells)
+
+
 def prospect_boost_eligible(
     settings: PlayerBulkSettings,
     *,
@@ -300,3 +346,179 @@ def apply_bulk_to_players(
         )
         modified += 1
     return modified
+
+
+def _invalid_target_cells(
+    row: PlayerRow,
+    fieldnames: list[str],
+    settings: PlayerBulkSettings,
+    *,
+    prospect_boost: bool,
+    prospect_nation: str | None,
+) -> list[tuple[str, int]]:
+    """Report non-empty invalid numeric values that an active rule targets."""
+    position = row_get(row, fieldnames, "Position")
+    pitcher = is_pitcher_position(position)
+    apply_prospect_boost = prospect_boost_eligible(
+        settings,
+        prospect_boost=prospect_boost,
+        prospect_nation=prospect_nation,
+    )
+    current_mult = (
+        BASE_CURRENT_MULT[settings.base_fame]
+        * PROSPECT_CURRENT_MULT[settings.prospect_fame]
+    )
+    pot_mult = (
+        BASE_POT_MULT[settings.base_fame]
+        * PROSPECT_POT_MULT[settings.prospect_fame]
+    )
+    targets: set[tuple[str, int]] = set()
+    if pitcher:
+        if current_mult != 1.0:
+            targets.update((col.header, col.occurrence) for col in PITCHER_CURRENT_FIELDS)
+        if pot_mult != 1.0:
+            targets.update((col.header, col.occurrence) for col in PITCHER_POTENTIAL_FIELDS)
+        if apply_prospect_boost:
+            targets.update(_velo_pot_columns(fieldnames))
+    else:
+        if current_mult != 1.0:
+            targets.update((col.header, col.occurrence) for col in BATTER_CURRENT_FIELDS)
+        if pot_mult != 1.0:
+            targets.update((col.header, col.occurrence) for col in BATTER_POTENTIAL_FIELDS)
+        if apply_prospect_boost:
+            defense_headers = _defense_headers_for_position(parse_position_code(position))
+            targets.update(
+                (col.header, col.occurrence)
+                for col in DEFENSE_FIELDS
+                if col.header in defense_headers
+            )
+
+    invalid: list[tuple[str, int]] = []
+    for header, occurrence in targets:
+        raw = row_get(row, fieldnames, header, occurrence)
+        if raw.strip() and _parse_float(raw) is None:
+            invalid.append((header, occurrence))
+    return sorted(invalid)
+
+
+def build_bulk_rating_plan(
+    players: Iterable,
+    scope_player_ids: Iterable[int],
+    settings_by_id: dict[int, PlayerBulkSettings],
+    *,
+    prospect_boost: bool,
+    prospect_nation: str | None = None,
+) -> BulkRatingPlan:
+    """Build an immutable preview using the same rules that will be saved."""
+    scope = tuple(dict.fromkeys(scope_player_ids))
+    scope_set = set(scope)
+    players_by_id: dict[int, object] = {}
+    duplicate_ids: set[int] = set()
+    for player in players:
+        player_id = player.player_id
+        if player_id not in scope_set:
+            continue
+        if player_id in players_by_id:
+            duplicate_ids.add(player_id)
+        else:
+            players_by_id[player_id] = player
+
+    changes: list[PlayerRatingChange] = []
+    unchanged: list[tuple[int, str]] = []
+    skipped: list[tuple[int, str]] = []
+    skipped_cells: list[RatingCellSkip] = []
+    for player_id in scope:
+        if player_id in duplicate_ids:
+            skipped.append((player_id, "duplicate player id"))
+            continue
+        player = players_by_id.get(player_id)
+        if player is None:
+            skipped.append((player_id, "player is not present in the roster"))
+            continue
+        settings = settings_by_id.get(player_id)
+        if settings is None:
+            skipped.append((player_id, "rating settings are unavailable"))
+            continue
+        if getattr(player, "duplicate_player_id", False):
+            skipped.append((player_id, "duplicate player id in source rosters"))
+            continue
+        if not should_modify_player(
+            settings,
+            prospect_boost=prospect_boost,
+            prospect_nation=prospect_nation,
+        ):
+            unchanged.append((player_id, "no rating rule selected"))
+            continue
+
+        original = player.row
+        fieldnames = player.fieldnames
+        skipped_cells.extend(
+            RatingCellSkip(player_id, header, occurrence, "invalid numeric value")
+            for header, occurrence in _invalid_target_cells(
+                original,
+                fieldnames,
+                settings,
+                prospect_boost=prospect_boost,
+                prospect_nation=prospect_nation,
+            )
+        )
+        updated = apply_bulk_rules_to_row(
+            original,
+            fieldnames,
+            settings,
+            prospect_boost=prospect_boost,
+            prospect_nation=prospect_nation,
+        )
+        occurrences: dict[str, int] = {}
+        cell_changes: list[RatingCellChange] = []
+        for index, header in enumerate(fieldnames):
+            occurrence = occurrences.get(header, 0)
+            occurrences[header] = occurrence + 1
+            before = original[index] if index < len(original) else ""
+            after = updated[index] if index < len(updated) else ""
+            if before != after:
+                cell_changes.append(
+                    RatingCellChange(header, occurrence, before, after)
+                )
+        if not cell_changes:
+            unchanged.append(
+                (player_id, "selected rule produced no cell changes")
+            )
+            continue
+        changes.append(
+            PlayerRatingChange(
+                player_id,
+                tuple(original),
+                tuple(updated),
+                tuple(fieldnames),
+                tuple(cell_changes),
+            )
+        )
+
+    return BulkRatingPlan(
+        scope,
+        tuple(changes),
+        tuple(unchanged),
+        tuple(skipped),
+        tuple(skipped_cells),
+    )
+
+
+def apply_bulk_rating_plan(players: Iterable, plan: BulkRatingPlan) -> None:
+    """Apply the exact rows shown by a previously confirmed preview."""
+    player_list = list(players)
+    players_by_id: dict[int, object] = {}
+    for player in player_list:
+        if player.player_id in players_by_id:
+            raise ValueError(f"Duplicate player id while applying plan: {player.player_id}")
+        players_by_id[player.player_id] = player
+    for change in plan.changes:
+        player = players_by_id.get(change.player_id)
+        if player is None:
+            raise ValueError(f"Preview player is no longer present: {change.player_id}")
+        if tuple(player.fieldnames) != change.fieldnames:
+            raise ValueError(f"Roster fields changed after preview: {change.player_id}")
+        if tuple(player.row) != change.original_row:
+            raise ValueError(f"Roster row changed after preview: {change.player_id}")
+    for change in plan.changes:
+        players_by_id[change.player_id].row = list(change.updated_row)

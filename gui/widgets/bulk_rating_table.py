@@ -108,6 +108,9 @@ class BulkRatingTableModel(QAbstractTableModel):
             return None
         return self._indices[pos].player_id
 
+    def visible_player_ids(self) -> tuple[int, ...]:
+        return tuple(self._indices[pos].player_id for pos in self._visible)
+
     def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
         if parent.isValid():
             return 0
