@@ -9,6 +9,12 @@ _language: str = "ko"
 # fmt: off
 _KO: dict[str, str] = {
 
+    "games":                           "경기",
+    "outs":                            "아웃",
+    "Milestone records are unavailable.": "마일스톤 기록을 사용할 수 없습니다.",
+    "Predictions are unavailable.":    "예측을 사용할 수 없습니다.",
+    "Open a league database and try again.": "리그 데이터베이스를 연 뒤 다시 시도하세요.",
+
     # ── Relative time formatting (shared) ────────────────────────────────
     "Today {time}":                     "오늘 {time}",
     "Yesterday {time}":                 "어제 {time}",

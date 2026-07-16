@@ -27,6 +27,7 @@ from core.milestone.definitions import MilestoneDefinitions
 from core.milestone.prediction_store import CachedPrediction, PredictionStore
 from core.stats.aggregator import Aggregator
 from core.stats.player_display import best_display_name
+from core.streak.read_model import ActiveStreak, list_active_streaks
 from gui.theme import RED_TEXT, TEXT_SECONDARY, hint_style
 from gui.widgets.card_panel import CardPanel
 from gui.widgets.empty_state import EmptyStateWidget
@@ -61,6 +62,7 @@ class DashboardView(QWidget):
         self._import_worker: ImportWorker | None = None
         self._recent_records: list[dict] = []
         self._near_predictions: list[CachedPrediction] = []
+        self._active_streaks: list[ActiveStreak] = []
 
         self.banner = ErrorBanner(self)
 
@@ -145,6 +147,25 @@ class DashboardView(QWidget):
         )
         near_card.add_widget(self.near_stack)
 
+        self.streak_list = QListWidget()
+        self.streak_empty = EmptyStateWidget()
+        self.streak_stack = QStackedWidget()
+        self.streak_stack.addWidget(self.streak_list)
+        self.streak_stack.addWidget(self.streak_empty)
+        self.streak_more = QPushButton(tr("View Ended Streaks"))
+        self.streak_more.setObjectName("linkButton")
+        self.streak_more.clicked.connect(self._show_ended_streaks)
+        streak_card = CardPanel(
+            tr("Active Streaks"),
+            trailing=self.streak_more,
+        )
+        streak_sort_hint = QLabel(
+            tr("Most recent success first; values are not ranked across streak types.")
+        )
+        streak_sort_hint.setStyleSheet(hint_style(TEXT_SECONDARY))
+        streak_card.add_widget(streak_sort_hint)
+        streak_card.add_widget(self.streak_stack)
+
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(recent_card)
         splitter.addWidget(near_card)
@@ -158,6 +179,7 @@ class DashboardView(QWidget):
         layout.addWidget(control_card)
         layout.addWidget(self.readiness_card)
         layout.addWidget(self.progress_card)
+        layout.addWidget(streak_card, stretch=1)
         layout.addWidget(splitter, stretch=1)
 
         self.update_status_summary()
@@ -173,11 +195,63 @@ class DashboardView(QWidget):
             self.refresh_near_predictions()
         if kind in ("boxscore", "init", "milestone", "all", "settings"):
             self.update_status_summary()
+            self.refresh_active_streaks()
 
     def refresh(self) -> None:
         self.refresh_recent_achievements()
         self.refresh_near_predictions()
+        self.refresh_active_streaks()
         self.update_status_summary()
+
+    def refresh_active_streaks(self) -> None:
+        self.streak_list.clear()
+        self._active_streaks = []
+        if self.aggregator.is_closed:
+            self._show_active_streak_empty(
+                tr("Active streaks are unavailable."),
+                tr("Open a league database to view current streaks."),
+            )
+            return
+        try:
+            self._active_streaks = list_active_streaks(
+                self.aggregator,
+                self.settings.current_season,
+                limit=8,
+            )
+        except Exception:
+            self._show_active_streak_empty(
+                tr("Active streaks could not be loaded."),
+                tr("The database may be unavailable. Try refreshing after reopening the league."),
+            )
+            return
+        if not self._active_streaks:
+            self._show_active_streak_empty(
+                tr("No active streaks."),
+                tr("Import boxscores to detect streaks currently in progress."),
+            )
+            return
+
+        self.streak_stack.setCurrentWidget(self.streak_list)
+        for streak in self._active_streaks:
+            date_parts = [part for part in (streak.start_date, streak.last_date) if part]
+            date_text = " → ".join(date_parts) if date_parts else tr("Date unavailable")
+            item = QListWidgetItem(
+                f"{streak.player_name}  ·  {streak.team}  ·  {streak.label}"
+                f"  ·  {streak.display_value} {tr(streak.unit)}\n{date_text}"
+            )
+            item.setData(Qt.ItemDataRole.UserRole, streak)
+            item.setToolTip(item.text())
+            item.setSizeHint(QSize(0, 44))
+            self.streak_list.addItem(item)
+
+    def _show_active_streak_empty(self, title: str, subtitle: str) -> None:
+        self.streak_empty.set_content(
+            "🔥",
+            title,
+            subtitle,
+            [(tr("View Ended Streaks"), self._show_ended_streaks)],
+        )
+        self.streak_stack.setCurrentWidget(self.streak_empty)
 
     def update_status_summary(self) -> None:
         league = self.settings.active_save or tr("(No league selected)")
@@ -203,8 +277,17 @@ class DashboardView(QWidget):
             self.start_import()
 
     def refresh_recent_achievements(self) -> None:
-        self._recent_records = self.aggregator.get_recent_milestone_records(10)
         self.recent_list.clear()
+        if self.aggregator.is_closed:
+            self._recent_records = []
+            self.recent_empty.set_content(
+                "🏆",
+                tr("Milestone records are unavailable."),
+                tr("Open a league database and try again."),
+            )
+            self.recent_stack.setCurrentWidget(self.recent_empty)
+            return
+        self._recent_records = self.aggregator.get_recent_milestone_records(10)
         if not self._recent_records:
             self.recent_empty.set_content(
                 "🏆",
@@ -265,6 +348,16 @@ class DashboardView(QWidget):
             self.recent_list.addItem(item)
 
     def refresh_near_predictions(self) -> None:
+        self.near_list.clear()
+        if self.aggregator.is_closed:
+            self._near_predictions = []
+            self.near_empty.set_content(
+                "🔮",
+                tr("Predictions are unavailable."),
+                tr("Open a league database and try again."),
+            )
+            self.near_stack.setCurrentWidget(self.near_empty)
+            return
         store = PredictionStore(
             self.aggregator,
             self.milestones,
@@ -275,7 +368,6 @@ class DashboardView(QWidget):
         )
         store.ensure_seeded()
         self._near_predictions = store.list_near_cached(limit=10)
-        self.near_list.clear()
         if not self._near_predictions:
             self.near_empty.set_content(
                 "🔮",
@@ -334,6 +426,9 @@ class DashboardView(QWidget):
 
     def _show_all_milestones(self) -> None:
         self.navigate_to_milestone.emit({})
+
+    def _show_ended_streaks(self) -> None:
+        self.navigate_to_milestone.emit({"scope": "streak"})
 
     def _show_all_predictions(self) -> None:
         self.navigate_to_predict.emit(-1, "")
