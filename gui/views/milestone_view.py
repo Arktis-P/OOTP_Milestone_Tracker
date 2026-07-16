@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QHBoxLayout,
+    QHeaderView,
     QInputDialog,
     QLabel,
     QMenu,
@@ -70,6 +71,34 @@ EVENT_TYPE_OPTIONS = (
     ("other", "Other"),
 )
 
+EVENT_TYPE_LABELS = dict(EVENT_TYPE_OPTIONS)
+
+# Fixed positions of the compact Type/Source columns in _table_columns().
+TYPE_COLUMN_INDEX = 5
+SOURCE_COLUMN_INDEX = 6
+
+
+def event_type_display_label(event_type: str) -> str:
+    """Human-readable label for a derived event type, matching the filter option text."""
+    return tr(EVENT_TYPE_LABELS.get(event_type, "Other"))
+
+
+def source_display_label(is_manual: bool) -> str:
+    """Human-readable label for a record's automatic/manual source."""
+    return tr("Manual") if is_manual else tr("Automatic")
+
+
+def milestone_is_manual(record: dict) -> bool:
+    """Determine whether a record counts as Manual source.
+
+    Historical/current records with scope == 'team_manual' must be treated as
+    Manual even if the legacy/current DB's is_manual flag is 0.
+    """
+    scope = str(record.get("scope") or "").lower()
+    if scope == "team_manual":
+        return True
+    return bool(record.get("is_manual"))
+
 
 def milestone_event_type(record: dict, definition=None) -> str:
     """Derive a timeline event type without overloading milestone grade.
@@ -123,7 +152,7 @@ def milestone_record_matches(
     record_grade = str(getattr(definition, "grade", "common") or "common")
     if grade and record_grade != grade:
         return False
-    is_manual = bool(record.get("is_manual"))
+    is_manual = milestone_is_manual(record)
     if source == "manual" and not is_manual:
         return False
     if source == "automatic" and is_manual:
@@ -142,7 +171,7 @@ def select_record_row(table, record_id: int) -> bool:
     return False
 
 def _table_columns() -> list[str]:
-    return [
+    columns = [
         tr("Date"),
         tr("Player Name"),
         tr("Player Name (Korean)"),
@@ -154,6 +183,9 @@ def _table_columns() -> list[str]:
         tr("Description"),
         tr("Notes"),
     ]
+    columns.insert(TYPE_COLUMN_INDEX, tr("Type"))
+    columns.insert(SOURCE_COLUMN_INDEX, tr("Source"))
+    return columns
 
 
 class MilestoneView(QWidget):
@@ -254,6 +286,10 @@ class MilestoneView(QWidget):
             placeholder=tr("Search player, team, or milestone..."),
         )
         self.table_panel.filter_bar.search_input.textChanged.connect(self.refresh)
+        history_header = self.table_panel.table.horizontalHeader()
+        for col_idx, width in ((TYPE_COLUMN_INDEX, 130), (SOURCE_COLUMN_INDEX, 90)):
+            history_header.setSectionResizeMode(col_idx, QHeaderView.ResizeMode.Interactive)
+            self.table_panel.table.setColumnWidth(col_idx, width)
 
         self.meta_label = QLabel("")
         self.meta_label.setWordWrap(True)
@@ -582,6 +618,10 @@ class MilestoneView(QWidget):
                     roster_names=roster_names,
                 )
             games = record.get("games_at_achievement")
+            event_type = milestone_event_type(record, milestone)
+            type_label = event_type_display_label(event_type)
+            is_manual = milestone_is_manual(record)
+            source_label = source_display_label(is_manual)
             values = [
                 record.get("achieved_date") or "",
                 display_name,
@@ -594,6 +634,8 @@ class MilestoneView(QWidget):
                 record.get("description") or "",
                 record.get("notes") or "",
             ]
+            values.insert(TYPE_COLUMN_INDEX, type_label)
+            values.insert(SOURCE_COLUMN_INDEX, source_label)
             grade = milestone.grade if milestone else "common"
             is_injury = record.get("milestone_key") == "manual_injury"
             is_highlighted = (
@@ -605,6 +647,10 @@ class MilestoneView(QWidget):
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 if record_id is not None:
                     item.setData(Qt.ItemDataRole.UserRole, int(record_id))
+                if col_idx == TYPE_COLUMN_INDEX:
+                    item.setToolTip(type_label)
+                elif col_idx == SOURCE_COLUMN_INDEX:
+                    item.setToolTip(source_label)
 
                 if is_injury:
                     item.setForeground(QColor(RED_TEXT))
@@ -618,7 +664,7 @@ class MilestoneView(QWidget):
                             item.setBackground(QColor(colors["bg"]))
                         if colors.get("fg"):
                             item.setForeground(QColor(colors["fg"]))
-                    if bool(record.get("is_manual")) and col_idx == 4:
+                    if is_manual and col_idx in (4, SOURCE_COLUMN_INDEX):
                         item.setForeground(QColor(AMBER_TEXT))
 
                 if is_highlighted:
@@ -712,20 +758,25 @@ class MilestoneView(QWidget):
                     else record.get("milestone_label", record["milestone_key"])
                 )
                 games = record.get("games_at_achievement")
-                writer.writerow(
-                    [
-                        record.get("achieved_date") or "",
-                        display_name,
-                        korean_name,
-                        affiliation,
-                        label,
-                        "" if games is None else games,
-                        record.get("opponent_team") or "",
-                        record.get("opponent_player") or "",
-                        record.get("description") or "",
-                        record.get("notes") or "",
-                    ]
+                type_label = event_type_display_label(
+                    milestone_event_type(record, milestone)
                 )
+                source_label = source_display_label(milestone_is_manual(record))
+                row = [
+                    record.get("achieved_date") or "",
+                    display_name,
+                    korean_name,
+                    affiliation,
+                    label,
+                    "" if games is None else games,
+                    record.get("opponent_team") or "",
+                    record.get("opponent_player") or "",
+                    record.get("description") or "",
+                    record.get("notes") or "",
+                ]
+                row.insert(TYPE_COLUMN_INDEX, type_label)
+                row.insert(SOURCE_COLUMN_INDEX, source_label)
+                writer.writerow(row)
         self.banner.show_info(tr("Export complete: {filepath}").format(filepath=filepath))
 
     def export_streak_csvs(self) -> None:

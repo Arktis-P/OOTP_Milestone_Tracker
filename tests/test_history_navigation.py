@@ -9,11 +9,14 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication, QTableWidget, QTableWidgetItem
 
 from gui.app import MainWindow
+from core.i18n import tr
 from core.milestone.definitions import load_milestones
 from gui.views.milestone_view import (
     milestone_event_type,
+    milestone_is_manual,
     milestone_record_matches,
     select_record_row,
+    source_display_label,
 )
 from gui.views.stats_view import StatsView
 
@@ -84,6 +87,37 @@ def test_timeline_filters_compose_event_grade_and_source() -> None:
     assert not milestone_record_matches(record, definition, event_type="award")
     assert not milestone_record_matches(record, definition, grade="epic")
     assert not milestone_record_matches(record, definition, source="manual")
+
+
+def test_milestone_is_manual_treats_team_manual_scope_as_manual() -> None:
+    # Historical/current team_manual records must be Manual even if is_manual is 0.
+    record = {"scope": "team_manual", "is_manual": 0}
+    assert milestone_is_manual(record) is True
+    assert source_display_label(milestone_is_manual(record)) == tr("Manual")
+
+
+def test_milestone_is_manual_keeps_team_game_and_team_season_automatic() -> None:
+    for scope in ("team_game", "team_season"):
+        record = {"scope": scope, "is_manual": 0}
+        assert milestone_is_manual(record) is False
+        assert source_display_label(milestone_is_manual(record)) == tr("Automatic")
+
+
+def test_milestone_is_manual_falls_back_to_is_manual_flag() -> None:
+    assert milestone_is_manual({"scope": "career", "is_manual": 1}) is True
+    assert milestone_is_manual({"scope": "career", "is_manual": 0}) is False
+
+
+def test_timeline_filters_treat_team_manual_scope_as_manual_source() -> None:
+    record = {
+        "milestone_key": "team_manual_note",
+        "scope": "team_manual",
+        "player_id": 0,
+        "team": "SEA",
+        "is_manual": 0,
+    }
+    assert milestone_record_matches(record, None, source="manual")
+    assert not milestone_record_matches(record, None, source="automatic")
 
 
 def test_title_definitions_are_classified_as_awards() -> None:
