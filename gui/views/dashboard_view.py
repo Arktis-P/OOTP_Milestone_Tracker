@@ -36,6 +36,7 @@ from gui.widgets.grade_styles import dashboard_milestone_color
 from gui.widgets.import_result import build_import_message, show_import_result_banner
 from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.widgets.readiness_checklist import ReadinessChecklistCard
+from gui.widgets.streak_center_dialog import StreakCenterDialog
 from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
 
 
@@ -428,7 +429,18 @@ class DashboardView(QWidget):
         self.navigate_to_milestone.emit({})
 
     def _show_ended_streaks(self) -> None:
-        self.navigate_to_milestone.emit({"scope": "streak"})
+        if self.aggregator.is_closed:
+            QMessageBox.information(
+                self,
+                tr("Streak Center"),
+                tr("Open a league database to view streaks."),
+            )
+            return
+        StreakCenterDialog(
+            self.aggregator,
+            self.settings.current_season,
+            self,
+        ).exec()
 
     def _show_all_predictions(self) -> None:
         self.navigate_to_predict.emit(-1, "")

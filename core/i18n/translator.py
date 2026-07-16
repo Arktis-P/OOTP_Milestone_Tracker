@@ -884,6 +884,46 @@ _KO: dict[str, str] = {
     "Threshold must be greater than 0.": "threshold는 0보다 커야 합니다.",
     "Unknown description_template: {template}":
         "알 수 없는 description_template: {template}",
+
+    # Streak Center
+    "Streak Center":                    "연속기록 센터",
+    "Season {season}. Ended and best values are available stored streak records only.":
+        "{season}시즌. 종료 및 최고 값은 저장된 연속기록만 표시됩니다.",
+    "Active":                           "진행 중",
+    "Recent Ended":                     "최근 종료",
+    "Player":                           "선수",
+    "Team":                             "팀",
+    "Type":                             "유형",
+    "Value":                            "값",
+    "Start":                            "시작",
+    "Last":                             "마지막",
+    "Date":                             "날짜",
+    "Reason":                           "사유",
+    "Stored description":               "저장된 설명",
+    "Search":                           "검색",
+    "Streaks could not be loaded.":      "연속기록을 불러올 수 없습니다.",
+    "The database may be unavailable or from an older version.":
+        "데이터베이스를 사용할 수 없거나 이전 버전일 수 있습니다.",
+    "Stored ended streaks could not be loaded.":
+        "저장된 종료 연속기록을 불러올 수 없습니다.",
+    "All players":                      "전체 선수",
+    "All teams":                        "전체 팀",
+    "All types":                        "전체 유형",
+    "No active streaks match these filters.":
+        "이 필터와 일치하는 진행 중 연속기록이 없습니다.",
+    "Import boxscores or clear filters to see active streaks.":
+        "진행 중 연속기록을 보려면 박스스코어를 가져오거나 필터를 해제하세요.",
+    "No stored ended streak records match these filters.":
+        "이 필터와 일치하는 저장된 종료 연속기록이 없습니다.",
+    "Ended streaks appear here only after streak events have been stored.":
+        "종료 연속기록은 연속기록 이벤트가 저장된 뒤에만 여기에 표시됩니다.",
+    "Unknown":                          "알 수 없음",
+    "Ended":                            "종료",
+    "Milestone":                        "마일스톤",
+    "Stored record":                    "저장된 기록",
+    "Ended and best values shown here are available stored streak records only.":
+        "여기에 표시되는 종료 및 최고 값은 저장된 연속기록만 포함합니다.",
+    "IP":                               "이닝",
 }
 # fmt: on
 
