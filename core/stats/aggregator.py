@@ -1816,8 +1816,35 @@ class Aggregator:
                 SUM(pl.win) AS w,
                 SUM(pl.loss) AS l,
                 SUM(pl.save) AS sv,
+                SUM(COALESCE(pl.is_starter, 0)) AS gs,
+                SUM(COALESCE(pl.hold, 0)) AS holds,
                 {_pitching_ratio_sql()}
-                COUNT(DISTINCT pl.game_id) AS games
+                COUNT(DISTINCT pl.game_id) AS games,
+                (
+                    SELECT COUNT(DISTINCT g2.game_id)
+                    FROM games g2
+                    WHERE g2.season = ?
+                      AND g2.is_mlb = 1
+                      AND COALESCE(g2.is_postseason, 0) = 0
+                      AND (
+                          g2.away_team = (
+                              SELECT pl2.team
+                              FROM pitching_logs pl2
+                              WHERE pl2.player_id = pl.player_id
+                                AND pl2.season = pl.season
+                              ORDER BY pl2.date DESC, pl2.game_id DESC
+                              LIMIT 1
+                          )
+                          OR g2.home_team = (
+                              SELECT pl3.team
+                              FROM pitching_logs pl3
+                              WHERE pl3.player_id = pl.player_id
+                                AND pl3.season = pl.season
+                              ORDER BY pl3.date DESC, pl3.game_id DESC
+                              LIMIT 1
+                          )
+                      )
+                ) AS team_games_elapsed
             FROM pitching_logs pl
             {_MLB_GAME_JOIN_PL}
             JOIN players p ON p.player_id = pl.player_id
@@ -1825,7 +1852,7 @@ class Aggregator:
             GROUP BY pl.player_id
             ORDER BY p.short_name
             """,
-            (season,),
+            (season, season),
         ).fetchall()
         result = []
         for row in rows:
@@ -2333,6 +2360,8 @@ class Aggregator:
                 pl.ip_outs,
                 pl.h, pl.er, pl.bb, pl.k, pl.hr,
                 pl.win, pl.loss, pl.save,
+                COALESCE(pl.hold, 0) AS hold,
+                COALESCE(pl.is_starter, 0) AS is_starter,
                 pl.is_cg, pl.is_sho,
                 pl.decision
             FROM pitching_logs pl

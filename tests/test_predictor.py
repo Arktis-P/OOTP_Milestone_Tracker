@@ -108,7 +108,7 @@ class _PredictionSpyAggregator:
         return [{"id": 42, "games_played": 10, "h": 10}]
 
     def get_season_pitching_totals(self, season: int) -> list[dict]:
-        return [{"id": 42, "games": 10, "w": 3}]
+        return [{"id": 42, "games": 10, "team_games_elapsed": 10, "w": 3}]
 
     def get_batting_career(self, player_id: int) -> dict:
         return {"career_h": 90}
@@ -231,7 +231,7 @@ def test_pitching_starts_and_holds_use_log_fields_when_season_totals_lack_column
             {"is_starter": 1, "hold": 1},
         ],
     )
-    season_pitching = {42: {"id": 42, "games": 3}}
+    season_pitching = {42: {"id": 42, "games": 3, "team_games_elapsed": 3}}
     starts = MilestoneDefinition(
         key="pit_gs_100",
         label="100 Starts",
@@ -260,6 +260,179 @@ def test_pitching_starts_and_holds_use_log_fields_when_season_totals_lack_column
     assert starts_estimate.season_pace == pytest.approx(2 / 3)
     assert holds_estimate.available is True
     assert holds_estimate.season_pace == pytest.approx(2 / 3)
+
+
+def _insert_pitcher_schedule(
+    aggregator: Aggregator,
+    *,
+    player_id: int = 7701,
+    team_games: int = 100,
+    appearances: int = 20,
+    starts: int = 5,
+    holds: int = 4,
+) -> int:
+    team = "Dragons"
+    aggregator.conn.execute(
+        "INSERT INTO players (player_id, full_name, short_name) VALUES (?, ?, ?)",
+        (player_id, "Pace Pitcher", "P. Pitcher"),
+    )
+    for index in range(1, team_games + 1):
+        game_id = 770000 + index
+        aggregator.conn.execute(
+            """
+            INSERT INTO games (
+                game_id, date, season, away_team, home_team,
+                away_score, home_score, away_innings, home_innings, is_mlb
+            ) VALUES (?, ?, 2026, ?, ?, 1, 2, '[]', '[]', 1)
+            """,
+            (game_id, f"2026-04-{index:03d}", "Visitors", team),
+        )
+        if index <= appearances:
+            aggregator.conn.execute(
+                """
+                INSERT INTO pitching_logs (
+                    game_id, player_id, season, team, date, ip_outs,
+                    is_starter, hold
+                ) VALUES (?, ?, 2026, ?, ?, 3, ?, ?)
+                """,
+                (
+                    game_id,
+                    player_id,
+                    team,
+                    f"2026-04-{index:03d}",
+                    1 if index <= starts else 0,
+                    1 if index <= holds else 0,
+                ),
+            )
+    aggregator.conn.commit()
+    return player_id
+
+
+def test_real_pitching_game_logs_include_starter_and_hold_for_estimates(
+    tmp_path: Path,
+) -> None:
+    with Aggregator(tmp_path / "pitching_logs.db") as aggregator:
+        player_id = _insert_pitcher_schedule(
+            aggregator, team_games=100, appearances=20, starts=5, holds=4
+        )
+        logs = aggregator.get_player_pitching_game_logs(player_id, 2026)
+        season_row = {
+            int(row["id"]): row for row in aggregator.get_season_pitching_totals(2026)
+        }[player_id]
+
+        store = PredictionStore(
+            aggregator,
+            _watch_milestones(),
+            season=2026,
+            season_games_total=162,
+        )
+        starts = MilestoneDefinition(
+            key="pit_gs_100",
+            label="100 Starts",
+            stat="career_gs",
+            threshold=100,
+            scope="career",
+            category="pitching",
+        )
+        holds = MilestoneDefinition(
+            key="pit_holds_100",
+            label="100 Holds",
+            stat="career_holds",
+            threshold=100,
+            scope="career",
+            category="pitching",
+        )
+
+        assert len(logs) == 20
+        assert sum(int(row["is_starter"]) for row in logs) == 5
+        assert sum(int(row["hold"]) for row in logs) == 4
+        assert int(season_row["gs"]) == 5
+        assert int(season_row["holds"]) == 4
+        assert int(season_row["games"]) == 20
+        assert int(season_row["team_games_elapsed"]) == 100
+
+        starts_estimate = store._pace_estimate(
+            player_id, starts, 10, {}, {player_id: season_row}, {}
+        )
+        holds_estimate = store._pace_estimate(
+            player_id, holds, 10, {}, {player_id: season_row}, {}
+        )
+
+        assert starts_estimate.available is True
+        assert starts_estimate.games_played_season == 100
+        assert starts_estimate.season_pace == pytest.approx(5 / 100)
+        assert holds_estimate.available is True
+        assert holds_estimate.games_played_season == 100
+        assert holds_estimate.season_pace == pytest.approx(4 / 100)
+
+
+def test_pitcher_projection_uses_team_games_not_appearances(
+    tmp_path: Path,
+) -> None:
+    with Aggregator(tmp_path / "pitching_elapsed.db") as aggregator:
+        player_id = _insert_pitcher_schedule(
+            aggregator, team_games=100, appearances=20, starts=0, holds=4
+        )
+        season_row = {
+            int(row["id"]): row for row in aggregator.get_season_pitching_totals(2026)
+        }[player_id]
+        store = PredictionStore(
+            aggregator,
+            _watch_milestones(),
+            season=2026,
+            season_games_total=162,
+        )
+        milestone = MilestoneDefinition(
+            key="pit_holds_100",
+            label="100 Holds",
+            stat="career_holds",
+            threshold=100,
+            scope="career",
+            category="pitching",
+        )
+
+        estimate = store._pace_estimate(
+            player_id, milestone, 10, {}, {player_id: season_row}, {}
+        )
+
+        assert int(season_row["games"]) == 20
+        assert estimate.available is True
+        assert estimate.games_played_season == 100
+        assert estimate.games_remaining == 62
+        assert estimate.season_pace == pytest.approx(4 / 100)
+        assert estimate.projected_add_season == pytest.approx(2.48)
+
+
+def test_pitcher_projection_unavailable_without_team_elapsed_basis(
+    monkeypatch,
+) -> None:
+    spy = _PredictionSpyAggregator(seeded=True)
+    store = PredictionStore(
+        spy,
+        _watch_milestones(),
+        season=2026,
+        season_games_total=162,
+    )
+    monkeypatch.setattr(
+        spy,
+        "get_player_pitching_game_logs",
+        lambda player_id, season: [{"hold": 1} for _ in range(20)],
+    )
+    milestone = MilestoneDefinition(
+        key="pit_holds_100",
+        label="100 Holds",
+        stat="career_holds",
+        threshold=100,
+        scope="career",
+        category="pitching",
+    )
+
+    estimate = store._pace_estimate(
+        42, milestone, 10, {}, {42: {"id": 42, "games": 20}}, {}
+    )
+
+    assert estimate.available is False
+    assert estimate.reason == pace_estimate.REASON_NO_DATA
 
 
 def test_cached_predictions_expose_decoded_pace_and_renderable_note(

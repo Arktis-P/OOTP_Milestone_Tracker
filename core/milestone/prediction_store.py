@@ -421,9 +421,12 @@ class PredictionStore:
                 available=False, reason=pace_estimate.REASON_NO_DATA, remaining=remaining
             )
 
-        games_played = int(
-            season_stats.get("games_played") or season_stats.get("games") or 0
-        )
+        if milestone.category == "pitching":
+            games_played = int(season_stats.get("team_games_elapsed") or 0)
+        else:
+            games_played = int(
+                season_stats.get("games_played") or season_stats.get("games") or 0
+            )
         if games_played <= 0:
             return pace_estimate.PaceEstimate(
                 available=False, reason=pace_estimate.REASON_NO_DATA, remaining=remaining
@@ -443,7 +446,10 @@ class PredictionStore:
         else:
             if logs is None:
                 logs = self._cached_game_logs(log_cache, "pitching", player_id)
-                recent_values = pace_estimate.pitching_recent_values(stat_key, logs) or []
+            # Pitcher appearances are not a defensible proxy for team games
+            # elapsed, so keep the secondary recent basis unavailable unless
+            # a future data source can provide zero-filled team-game values.
+            recent_values = []
 
         return pace_estimate.estimate_pace(
             current_value=current_val,
