@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 
@@ -185,6 +186,21 @@ class ImportResult:
     replaced: bool = False
 
 
+@dataclass(frozen=True)
+class BoxscoreFileSnapshot:
+    """One source file as it existed when an import run began.
+
+    OOTP can create or rewrite box score files while the application is
+    importing.  Holding the path plus both cheap file identity attributes lets
+    a run remain finite and defer a file that changed instead of repeatedly
+    discovering and parsing a moving target.
+    """
+
+    path: Path
+    mtime_ns: int
+    size: int
+
+
 @dataclass
 class BatchImportResult:
     imported: int = 0
@@ -193,6 +209,7 @@ class BatchImportResult:
     skipped_existing: int = 0
     skipped_non_mlb: int = 0
     skipped_spring_training: int = 0
+    deferred_changed: int = 0
     errors: list[ImportResult] = field(default_factory=list)
     total_scanned: int = 0
     candidates: int = 0
@@ -200,6 +217,7 @@ class BatchImportResult:
     refreshed_game_ids: list[int] = field(default_factory=list)
     scan_elapsed_s: float = 0.0
     import_elapsed_s: float = 0.0
+    source_snapshot: list[BoxscoreFileSnapshot] = field(default_factory=list)
 
 
 @dataclass

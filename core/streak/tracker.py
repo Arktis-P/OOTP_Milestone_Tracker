@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import sqlite3
+import logging
+import time
 from pathlib import Path
 from typing import Any, Callable
 
-from core.stats.aggregator import Aggregator
+from core.stats.aggregator import Aggregator, ImportCancelled
 from core.stats.team_filter import expand_tracked_teams
 from core.streak.engine import (
     StreakEvent,
@@ -29,6 +31,7 @@ APPEARANCE_STREAK_TYPE = "appearance_streak_team_games"
 _LEGACY_APPEARANCE_STREAK_TYPE = "appearance_streak_player_games"
 
 ProgressCallback = Callable[[int, int, str], None]
+logger = logging.getLogger(__name__)
 
 
 class StreakTracker:
@@ -176,6 +179,7 @@ class StreakTracker:
         *,
         progress_callback: ProgressCallback | None = None,
         commit_events: bool = True,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> list[StreakEvent]:
         if not game_ids:
             return []
@@ -183,14 +187,31 @@ class StreakTracker:
         ordered = self._sort_game_ids(game_ids)
         all_events: list[StreakEvent] = []
         total = len(ordered)
+        started = time.monotonic()
+        logger.debug("streak_process_start season=%s games=%s", season, total)
         for index, game_id in enumerate(ordered, start=1):
+            if should_cancel and should_cancel():
+                raise ImportCancelled(
+                    f"Import cancelled during streak processing ({index}/{total})."
+                )
             if progress_callback:
                 progress_callback(index, total, f"streak game {game_id}")
-            all_events.extend(
-                self._process_single_game(
-                    game_id, season, commit_events=commit_events
-                )
+            before_events = len(all_events)
+            logger.debug("streak_process_game_start season=%s game_id=%s index=%s total=%s", season, game_id, index, total)
+            all_events.extend(self._process_single_game(game_id, season, commit_events=commit_events))
+            logger.debug(
+                "streak_process_game_finish season=%s game_id=%s events=%s",
+                season,
+                game_id,
+                len(all_events) - before_events,
             )
+        logger.debug(
+            "streak_process_finish season=%s games=%s events=%s elapsed_s=%.3f",
+            season,
+            total,
+            len(all_events),
+            time.monotonic() - started,
+        )
         return all_events
 
     def _sort_game_ids(self, game_ids: list[int]) -> list[int]:
@@ -225,6 +246,7 @@ class StreakTracker:
 
         for row in batting_rows:
             log = batting_log_from_row(row, player_name=str(row.get("player_name") or ""))
+            logger.debug("streak_process_player season=%s game_id=%s player_id=%s kind=batting", season, game_id, log.player_id)
             state_map = self._load_player_states(
                 season, log.player_id, self._batting_streak_policies
             )
@@ -236,6 +258,7 @@ class StreakTracker:
 
         for row in pitching_rows:
             log = pitching_log_from_row(row, player_name=str(row.get("player_name") or ""))
+            logger.debug("streak_process_player season=%s game_id=%s player_id=%s kind=pitching", season, game_id, log.player_id)
             state_map = self._load_player_states(season, log.player_id, self._pitching_policies)
             batch = process_pitching_log(
                 state_map, log, self._pitching_policies, self.policies

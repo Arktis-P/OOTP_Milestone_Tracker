@@ -215,6 +215,9 @@ class MilestoneView(QWidget):
         self.import_button = QPushButton(tr("📥  Import Boxscores"))
         self.import_button.setObjectName("primaryButton")
         self.import_button.clicked.connect(self.start_import)
+        self.cancel_import_button = QPushButton(tr("Cancel"))
+        self.cancel_import_button.clicked.connect(self._cancel_import)
+        self.cancel_import_button.setVisible(False)
         self.mlb_only_checkbox = QCheckBox(tr("MLB Only"))
         self.mlb_only_checkbox.setChecked(self.settings.import_mlb_only)
         self.mlb_only_checkbox.setToolTip(tr("Imports Major League boxscores only. KBO, WBC, etc. are skipped."))
@@ -382,6 +385,7 @@ class MilestoneView(QWidget):
         action_row = QHBoxLayout()
         action_row.setSpacing(6)
         action_row.addWidget(self.import_button)
+        action_row.addWidget(self.cancel_import_button)
         action_row.addWidget(self.mlb_only_checkbox)
         action_row.addWidget(self.progress_label)
         action_row.addWidget(self.progress_bar)
@@ -466,6 +470,8 @@ class MilestoneView(QWidget):
             return
 
         self.import_button.setEnabled(False)
+        self.cancel_import_button.setVisible(True)
+        self.cancel_import_button.setEnabled(True)
         self.progress_bar.setVisible(True)
         self.progress_label.setVisible(True)
         self.progress_bar.setValue(0)
@@ -484,8 +490,12 @@ class MilestoneView(QWidget):
             parent=self,
         )
         self._import_worker.progress.connect(self._on_import_progress)
-        self._import_worker.finished.connect(self._on_import_finished)
+        self._import_worker.completed.connect(self._on_import_finished)
+        self._import_worker.cancelled.connect(self._on_import_cancelled)
         self._import_worker.error.connect(self._on_import_error)
+        self._import_worker.finished.connect(
+            lambda worker=self._import_worker: self._finish_import_worker(worker)
+        )
         self._import_worker.start()
 
     def _on_import_progress(
@@ -514,6 +524,7 @@ class MilestoneView(QWidget):
 
     def _on_import_finished(self, payload: ImportFinishedPayload) -> None:
         self.import_button.setEnabled(True)
+        self.cancel_import_button.setVisible(False)
         self.progress_bar.setVisible(False)
         self.progress_label.setVisible(False)
 
@@ -533,9 +544,28 @@ class MilestoneView(QWidget):
 
     def _on_import_error(self, message: str) -> None:
         self.import_button.setEnabled(True)
+        self.cancel_import_button.setVisible(False)
         self.progress_bar.setVisible(False)
         self.progress_label.setVisible(False)
         self.banner.show_error(tr("Import failed: {message}").format(message=message))
+
+    def _on_import_cancelled(self, message: str) -> None:
+        self.import_button.setEnabled(True)
+        self.cancel_import_button.setVisible(False)
+        self.progress_bar.setVisible(False)
+        self.progress_label.setVisible(False)
+        self.banner.show_info(message)
+
+    def _cancel_import(self) -> None:
+        if self._import_worker and self._import_worker.isRunning():
+            self.cancel_import_button.setEnabled(False)
+            self.progress_label.setText(tr("Cancelling import after the current item..."))
+            self._import_worker.cancel()
+
+    def _finish_import_worker(self, worker: ImportWorker) -> None:
+        if self._import_worker is worker:
+            self._import_worker = None
+        worker.deleteLater()
 
     def refresh(self) -> None:
         checker = MilestoneChecker(

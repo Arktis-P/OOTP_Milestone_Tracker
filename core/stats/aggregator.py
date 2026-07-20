@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Iterable
 
 from core.db.schema import init_database
 from core.db.sqlite_config import commit_if_in_transaction, configure_sqlite_connection
@@ -28,10 +30,18 @@ from core.stats.team_filter import build_tracked_team_match_sql, expand_tracked_
 from core.stats.models import (
     BatchImportResult,
     BatterLine,
+    BoxscoreFileSnapshot,
     BoxscoreData,
     ImportResult,
     PitcherLine,
 )
+
+
+logger = logging.getLogger(__name__)
+
+
+class ImportCancelled(RuntimeError):
+    """Raised between import units so the worker can roll back atomically."""
 
 _MLB_GAME_JOIN_B = "JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0"
 _MLB_GAME_JOIN_PL = "JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1 AND COALESCE(g.is_postseason, 0) = 0"
@@ -318,11 +328,11 @@ class Aggregator:
         return row is not None
 
     def refresh_batting_events_from_file(
-        self, filepath: str | Path, season: int
+        self, filepath: str | Path, season: int, *, commit: bool = True
     ) -> bool:
         """Re-parse BATTING notes and update per-game event columns on existing logs."""
         path = Path(filepath)
-        game_id = _game_id_from_filename(path.name)
+        game_id = self._processed_game_id_for_filename(path.name) or _game_id_from_filename(path.name)
         if game_id < 0 or not path.is_file() or not self.game_exists(game_id):
             return False
         try:
@@ -353,7 +363,7 @@ class Aggregator:
                 data.home_batting,
             ):
                 changed = True
-        if changed:
+        if changed and commit:
             self._conn.commit()
         return changed
 
@@ -363,21 +373,57 @@ class Aggregator:
         season: int,
         *,
         mlb_only: bool = True,
+        source_snapshot: Iterable[BoxscoreFileSnapshot] | None = None,
+        progress_callback: Callable[[int, int, str], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+        commit: bool = True,
     ) -> list[int]:
-        """Re-parse BATTING notes for every known game with a box score file."""
+        """Re-parse BATTING notes for a finite, optionally frozen source list."""
         directory = Path(boxscore_dir)
         if not directory.is_dir():
             return []
 
         refreshed: list[int] = []
-        for game_id in sorted(self.get_known_game_ids()):
-            path = directory / f"game_box_{game_id}.html"
-            if not path.is_file():
+        snapshots = list(source_snapshot or self._snapshot_boxscore_files(directory))
+        known_game_ids = self.get_known_game_ids()
+        total = len(snapshots)
+        started = time.monotonic()
+        logger.debug(
+            "batting_notes_backfill_start season=%s files=%s known_games=%s",
+            season,
+            total,
+            len(known_game_ids),
+        )
+        for index, snapshot in enumerate(snapshots, start=1):
+            self._raise_if_cancelled(should_cancel, "batting notes backfill", index, total)
+            path = snapshot.path
+            if progress_callback:
+                progress_callback(index, total, path.name)
+            game_id = self._processed_game_id_for_filename(path.name) or _game_id_from_filename(path.name)
+            if game_id not in known_game_ids:
+                continue
+            try:
+                if self._file_snapshot(path) != snapshot:
+                    logger.debug("batting_notes_deferred_changed file=%s", path.name)
+                    continue
+            except OSError:
                 continue
             if mlb_only and not peek_is_mlb_boxscore(path):
                 continue
-            if self.refresh_batting_events_from_file(path, season):
+            try:
+                if self._file_snapshot(path) != snapshot:
+                    logger.debug("batting_notes_deferred_changed_after_peek file=%s", path.name)
+                    continue
+            except OSError:
+                continue
+            if self.refresh_batting_events_from_file(path, season, commit=commit):
                 refreshed.append(game_id)
+        logger.debug(
+            "batting_notes_backfill_finish season=%s refreshed=%s elapsed_s=%.3f",
+            season,
+            len(refreshed),
+            time.monotonic() - started,
+        )
         return refreshed
 
     def purge_spring_training_games(self, boxscore_dir: str | Path) -> list[int]:
@@ -616,21 +662,46 @@ class Aggregator:
         return remapped
 
     def import_boxscore(
-        self, data: BoxscoreData, season: int, *, is_mlb: bool = True
+        self,
+        data: BoxscoreData,
+        season: int,
+        *,
+        is_mlb: bool = True,
+        commit: bool = True,
     ) -> ImportResult:
+        """Import one parsed game, optionally under a caller-owned transaction."""
         game_id = self._resolve_game_id_for_import(data.meta.game_id, season)
         if game_id != data.meta.game_id:
             data.meta.game_id = game_id
         if self.game_exists(game_id):
             return ImportResult(game_id=game_id, skipped=True)
 
+        nested_transaction = self._conn.in_transaction
+        if nested_transaction and commit:
+            return ImportResult(
+                game_id=game_id,
+                error=(
+                    "Cannot auto-commit an import inside an existing transaction; "
+                    "use commit=False and let the external owner commit."
+                ),
+            )
         try:
-            self._conn.execute("BEGIN")
+            if nested_transaction:
+                self._conn.execute("SAVEPOINT import_boxscore")
+            else:
+                self._conn.execute("BEGIN")
             self._import_boxscore_in_transaction(data, season, is_mlb=is_mlb)
-            self._conn.commit()
+            if nested_transaction:
+                self._conn.execute("RELEASE SAVEPOINT import_boxscore")
+            elif commit:
+                self._conn.commit()
             return ImportResult(game_id=game_id, skipped=False)
         except Exception as exc:
-            self._conn.rollback()
+            if nested_transaction:
+                self._conn.execute("ROLLBACK TO SAVEPOINT import_boxscore")
+                self._conn.execute("RELEASE SAVEPOINT import_boxscore")
+            else:
+                self._conn.rollback()
             return ImportResult(game_id=game_id, skipped=False, error=str(exc))
 
     def _import_boxscore_in_transaction(
@@ -693,9 +764,9 @@ class Aggregator:
         since_mtime: float | None = None,  # kept for backward compat; superseded by processed_boxscores
         mlb_only: bool = True,
         progress_callback: Any | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+        commit: bool = True,
     ) -> BatchImportResult:
-        import time
-
         directory = Path(boxscore_dir)
         if not directory.is_dir():
             return BatchImportResult(
@@ -703,20 +774,28 @@ class Aggregator:
             )
 
         t_start = time.monotonic()
-
-        files = sorted(directory.glob(GAME_BOX_GLOB))
+        files = self._snapshot_boxscore_files(directory)
+        logger.debug(
+            "boxscore_import_start season=%s files=%s directory=%s mlb_only=%s",
+            season,
+            len(files),
+            directory,
+            mlb_only,
+        )
         # Load {filename: stored_mtime}. A pure filename-only skip would miss
         # files OOTP rewrites in place under the same name (e.g. a
         # spring-training placeholder later overwritten with the real
         # regular-season game once it's actually played) — comparing mtime
         # catches that instead of skipping the file forever.
         processed_states = self._get_processed_file_states()
-        result = BatchImportResult(total_scanned=len(files))
+        result = BatchImportResult(total_scanned=len(files), source_snapshot=files)
         # Collect (filename, game_id, mtime, is_mlb) rows to bulk-insert at the end.
         new_processed: list[tuple] = []
 
-        for index, file_path in enumerate(files, start=1):
+        for index, snapshot in enumerate(files, start=1):
+            file_path = snapshot.path
             try:
+                self._raise_if_cancelled(should_cancel, "boxscore import", index, len(files))
                 fname = file_path.name
                 stored_mtime = processed_states.get(fname)
 
@@ -724,7 +803,7 @@ class Aggregator:
                 # far cheaper than a re-parse, and only new/changed files go
                 # on to the expensive MLB-peek/parse steps below.
                 try:
-                    file_mtime = file_path.stat().st_mtime
+                    current_state = self._file_snapshot(file_path)
                 except OSError as exc:
                     result.errors.append(
                         ImportResult(
@@ -733,8 +812,31 @@ class Aggregator:
                     )
                     continue
 
+                # A file that was added, deleted, or rewritten after the run
+                # started belongs to the next run.  Do not wait for OOTP or
+                # re-scan the directory here: that is how an import can chase
+                # a perpetually changing source forever.
+                if current_state != snapshot:
+                    result.deferred_changed += 1
+                    logger.debug(
+                        "boxscore_import_deferred_changed file=%s expected_mtime_ns=%s "
+                        "expected_size=%s actual_mtime_ns=%s actual_size=%s",
+                        fname,
+                        snapshot.mtime_ns,
+                        snapshot.size,
+                        current_state.mtime_ns,
+                        current_state.size,
+                    )
+                    continue
+                file_mtime = snapshot.mtime_ns / 1_000_000_000
+
                 # Fast path: file is known and unchanged since we last saw it.
-                if stored_mtime is not None and abs(file_mtime - stored_mtime) < 1.0:
+                # ``mtime`` is persisted as a SQLite REAL, which retains the
+                # precision of the float we derived from ``st_mtime_ns``.
+                # Do not use a one-second tolerance here: OOTP can rewrite a
+                # boxscore in place within the same second, and that rewrite
+                # must be re-imported on the next run.
+                if stored_mtime is not None and file_mtime == stored_mtime:
                     result.skipped_existing += 1
                     continue
 
@@ -758,7 +860,25 @@ class Aggregator:
                 result.candidates += 1
                 t_parse = time.monotonic()
                 try:
+                    logger.debug("boxscore_parse_start season=%s game_id=%s file=%s", season, game_id, fname)
                     data = BoxscoreHTMLParser(file_path).parse()
+                    # Detect a rewrite that raced with parsing.  The parsed
+                    # data is intentionally discarded; a later import gets a
+                    # fresh, stable snapshot of the file.
+                    if self._file_snapshot(file_path) != snapshot:
+                        result.deferred_changed += 1
+                        logger.debug(
+                            "boxscore_import_deferred_changed_during_parse file=%s",
+                            fname,
+                        )
+                        continue
+                    logger.debug(
+                        "boxscore_parse_finish season=%s game_id=%s file=%s elapsed_s=%.3f",
+                        season,
+                        data.meta.game_id,
+                        fname,
+                        time.monotonic() - t_parse,
+                    )
                     if data.meta.is_spring_training:
                         result.skipped_spring_training += 1
                         processed_game_id = self._processed_game_id_for_filename(fname)
@@ -786,10 +906,17 @@ class Aggregator:
                             # genuinely new regular-season game. No prior raw game
                             # exists, so this remains a normal atomic insert.
                             import_result = self.import_boxscore(
-                                data, season, is_mlb=mlb_only
+                                data, season, is_mlb=mlb_only, commit=commit
                             )
                     else:
-                        import_result = self.import_boxscore(data, season, is_mlb=mlb_only)
+                        import_result = self.import_boxscore(
+                            data, season, is_mlb=mlb_only, commit=commit
+                        )
+                except ImportCancelled:
+                    # Cancellation is control flow, not a per-file parser
+                    # failure.  Let the worker-owned transaction roll back
+                    # immediately instead of scanning every remaining file.
+                    raise
                 except ParserError as exc:
                     result.errors.append(ImportResult(game_id=game_id, error=str(exc)))
                     continue
@@ -834,10 +961,56 @@ class Aggregator:
         if result.imported:
             self.update_primary_positions()
 
-        if new_processed or result.imported:
+        if (new_processed or result.imported) and commit:
             self._conn.commit()
 
+        logger.debug(
+            "boxscore_import_finish season=%s scanned=%s candidates=%s imported=%s "
+            "skipped_existing=%s deferred_changed=%s errors=%s scan_elapsed_s=%.3f "
+            "import_elapsed_s=%.3f",
+            season,
+            result.total_scanned,
+            result.candidates,
+            result.imported,
+            result.skipped_existing,
+            result.deferred_changed,
+            len(result.errors),
+            result.scan_elapsed_s,
+            result.import_elapsed_s,
+        )
+
         return result
+
+    @staticmethod
+    def _file_snapshot(path: Path) -> BoxscoreFileSnapshot:
+        stat = path.stat()
+        return BoxscoreFileSnapshot(
+            path=path,
+            mtime_ns=stat.st_mtime_ns,
+            size=stat.st_size,
+        )
+
+    def _snapshot_boxscore_files(self, directory: Path) -> list[BoxscoreFileSnapshot]:
+        """Capture one finite source list for an import invocation."""
+        snapshots: list[BoxscoreFileSnapshot] = []
+        for path in sorted(directory.glob(GAME_BOX_GLOB)):
+            try:
+                snapshots.append(self._file_snapshot(path))
+            except OSError as exc:
+                logger.debug("boxscore_import_snapshot_skip file=%s error=%s", path, exc)
+        logger.debug("boxscore_import_snapshot files=%s directory=%s", len(snapshots), directory)
+        return snapshots
+
+    @staticmethod
+    def _raise_if_cancelled(
+        should_cancel: Callable[[], bool] | None,
+        stage: str,
+        current: int,
+        total: int,
+    ) -> None:
+        if should_cancel and should_cancel():
+            logger.debug("boxscore_import_cancelled stage=%s current=%s total=%s", stage, current, total)
+            raise ImportCancelled(f"Import cancelled during {stage} ({current}/{total}).")
 
     def _processed_game_id_for_filename(self, filename: str) -> int | None:
         row = self._conn.execute(
@@ -2200,7 +2373,10 @@ class Aggregator:
             names = expand_tracked_teams(tokens, custom_teams)
             placeholders = ",".join("?" * len(names))
             roster_where, roster_params = build_tracked_team_match_sql(
-                tokens, custom_teams
+                tokens,
+                custom_teams,
+                abbr_col="pr.team_abbr",
+                name_col="pr.team_name",
             )
             affiliation_where, affiliation_params = build_tracked_team_match_sql(
                 tokens,
@@ -2227,24 +2403,87 @@ class Aggregator:
                     ) AS is_pitcher
                 FROM players p
                 WHERE p.player_id IN (
+                    SELECT pr.player_id
+                    FROM player_roster pr
+                    WHERE {roster_where}
+                      AND pr.season = (
+                          SELECT MAX(pr2.season)
+                          FROM player_roster pr2
+                          WHERE pr2.player_id = pr.player_id
+                      )
+                    UNION
                     SELECT b.player_id FROM batting_logs b
                     JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
                     WHERE b.team IN ({placeholders})
+                      AND NOT EXISTS (
+                          SELECT 1 FROM player_roster pr2
+                          WHERE pr2.player_id = b.player_id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM batting_logs b2
+                          JOIN games g2 ON g2.game_id = b2.game_id AND g2.is_mlb = 1
+                          WHERE b2.player_id = b.player_id
+                            AND (g2.date > g.date OR (g2.date = g.date AND g2.game_id > g.game_id))
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM pitching_logs pl2
+                          JOIN games g2 ON g2.game_id = pl2.game_id AND g2.is_mlb = 1
+                          WHERE pl2.player_id = b.player_id
+                            AND (g2.date > g.date OR (g2.date = g.date AND g2.game_id > g.game_id))
+                      )
                     UNION
                     SELECT pl.player_id FROM pitching_logs pl
                     JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
                     WHERE pl.team IN ({placeholders})
-                    UNION
-                    SELECT player_id FROM player_roster
-                    WHERE {roster_where}
+                      AND NOT EXISTS (
+                          SELECT 1 FROM player_roster pr2
+                          WHERE pr2.player_id = pl.player_id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM batting_logs b2
+                          JOIN games g2 ON g2.game_id = b2.game_id AND g2.is_mlb = 1
+                          WHERE b2.player_id = pl.player_id
+                            AND (g2.date > g.date OR (g2.date = g.date AND g2.game_id > g.game_id))
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM pitching_logs pl2
+                          JOIN games g2 ON g2.game_id = pl2.game_id AND g2.is_mlb = 1
+                          WHERE pl2.player_id = pl.player_id
+                            AND (g2.date > g.date OR (g2.date = g.date AND g2.game_id > g.game_id))
+                      )
                     UNION
                     SELECT DISTINCT pta.player_id
                     FROM player_team_affiliations pta
                     WHERE {affiliation_where}
+                      AND NOT EXISTS (
+                          SELECT 1 FROM player_roster pr2
+                          WHERE pr2.player_id = pta.player_id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM batting_logs b2
+                          JOIN games g2 ON g2.game_id = b2.game_id AND g2.is_mlb = 1
+                          WHERE b2.player_id = pta.player_id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM pitching_logs pl2
+                          JOIN games g2 ON g2.game_id = pl2.game_id AND g2.is_mlb = 1
+                          WHERE pl2.player_id = pta.player_id
+                      )
+                      AND pta.season = (
+                          SELECT MAX(pta2.season)
+                          FROM player_team_affiliations pta2
+                          WHERE pta2.player_id = pta.player_id
+                      )
+                      AND 1 = (
+                          SELECT COUNT(DISTINCT pta3.team_abbr)
+                          FROM player_team_affiliations pta3
+                          WHERE pta3.player_id = pta.player_id
+                            AND pta3.season = pta.season
+                      )
                 )
                 ORDER BY p.full_name
                 """,
-                names + names + roster_params + affiliation_params,
+                roster_params + names + names + affiliation_params,
             ).fetchall()
         return [dict(row) for row in rows]
 
@@ -2611,22 +2850,100 @@ class Aggregator:
             tokens = [team.strip().upper() for team in tracked_teams if team.strip()]
             names = expand_tracked_teams(tokens, custom_teams)
             name_ph = ",".join("?" * len(names))
-            token_ph = ",".join("?" * len(tokens))
+            roster_where, roster_params = build_tracked_team_match_sql(
+                tokens,
+                custom_teams,
+                abbr_col="pr.team_abbr",
+                name_col="pr.team_name",
+            )
+            affiliation_where, affiliation_params = build_tracked_team_match_sql(
+                tokens,
+                custom_teams,
+                abbr_col="pta.team_abbr",
+                name_col="pta.team_name",
+            )
             query += f"""
                 AND mp.player_id IN (
+                    SELECT pr.player_id
+                    FROM player_roster pr
+                    WHERE {roster_where}
+                      AND pr.season = (
+                          SELECT MAX(pr2.season)
+                          FROM player_roster pr2
+                          WHERE pr2.player_id = pr.player_id
+                      )
+                    UNION
                     SELECT b.player_id FROM batting_logs b
                     JOIN games g ON g.game_id = b.game_id AND g.is_mlb = 1
                     WHERE b.team IN ({name_ph})
+                      AND NOT EXISTS (
+                          SELECT 1 FROM player_roster pr2
+                          WHERE pr2.player_id = b.player_id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM batting_logs b2
+                          JOIN games g2 ON g2.game_id = b2.game_id AND g2.is_mlb = 1
+                          WHERE b2.player_id = b.player_id
+                            AND (g2.date > g.date OR (g2.date = g.date AND g2.game_id > g.game_id))
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM pitching_logs pl2
+                          JOIN games g2 ON g2.game_id = pl2.game_id AND g2.is_mlb = 1
+                          WHERE pl2.player_id = b.player_id
+                            AND (g2.date > g.date OR (g2.date = g.date AND g2.game_id > g.game_id))
+                      )
                     UNION
                     SELECT pl.player_id FROM pitching_logs pl
                     JOIN games g ON g.game_id = pl.game_id AND g.is_mlb = 1
                     WHERE pl.team IN ({name_ph})
+                      AND NOT EXISTS (
+                          SELECT 1 FROM player_roster pr2
+                          WHERE pr2.player_id = pl.player_id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM batting_logs b2
+                          JOIN games g2 ON g2.game_id = b2.game_id AND g2.is_mlb = 1
+                          WHERE b2.player_id = pl.player_id
+                            AND (g2.date > g.date OR (g2.date = g.date AND g2.game_id > g.game_id))
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM pitching_logs pl2
+                          JOIN games g2 ON g2.game_id = pl2.game_id AND g2.is_mlb = 1
+                          WHERE pl2.player_id = pl.player_id
+                            AND (g2.date > g.date OR (g2.date = g.date AND g2.game_id > g.game_id))
+                      )
                     UNION
-                    SELECT player_id FROM player_roster
-                    WHERE team_abbr IN ({token_ph}) OR team_name IN ({name_ph})
+                    SELECT DISTINCT pta.player_id
+                    FROM player_team_affiliations pta
+                    WHERE {affiliation_where}
+                      AND NOT EXISTS (
+                          SELECT 1 FROM player_roster pr2
+                          WHERE pr2.player_id = pta.player_id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM batting_logs b2
+                          JOIN games g2 ON g2.game_id = b2.game_id AND g2.is_mlb = 1
+                          WHERE b2.player_id = pta.player_id
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM pitching_logs pl2
+                          JOIN games g2 ON g2.game_id = pl2.game_id AND g2.is_mlb = 1
+                          WHERE pl2.player_id = pta.player_id
+                      )
+                      AND pta.season = (
+                          SELECT MAX(pta2.season)
+                          FROM player_team_affiliations pta2
+                          WHERE pta2.player_id = pta.player_id
+                      )
+                      AND 1 = (
+                          SELECT COUNT(DISTINCT pta3.team_abbr)
+                          FROM player_team_affiliations pta3
+                          WHERE pta3.player_id = pta.player_id
+                            AND pta3.season = pta.season
+                      )
                 )
             """
-            params.extend(names + names + tokens + names)
+            params.extend(roster_params + names + names + affiliation_params)
         query += " ORDER BY mp.progress_pct DESC, mp.player_name"
         rows = self._conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]

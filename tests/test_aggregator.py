@@ -9,7 +9,7 @@ import pytest
 
 from core.parser.batting_notes import get_player_event_counts
 from core.parser.boxscore_html import BoxscoreHTMLParser
-from core.stats.aggregator import Aggregator
+from core.stats.aggregator import Aggregator, ImportCancelled
 from core.stats.ip_utils import ip_to_outs, outs_to_ip_str
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -124,6 +124,81 @@ def test_import_all_new(aggregator: Aggregator) -> None:
     assert again.imported == 0
     assert again.skipped_existing == result.total_scanned
     assert again.candidates == 0
+
+
+def test_import_snapshot_defers_file_rewritten_during_parse(
+    aggregator: Aggregator, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "game_box_13.html"
+    path.write_bytes((SAMPLES_BOX / "game_box_13.html").read_bytes())
+    original_parse = BoxscoreHTMLParser.parse
+    rewritten = False
+
+    def rewrite_after_parse(parser: BoxscoreHTMLParser):
+        nonlocal rewritten
+        data = original_parse(parser)
+        if not rewritten:
+            rewritten = True
+            parser.filepath.write_bytes(parser.filepath.read_bytes() + b"\n")
+        return data
+
+    monkeypatch.setattr(BoxscoreHTMLParser, "parse", rewrite_after_parse)
+    result = aggregator.import_all_new(tmp_path, season=2026)
+
+    assert result.total_scanned == 1
+    assert len(result.source_snapshot) == 1
+    assert result.deferred_changed == 1
+    assert result.imported == 0
+    assert aggregator.game_exists(13) is False
+
+
+def test_import_commit_false_leaves_all_raw_changes_for_owner(
+    aggregator: Aggregator,
+) -> None:
+    result = aggregator.import_all_new(SAMPLES_BOX, season=2026, commit=False)
+
+    assert result.imported >= 1
+    assert aggregator.conn.in_transaction
+    assert aggregator.get_known_game_ids()
+    aggregator.conn.rollback()
+    assert aggregator.get_known_game_ids() == set()
+
+
+def test_import_cancellation_stops_before_writing(aggregator: Aggregator) -> None:
+    with pytest.raises(ImportCancelled, match="boxscore import"):
+        aggregator.import_all_new(
+            SAMPLES_BOX,
+            season=2026,
+            should_cancel=lambda: True,
+            commit=False,
+        )
+
+    assert aggregator.get_known_game_ids() == set()
+
+
+def test_processed_mtime_detects_rewrite_within_one_second(
+    aggregator: Aggregator, tmp_path: Path
+) -> None:
+    path = tmp_path / "game_box_13.html"
+    path.write_bytes((SAMPLES_BOX / "game_box_13.html").read_bytes())
+    original = path.stat()
+    os.utime(
+        path,
+        ns=(original.st_atime_ns, original.st_mtime_ns + 500_000_000),
+    )
+    aggregator.conn.execute(
+        """
+        INSERT INTO processed_boxscores (filename, game_id, mtime, is_mlb)
+        VALUES (?, ?, ?, ?)
+        """,
+        (path.name, 13, original.st_mtime_ns / 1_000_000_000, 1),
+    )
+    aggregator.conn.commit()
+
+    result = aggregator.import_all_new(tmp_path, season=2026)
+
+    assert result.skipped_existing == 0
+    assert result.imported == 1
 
 
 def test_import_mlb_only_filter(aggregator: Aggregator, tmp_path: Path) -> None:

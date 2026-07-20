@@ -119,6 +119,78 @@ def test_tracked_sf_matches_boxscore_team_name(giants_game_db: Aggregator) -> No
     assert len(players) > 0
 
 
+def test_current_roster_overrides_historical_tracked_team_logs(tmp_path: Path) -> None:
+    agg = Aggregator(tmp_path / "current-roster.db")
+    try:
+        agg.upsert_player(70001, "Moved Player", "M. Player")
+        agg.conn.execute(
+            """
+            INSERT INTO games (
+                game_id, date, season, away_team, home_team, away_score, home_score,
+                away_innings, home_innings, is_mlb
+            ) VALUES (70001, '2026-04-01', 2026, 'SEA', 'BOS', 1, 2, '', '', 1)
+            """
+        )
+        agg.conn.execute(
+            """
+            INSERT INTO batting_logs (
+                game_id, player_id, season, team, date, ab, r, h, rbi, bb, k
+            ) VALUES (70001, 70001, 2026, 'SEA', '2026-04-01', 4, 0, 1, 0, 0, 1)
+            """
+        )
+        agg.upsert_player_roster(
+            [
+                {
+                    "player_id": 70001,
+                    "team_abbr": "BOS",
+                    "team_name": "Boston Red Sox",
+                }
+            ],
+            season=2026,
+        )
+
+        players = agg.get_tracked_players(["SEA"])
+
+        assert [p["player_id"] for p in players] == []
+    finally:
+        agg.close()
+
+
+def test_latest_boxscore_team_overrides_historical_team_without_roster(
+    tmp_path: Path,
+) -> None:
+    agg = Aggregator(tmp_path / "latest-boxscore.db")
+    try:
+        agg.upsert_player(70002, "Moved Again", "M. Again")
+        for game_id, date, team in (
+            (70002, "2026-04-01", "SEA"),
+            (70003, "2026-07-01", "BOS"),
+        ):
+            agg.conn.execute(
+                """
+                INSERT INTO games (
+                    game_id, date, season, away_team, home_team, away_score, home_score,
+                    away_innings, home_innings, is_mlb
+                ) VALUES (?, ?, 2026, ?, 'NYY', 1, 2, '', '', 1)
+                """,
+                (game_id, date, team),
+            )
+            agg.conn.execute(
+                """
+                INSERT INTO batting_logs (
+                    game_id, player_id, season, team, date, ab, r, h, rbi, bb, k
+                ) VALUES (?, 70002, 2026, ?, ?, 4, 0, 1, 0, 0, 1)
+                """,
+                (game_id, team, date),
+            )
+        agg.conn.commit()
+
+        assert agg.get_tracked_players(["SEA"]) == []
+        assert [p["player_id"] for p in agg.get_tracked_players(["BOS"])] == [70002]
+    finally:
+        agg.close()
+
+
 def test_build_tracked_team_match_sql_fuzzy_custom_name() -> None:
     clause, params = build_tracked_team_match_sql(
         ["SY"],

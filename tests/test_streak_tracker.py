@@ -15,6 +15,7 @@ from core.streak.policies import (
     should_record_streak_on_break,
     streak_record_label,
 )
+from core.stats.aggregator import ImportCancelled
 from core.streak.tracker import StreakTracker, rebuild_season_streaks
 
 
@@ -186,6 +187,33 @@ def test_tracker_records_milestone_only_when_streak_ends(aggregator: Aggregator)
     assert int(rows[0]["game_id"]) == 11
     assert rows[0]["description"] == "2026-03-01 부터 2026-03-10 까지, 10경기 연속"
     assert rows[0]["achieved_date"] == "2026-03-11"
+
+
+def test_tracker_cancellation_rolls_back_caller_owned_transaction(
+    aggregator: Aggregator,
+) -> None:
+    _seed_game_with_hit_streak(aggregator, game_id=1, day=1, h=1)
+    _seed_game_with_hit_streak(aggregator, game_id=2, day=2, h=1)
+    calls = 0
+
+    def cancel_after_first_game() -> bool:
+        nonlocal calls
+        calls += 1
+        return calls > 1
+
+    aggregator.conn.execute("BEGIN")
+    with pytest.raises(ImportCancelled, match="streak processing"):
+        StreakTracker(aggregator).process_new_games(
+            [1, 2],
+            2026,
+            commit_events=False,
+            should_cancel=cancel_after_first_game,
+        )
+    aggregator.conn.rollback()
+
+    assert aggregator.conn.execute(
+        "SELECT COUNT(*) FROM streak_processed_games WHERE season = 2026"
+    ).fetchone()[0] == 0
 
 
 def test_rebuild_season_streaks_preserves_manual_streak_record(

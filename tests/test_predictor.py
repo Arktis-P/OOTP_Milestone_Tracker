@@ -154,6 +154,65 @@ def test_track_from_filters_distant_career_totals(
     assert "bat_career_hr_500" not in keys
 
 
+def test_cached_predictions_exclude_players_moved_off_tracked_team(
+    tmp_path: Path,
+) -> None:
+    with Aggregator(tmp_path / "moved-predictions.db") as aggregator:
+        aggregator.upsert_player(70001, "Moved Player", "M. Player")
+        aggregator.conn.execute(
+            """
+            INSERT INTO games (
+                game_id, date, season, away_team, home_team, away_score, home_score,
+                away_innings, home_innings, is_mlb
+            ) VALUES (70001, '2026-04-01', 2026, 'SEA', 'BOS', 1, 2, '', '', 1)
+            """
+        )
+        aggregator.conn.execute(
+            """
+            INSERT INTO batting_logs (
+                game_id, player_id, season, team, date, ab, r, h, rbi, bb, k
+            ) VALUES (70001, 70001, 2026, 'SEA', '2026-04-01', 4, 0, 1, 0, 0, 1)
+            """
+        )
+        aggregator.upsert_player_roster(
+            [
+                {
+                    "player_id": 70001,
+                    "team_abbr": "BOS",
+                    "team_name": "Boston Red Sox",
+                }
+            ],
+            season=2026,
+        )
+        aggregator.upsert_milestone_predictions(
+            [
+                {
+                    "player_id": 70001,
+                    "milestone_key": "bat_h_100",
+                    "season": 2026,
+                    "player_name": "Moved Player",
+                    "milestone_label": "100 Hits",
+                    "grade": "common",
+                    "current_value": 90,
+                    "threshold": 100,
+                    "remaining": 10,
+                    "progress_pct": 90.0,
+                    "season_note": "pre_season",
+                }
+            ]
+        )
+
+        store = PredictionStore(
+            aggregator,
+            _watch_milestones(),
+            season=2026,
+            season_games_total=162,
+            tracked_teams=["SEA"],
+        )
+
+        assert store.list_cached() == []
+
+
 def test_reseed_completes_quickly(aggregator: Aggregator, milestones) -> None:
     store = PredictionStore(
         aggregator,
