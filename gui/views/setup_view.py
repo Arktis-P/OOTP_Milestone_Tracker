@@ -122,7 +122,13 @@ class SetupView(QWidget):
 
         self.gemini_api_key_edit = QLineEdit()
         self.gemini_api_key_edit.setPlaceholderText(tr("AIza... (Gemini API key)"))
+        self.gemini_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.gemini_api_key_edit.setText(getattr(self.settings, "gemini_api_key", ""))
+        self.gemini_model_edit = QLineEdit()
+        self.gemini_model_edit.setPlaceholderText("gemini-3.5-flash")
+        self.gemini_model_edit.setText(
+            getattr(self.settings, "gemini_model_preference", "gemini-3.5-flash")
+        )
         self.korean_badge.setObjectName("badgeLabel")
         self.korean_badge.setVisible(False)
         self._refresh_korean_names_button()
@@ -247,6 +253,7 @@ class SetupView(QWidget):
         gemini_key_row_1.addWidget(gemini_key_label_1)
         gemini_key_row_1.addWidget(self.gemini_api_key_edit, stretch=1)
         tools_card.add_layout(gemini_key_row_1)
+        self._add_gemini_model_setting(tools_card)
         tools_card.add_widget(
             tool_row(
                 tr("Update App Reference Files"),
@@ -351,6 +358,7 @@ class SetupView(QWidget):
         gemini_key_row_2.addWidget(gemini_key_label_2)
         gemini_key_row_2.addWidget(self.gemini_api_key_edit, stretch=1)
         tools_card.add_layout(gemini_key_row_2)
+        self._add_gemini_model_setting(tools_card)
         tools_card.add_widget(
             tool_row(
                 tr("Edit Milestone Criteria"),
@@ -394,6 +402,16 @@ class SetupView(QWidget):
         self.recover_regular_season_button.clicked.connect(self._recover_regular_season_games)
         self._recovery_worker = None
         self._refresh_database_summary()
+
+    def _add_gemini_model_setting(self, tools_card: CardPanel) -> None:
+        """Add a preference only; availability is checked via Models API at use."""
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        label = QLabel(tr("Gemini Preferred Model:"))
+        label.setObjectName("sectionLabel")
+        row.addWidget(label)
+        row.addWidget(self.gemini_model_edit, stretch=1)
+        tools_card.add_layout(row)
 
     def _build_dev_tools_panel(self) -> QWidget:
         panel = QFrame()
@@ -831,7 +849,11 @@ class SetupView(QWidget):
         from gui.widgets.korean_name_mapping_dialog import KoreanNameMappingDialog
 
         api_key = self.gemini_api_key_edit.text().strip()
-        dialog = KoreanNameMappingDialog(self, api_key=api_key)
+        dialog = KoreanNameMappingDialog(
+            self,
+            api_key=api_key,
+            model_preference=self.gemini_model_edit.text().strip() or "gemini-3.5-flash",
+        )
         dialog.exec()
         self._refresh_korean_names_button()
 
@@ -908,6 +930,9 @@ class SetupView(QWidget):
         language_changed = new_language != getattr(self.settings, "language", "ko")
         updated.language = new_language
         updated.gemini_api_key = self.gemini_api_key_edit.text().strip()
+        updated.gemini_model_preference = (
+            self.gemini_model_edit.text().strip() or "gemini-3.5-flash"
+        )
         self.settings = updated
         self.settings_manager.save(updated)
         if language_changed:

@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.i18n import tr
+from core.roster.gemini_korean import GeminiTranslationResult
 from core.roster.korean_names import KoreanNameStore, PendingName, pending_full_name_label
 from core.roster.korean_name_suggest import suggest_korean_name
 from gui.theme import TEXT_MUTED, TEXT_PRIMARY
@@ -133,6 +134,7 @@ class KoreanNameMappingDialog(QDialog):
         parent: QWidget | None = None,
         *,
         api_key: str = "",
+        model_preference: str = "gemini-3.5-flash",
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(tr("Korean Name Mapping"))
@@ -140,6 +142,7 @@ class KoreanNameMappingDialog(QDialog):
         self._store = KoreanNameStore.load()
         self._updating_table = False
         self._api_key = api_key
+        self._model_preference = model_preference
 
         intro = muted_label(
             tr(
@@ -178,13 +181,20 @@ class KoreanNameMappingDialog(QDialog):
         self.gemini_button = QPushButton(tr("Translate via Gemini"))
         self.gemini_button.clicked.connect(self._translate_with_gemini)
         self.gemini_button.setEnabled(bool(api_key))
+        self.gemini_check_button = QPushButton(tr("Check Gemini Connection"))
+        self.gemini_check_button.clicked.connect(self._check_gemini_connection)
+        self.gemini_check_button.setEnabled(bool(api_key))
         if not api_key:
             self.gemini_button.setToolTip(tr("Set Gemini API key in Settings first."))
 
         self.gemini_status_label = QLabel("")
         self.gemini_status_label.setStyleSheet(f"color: {TEXT_MUTED};")
         self.gemini_status_label.hide()
+        self.cancel_gemini_button = QPushButton(tr("Cancel Gemini"))
+        self.cancel_gemini_button.clicked.connect(self._cancel_gemini)
+        self.cancel_gemini_button.hide()
         self._gemini_worker = None
+        self._gemini_diagnostic_worker = None
         self._gemini_pending: list[PendingName] = []
 
         self.table = QTableWidget(0, 5)
@@ -212,7 +222,9 @@ class KoreanNameMappingDialog(QDialog):
         top_row.addWidget(self.search_input, stretch=1)
         top_row.addWidget(self.refresh_button)
         top_row.addWidget(self.gemini_button)
+        top_row.addWidget(self.gemini_check_button)
         top_row.addWidget(self.gemini_status_label)
+        top_row.addWidget(self.cancel_gemini_button)
 
         table_panel = table_card(tr("Pending Mappings"), self.table)
 
@@ -335,8 +347,14 @@ class KoreanNameMappingDialog(QDialog):
         self.gemini_button.setEnabled(False)
         self.gemini_status_label.setText(tr("Translating via Gemini..."))
         self.gemini_status_label.show()
+        self.cancel_gemini_button.show()
 
-        worker = GeminiTranslateWorker(self._api_key, items, self)
+        worker = GeminiTranslateWorker(
+            self._api_key,
+            items,
+            self,
+            model_preference=self._model_preference,
+        )
         worker.status.connect(self.gemini_status_label.setText)
         worker.finished.connect(self._on_gemini_finished)
         worker.error.connect(self._on_gemini_error)
@@ -345,10 +363,87 @@ class KoreanNameMappingDialog(QDialog):
         self._gemini_worker = worker
         worker.start()
 
-    def _on_gemini_finished(self, results: dict[tuple[str, str], str]) -> None:
+    def _cancel_gemini(self) -> None:
+        if self._gemini_worker is not None:
+            self._gemini_worker.cancel()
+            self.gemini_status_label.setText(tr("Cancelling Gemini request..."))
+            self.cancel_gemini_button.setEnabled(False)
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        # These QThreads are parented to this dialog; closing while one is
+        # still running would otherwise destroy a live thread. Cancel and
+        # wait (bounded by the SDK's own request timeout) before closing.
+        if self._gemini_worker is not None:
+            self._gemini_worker.cancel()
+            self._gemini_worker.wait()
+        diagnostic_worker = getattr(self, "_gemini_diagnostic_worker", None)
+        if diagnostic_worker is not None:
+            diagnostic_worker.wait()
+        super().closeEvent(event)
+
+    def _check_gemini_connection(self) -> None:
+        """Explicit live diagnostic: lists accessible models without translating."""
+        from gui.workers.gemini_worker import GeminiDiagnosticWorker
+
+        self.gemini_check_button.setEnabled(False)
+        self.gemini_status_label.setText(tr("Checking Gemini model access..."))
+        self.gemini_status_label.show()
+        worker = GeminiDiagnosticWorker(
+            self._api_key, self, model_preference=self._model_preference
+        )
+        worker.finished.connect(self._on_gemini_diagnostic_finished)
+        worker.error.connect(self._on_gemini_diagnostic_error)
+        worker.finished.connect(worker.deleteLater)
+        worker.error.connect(worker.deleteLater)
+        self._gemini_diagnostic_worker = worker
+        worker.start()
+
+    def _on_gemini_diagnostic_finished(self, result: object) -> None:
+        self.gemini_check_button.setEnabled(bool(self._api_key))
+        self.gemini_status_label.hide()
+        self._gemini_diagnostic_worker = None
+        selected = getattr(result, "selected_models", ())
+        available = getattr(result, "available_models", ())
+        if selected:
+            QMessageBox.information(
+                self,
+                tr("Gemini Model Access"),
+                tr("Model access succeeded. Selected model: {model}\nAvailable text models: {count}").format(
+                    model=selected[0], count=len(available)
+                ),
+            )
+
+    def _on_gemini_diagnostic_error(self, message: str) -> None:
+        self.gemini_check_button.setEnabled(bool(self._api_key))
+        self.gemini_status_label.hide()
+        self._gemini_diagnostic_worker = None
+        QMessageBox.warning(self, tr("Gemini Model Access"), message)
+
+    def _on_gemini_finished(self, result: object) -> None:
         self.gemini_button.setEnabled(True)
         self.gemini_status_label.hide()
+        self.cancel_gemini_button.hide()
+        self.cancel_gemini_button.setEnabled(True)
         self._gemini_worker = None
+        self._gemini_diagnostic_worker = None
+
+        # Keep compatibility with callers that still emit the former dict
+        # payload while presenting richer partial-success information to users.
+        if isinstance(result, GeminiTranslationResult):
+            results = result.translations
+            if result.failures or result.cancelled:
+                notes: list[str] = []
+                if result.cancelled:
+                    notes.append(tr("Cancelled; completed translations are still available."))
+                if result.failures:
+                    notes.append(
+                        tr("{count} batch(es) failed: {reason}").format(
+                            count=len(result.failures), reason=str(result.failures[0].error)
+                        )
+                    )
+                QMessageBox.warning(self, tr("Gemini Partial Results"), "\n".join(notes))
+        else:
+            results = result if isinstance(result, dict) else {}
 
         if not results:
             QMessageBox.information(
@@ -368,6 +463,8 @@ class KoreanNameMappingDialog(QDialog):
     def _on_gemini_error(self, message: str) -> None:
         self.gemini_button.setEnabled(True)
         self.gemini_status_label.hide()
+        self.cancel_gemini_button.hide()
+        self.cancel_gemini_button.setEnabled(True)
         self._gemini_worker = None
         QMessageBox.warning(self, tr("Gemini Error"), message)
 

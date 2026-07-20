@@ -36,6 +36,7 @@ class AppSettings:
     language: str = "ko"
     language_selected: bool = False
     gemini_api_key: str = ""
+    gemini_model_preference: str = "gemini-3.5-flash"
     ratio_qualifiers: dict[str, float] = field(
         default_factory=lambda: {
             "batting_ab_per_game": 3.1,
@@ -139,6 +140,7 @@ class SettingsManager:
             "language": settings.language,
             "language_selected": settings.language_selected,
             "gemini_api_key": settings.gemini_api_key,
+            "gemini_model_preference": settings.gemini_model_preference,
         }
         self.path.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
@@ -221,6 +223,9 @@ class SettingsManager:
             language=str(raw.get("language", "ko")),
             language_selected=bool(raw.get("language_selected", False)),
             gemini_api_key=str(raw.get("gemini_api_key", "")),
+            gemini_model_preference=str(
+                raw.get("gemini_model_preference", "gemini-3.5-flash")
+            ),
             ratio_qualifiers=dict(
                 raw.get(
                     "ratio_qualifiers",
