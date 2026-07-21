@@ -458,6 +458,14 @@ class MainWindow(QMainWindow):
             self._show_initial_import_blocked(tr("closing the application"))
             event.ignore()
             return
+        # Box score import workers (StatsView/MilestoneView) are QThreads
+        # parented to their view, not to this window, so they must be
+        # stopped explicitly here too -- otherwise Qt destroys a still-
+        # running QThread when the app quits.
+        if self._stats_view is not None:
+            self._stats_view.stop_import_worker()
+        if self._milestone_view is not None:
+            self._milestone_view.stop_import_worker()
         super().closeEvent(event)
 
 

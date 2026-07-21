@@ -234,6 +234,7 @@ def _migrate_post_schema(conn: sqlite3.Connection) -> None:
     _backfill_milestone_games_at_achievement(conn)
     _ensure_processed_boxscores(conn)
     _ensure_games_is_postseason(conn)
+    _ensure_performance_indexes(conn)
 
 
 def _ensure_db_meta(conn: sqlite3.Connection) -> None:
@@ -639,6 +640,43 @@ def _ensure_games_is_postseason(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE games ADD COLUMN is_postseason INTEGER NOT NULL DEFAULT 0"
         )
+
+
+def _ensure_performance_indexes(conn: sqlite3.Connection) -> None:
+    """Index the columns behind the per-game/per-player streak and milestone queries.
+
+    Box score import re-runs queries like ``_player_team_before_game``,
+    ``_load_player_states``, ``_fetch_batting_rows``/``_fetch_pitching_rows``,
+    ``get_max_prior_season_stat`` and ``get_batting_season_sum_before``
+    (core/streak/tracker.py, core/stats/aggregator.py) for every active streak
+    player on every imported game. Without these indexes those queries fall
+    back to full table scans and the streak-processing phase of an import can
+    look like an infinite hang on a large save file.
+
+    Some columns named in the original diagnosis are intentionally skipped
+    here because they already have a usable index: ``batting_logs(game_id)``
+    and ``pitching_logs(game_id)`` are covered by the existing
+    ``UNIQUE(game_id, player_id)`` constraint (SQLite can use a composite
+    index's leading column for an equality lookup), and
+    ``player_streak_state(season, player_id, streak_type)`` /
+    ``streak_processed_games(season, game_id)`` are covered by those tables'
+    own primary keys, which already use that exact column order.
+    """
+    index_specs = (
+        ("batting_logs", "idx_batting_logs_player_season", "(player_id, season)"),
+        ("pitching_logs", "idx_pitching_logs_player_season", "(player_id, season)"),
+        ("games", "idx_games_season", "(season)"),
+        ("games", "idx_games_date_game_id", "(date, game_id)"),
+        (
+            "player_streak_state",
+            "idx_player_streak_state_season_type_value",
+            "(season, streak_type, current_value)",
+        ),
+    )
+    for table, index_name, columns in index_specs:
+        if not _table_columns(conn, table):
+            continue
+        conn.execute(f"CREATE INDEX IF NOT EXISTS {index_name} ON {table}{columns}")
 
 
 def _ensure_milestone_predictions(conn: sqlite3.Connection) -> None:

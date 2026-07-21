@@ -198,7 +198,14 @@ class StreakTracker:
                 progress_callback(index, total, f"streak game {game_id}")
             before_events = len(all_events)
             logger.debug("streak_process_game_start season=%s game_id=%s index=%s total=%s", season, game_id, index, total)
-            all_events.extend(self._process_single_game(game_id, season, commit_events=commit_events))
+            all_events.extend(
+                self._process_single_game(
+                    game_id,
+                    season,
+                    commit_events=commit_events,
+                    should_cancel=should_cancel,
+                )
+            )
             logger.debug(
                 "streak_process_game_finish season=%s game_id=%s events=%s",
                 season,
@@ -213,6 +220,23 @@ class StreakTracker:
             time.monotonic() - started,
         )
         return all_events
+
+    @staticmethod
+    def _raise_if_cancelled(
+        should_cancel: Callable[[], bool] | None, game_id: int
+    ) -> None:
+        """Check cancellation inside a game's per-player loops.
+
+        ``process_new_games`` only checked ``should_cancel`` once per game, so
+        a single game's appearance-streak loop (one full table scan per
+        active streak player, see ``_process_appearance_streaks``) could run
+        for minutes with Cancel appearing to do nothing. Checking here, once
+        per player, makes Cancel responsive within a game.
+        """
+        if should_cancel and should_cancel():
+            raise ImportCancelled(
+                f"Import cancelled during streak processing (game {game_id})."
+            )
 
     def _sort_game_ids(self, game_ids: list[int]) -> list[int]:
         if not game_ids:
@@ -235,6 +259,7 @@ class StreakTracker:
         *,
         replay: bool = False,
         commit_events: bool = True,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> list[StreakEvent]:
         if not replay and self._game_already_processed(game_id, season):
             return []
@@ -245,6 +270,7 @@ class StreakTracker:
         game_meta = self._fetch_game_meta(game_id)
 
         for row in batting_rows:
+            self._raise_if_cancelled(should_cancel, game_id)
             log = batting_log_from_row(row, player_name=str(row.get("player_name") or ""))
             logger.debug("streak_process_player season=%s game_id=%s player_id=%s kind=batting", season, game_id, log.player_id)
             state_map = self._load_player_states(
@@ -257,6 +283,7 @@ class StreakTracker:
             events.extend(batch)
 
         for row in pitching_rows:
+            self._raise_if_cancelled(should_cancel, game_id)
             log = pitching_log_from_row(row, player_name=str(row.get("player_name") or ""))
             logger.debug("streak_process_player season=%s game_id=%s player_id=%s kind=pitching", season, game_id, log.player_id)
             state_map = self._load_player_states(season, log.player_id, self._pitching_policies)
@@ -274,6 +301,7 @@ class StreakTracker:
                     game_meta,
                     batting_rows,
                     pitching_rows,
+                    should_cancel=should_cancel,
                 )
             )
 
@@ -305,6 +333,8 @@ class StreakTracker:
         game_meta: dict[str, Any],
         batting_rows: list[dict[str, Any]],
         pitching_rows: list[dict[str, Any]],
+        *,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> list[StreakEvent]:
         policy = self._appearance_policy
         if not policy:
@@ -334,6 +364,7 @@ class StreakTracker:
         handled_players: set[int] = set()
 
         for player_id, team in sorted(appeared_by_name):
+            self._raise_if_cancelled(should_cancel, game_id)
             if player_id in handled_players:
                 continue
             if not self._team_is_tracked(team):
@@ -359,6 +390,7 @@ class StreakTracker:
         active_rows = self._active_appearance_streak_players(season)
 
         for row in active_rows:
+            self._raise_if_cancelled(should_cancel, game_id)
             player_id = int(row["player_id"])
             if player_id in handled_players:
                 continue

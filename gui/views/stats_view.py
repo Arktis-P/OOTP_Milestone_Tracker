@@ -782,3 +782,20 @@ class StatsView(QWidget):
         if self._import_worker is worker:
             self._import_worker = None
         worker.deleteLater()
+
+    def stop_import_worker(self) -> None:
+        """Cancel and join a running import worker.
+
+        Called on shutdown so Qt never destroys a still-running QThread
+        (which otherwise logs "QThread: Destroyed while thread is still
+        running" and can crash on some platforms).
+        """
+        worker = self._import_worker
+        if worker is not None and worker.isRunning():
+            worker.cancel()
+            worker.quit()
+            worker.wait(5000)
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self.stop_import_worker()
+        super().closeEvent(event)

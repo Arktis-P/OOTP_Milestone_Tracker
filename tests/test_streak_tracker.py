@@ -216,6 +216,62 @@ def test_tracker_cancellation_rolls_back_caller_owned_transaction(
     ).fetchone()[0] == 0
 
 
+def test_tracker_cancellation_checked_mid_game_appearance_loop(
+    aggregator: Aggregator,
+) -> None:
+    """should_cancel must be checked inside the per-player appearance-streak
+    loop, not just once per game -- otherwise Cancel does nothing visible
+    while a single game's full scan over every active streak player runs.
+    """
+    for day in range(1, 4):
+        _seed_team_game(aggregator, game_id=day, day=day)
+        for player_id, name in (
+            (42, "A. Player"),
+            (43, "B. Player"),
+            (44, "C. Player"),
+        ):
+            _seed_batter_hit_log(
+                aggregator,
+                game_id=day,
+                day=day,
+                player_id=player_id,
+                player_name=name,
+                team="Giants",
+            )
+    aggregator.conn.commit()
+
+    StreakTracker(aggregator).process_new_games([1, 2, 3], 2026)
+
+    # Game 4: the team plays but none of the three players appear, so all
+    # three land in the "active appearance streak players" break loop.
+    _seed_team_game(aggregator, game_id=4, day=4)
+    aggregator.conn.commit()
+
+    calls = 0
+
+    def cancel_on_third_call() -> bool:
+        nonlocal calls
+        calls += 1
+        return calls >= 3
+
+    with pytest.raises(ImportCancelled, match="streak processing"):
+        StreakTracker(aggregator).process_new_games(
+            [4], 2026, should_cancel=cancel_on_third_call
+        )
+
+    broken = aggregator.conn.execute(
+        """
+        SELECT COUNT(*) FROM player_streak_state
+        WHERE season = 2026 AND streak_type = 'appearance_streak_team_games'
+          AND current_value = 0
+        """
+    ).fetchone()[0]
+    # At least one active player was processed before cancellation fired, but
+    # not all three -- proving the loop was interrupted mid-game rather than
+    # only being checked once per game.
+    assert 0 < broken < 3
+
+
 def test_rebuild_season_streaks_preserves_manual_streak_record(
     aggregator: Aggregator,
 ) -> None:
