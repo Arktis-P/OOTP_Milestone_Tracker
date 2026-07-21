@@ -68,6 +68,20 @@ _KO: dict[str, str] = {
         "리그: {league} · {season}시즌 · 추적팀: {teams} · 마지막 가져오기: {last} · DB: {games}경기 / {players}명 (클릭해서 설정)",
 
     # ── Dashboard ───────────────────────────────────────────────────────
+    "OOTP Command Center":               "OOTP 기록 관제실",
+    "Import boxscores and review the records that need attention now.":
+        "박스스코어를 가져오고 지금 확인할 기록만 빠르게 봅니다.",
+    "Recent Achievements":               "최근 달성 기록",
+    "Milestone Watch":                   "다가오는 기록",
+    "Active Streaks":                    "진행 중인 연속 기록",
+    "View All":                          "전체 보기",
+    "View Predictions":                  "예측 보기",
+    "View Ended Streaks":                "종료 기록 보기",
+    "Recent success order. Values are not ranked across streak types.":
+        "최근 성공일 순서입니다. 서로 다른 연속 기록 수치는 순위로 비교하지 않습니다.",
+    "{current:,.0f} of {target:,.0f} · {remaining:,.0f} left":
+        "{target:,.0f} 중 {current:,.0f} · {remaining:,.0f} 남음",
+    "Date unavailable":                  "날짜 없음",
     "⚡ OOTP Simulation Control Panel":  "⚡ OOTP 시뮬레이션 컨트롤 패널",
     "📥  Import Boxscores":             "📥  박스스코어 가져오기",
     "MLB Only":                         "MLB만",

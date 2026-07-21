@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -67,13 +68,21 @@ class DashboardView(QWidget):
 
         self.banner = ErrorBanner(self)
 
-        title = QLabel(tr("⚡ OOTP Simulation Control Panel"))
+        title = QLabel(tr("OOTP Command Center"))
         title.setObjectName("pageTitle")
+        title.setWordWrap(True)
+        subtitle = QLabel(
+            tr("Import boxscores and review the records that need attention now.")
+        )
+        subtitle.setObjectName("helperText")
+        subtitle.setWordWrap(True)
         self.status_label = QLabel()
-        self.status_label.setObjectName("mutedLabel")
+        self.status_label.setObjectName("statusText")
+        self.status_label.setWordWrap(True)
 
-        self.import_button = QPushButton(tr("📥  Import Boxscores"))
+        self.import_button = QPushButton(tr("Import Boxscores"))
         self.import_button.setObjectName("primaryButton")
+        self.import_button.setMinimumWidth(150)
         self.import_button.clicked.connect(self.start_import)
         self.cancel_import_button = QPushButton(tr("Cancel"))
         self.cancel_import_button.clicked.connect(self._cancel_import)
@@ -81,28 +90,58 @@ class DashboardView(QWidget):
         self.mlb_only_checkbox = QCheckBox(tr("MLB Only"))
         self.mlb_only_checkbox.setChecked(self.settings.import_mlb_only)
         self.mlb_only_checkbox.toggled.connect(self._on_mlb_only_toggled)
-        self.init_tab_button = QPushButton(tr("→ Import Existing Records"))
+        self.init_tab_button = QPushButton(tr("Import Existing Records"))
         self.init_tab_button.setObjectName("linkButton")
 
         self.init_tab_button.clicked.connect(self.navigate_to_initial_import.emit)
 
         header_left = QVBoxLayout()
-        header_left.setSpacing(2)
+        header_left.setSpacing(4)
         header_left.addWidget(title)
+        header_left.addWidget(subtitle)
         header_left.addWidget(self.status_label)
 
-        header_right = QHBoxLayout()
+        header_right = QVBoxLayout()
         header_right.setSpacing(8)
-        header_right.addWidget(self.mlb_only_checkbox)
-        header_right.addWidget(self.import_button)
-        header_right.addWidget(self.cancel_import_button)
-        header_right.addWidget(self.init_tab_button)
+        cta_row = QHBoxLayout()
+        cta_row.setSpacing(8)
+        cta_row.addWidget(self.import_button)
+        cta_row.addWidget(self.cancel_import_button)
+        header_right.addLayout(cta_row)
+        header_right.addWidget(self.init_tab_button, alignment=Qt.AlignmentFlag.AlignRight)
+        header_right.addWidget(self.mlb_only_checkbox, alignment=Qt.AlignmentFlag.AlignRight)
 
         header_row = QHBoxLayout()
+        header_row.setSpacing(18)
         header_row.addLayout(header_left, stretch=1)
         header_row.addLayout(header_right)
 
         control_card = CardPanel()
+        control_card.setObjectName("dashboardHero")
+        control_card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        control_card.setStyleSheet(
+            """
+            QFrame#dashboardHero {
+                background-color: #202326;
+                border: 1px solid #454a50;
+                border-radius: 14px;
+            }
+            QFrame#dashboardHero QLabel#pageTitle {
+                color: #f2f5f8;
+                font-size: 20px;
+                font-weight: 750;
+                min-height: 34px;
+            }
+            QFrame#dashboardHero QLabel#helperText {
+                color: #aab4be;
+                font-size: 12px;
+            }
+            QFrame#dashboardHero QLabel#statusText {
+                color: #d0d6dc;
+                font-size: 12px;
+            }
+            """
+        )
         control_card.content_layout.addLayout(header_row)
 
         self.readiness_card = ReadinessChecklistCard()
@@ -123,36 +162,49 @@ class DashboardView(QWidget):
 
         self.recent_list = QListWidget()
         self.recent_list.setObjectName("dashboardMilestoneList")
+        self.recent_list.setWordWrap(True)
+        self.recent_list.setSpacing(2)
+        self.recent_list.setStyleSheet("QListWidget { background: transparent; border: none; }")
         self.recent_list.itemClicked.connect(self._on_recent_clicked)
         self.recent_empty = EmptyStateWidget()
         self.recent_stack = QStackedWidget()
         self.recent_stack.addWidget(self.recent_list)
         self.recent_stack.addWidget(self.recent_empty)
-        self.recent_more = QPushButton(tr("View All Achievement Records →"))
+        self.recent_more = QPushButton(tr("View All"))
         self.recent_more.setObjectName("linkButton")
         self.recent_more.clicked.connect(self._show_all_milestones)
         recent_card = CardPanel(
-            tr("🏆  Recent Milestones (last 10)"),
+            tr("Recent Achievements"),
             trailing=self.recent_more,
         )
+        recent_card.setObjectName("dashboardSectionCard")
         recent_card.add_widget(self.recent_stack)
 
         self.near_list = QListWidget()
+        self.near_list.setObjectName("dashboardNearList")
+        self.near_list.setWordWrap(True)
+        self.near_list.setSpacing(2)
+        self.near_list.setStyleSheet("QListWidget { background: transparent; border: none; }")
         self.near_list.itemClicked.connect(self._on_near_clicked)
         self.near_empty = EmptyStateWidget()
         self.near_stack = QStackedWidget()
         self.near_stack.addWidget(self.near_list)
         self.near_stack.addWidget(self.near_empty)
-        self.near_more = QPushButton(tr("View All Predictions →"))
+        self.near_more = QPushButton(tr("View Predictions"))
         self.near_more.setObjectName("linkButton")
         self.near_more.clicked.connect(self._show_all_predictions)
         near_card = CardPanel(
-            tr("🔥  Upcoming (Near)"),
+            tr("Milestone Watch"),
             trailing=self.near_more,
         )
+        near_card.setObjectName("dashboardSectionCard")
         near_card.add_widget(self.near_stack)
 
         self.streak_list = QListWidget()
+        self.streak_list.setObjectName("dashboardStreakList")
+        self.streak_list.setWordWrap(True)
+        self.streak_list.setSpacing(2)
+        self.streak_list.setStyleSheet("QListWidget { background: transparent; border: none; }")
         self.streak_empty = EmptyStateWidget()
         self.streak_stack = QStackedWidget()
         self.streak_stack.addWidget(self.streak_list)
@@ -164,27 +216,34 @@ class DashboardView(QWidget):
             tr("Active Streaks"),
             trailing=self.streak_more,
         )
+        streak_card.setObjectName("dashboardSectionCard")
+        streak_card.setMaximumHeight(270)
         streak_sort_hint = QLabel(
-            tr("Most recent success first; values are not ranked across streak types.")
+            tr("Recent success order. Values are not ranked across streak types.")
         )
+        streak_sort_hint.setObjectName("helperText")
+        streak_sort_hint.setWordWrap(True)
         streak_sort_hint.setStyleSheet(hint_style(TEXT_SECONDARY))
         streak_card.add_widget(streak_sort_hint)
         streak_card.add_widget(self.streak_stack)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setObjectName("dashboardSplitter")
         splitter.addWidget(recent_card)
         splitter.addWidget(near_card)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 1)
+        splitter.setChildrenCollapsible(False)
+        splitter.setSizes([1, 1])
 
         layout = QVBoxLayout(self)
-        layout.setSpacing(10)
+        layout.setSpacing(12)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.banner)
         layout.addWidget(control_card)
         layout.addWidget(self.readiness_card)
         layout.addWidget(self.progress_card)
-        layout.addWidget(streak_card, stretch=1)
+        layout.addWidget(streak_card)
         layout.addWidget(splitter, stretch=1)
 
         self.update_status_summary()
@@ -221,7 +280,7 @@ class DashboardView(QWidget):
             self._active_streaks = list_active_streaks(
                 self.aggregator,
                 self.settings.current_season,
-                limit=8,
+                limit=6,
             )
         except Exception:
             self._show_active_streak_empty(
@@ -240,14 +299,23 @@ class DashboardView(QWidget):
         for streak in self._active_streaks:
             date_parts = [part for part in (streak.start_date, streak.last_date) if part]
             date_text = " → ".join(date_parts) if date_parts else tr("Date unavailable")
-            item = QListWidgetItem(
-                f"{streak.player_name}  ·  {streak.team}  ·  {streak.label}"
-                f"  ·  {streak.display_value} {tr(streak.unit)}\n{date_text}"
-            )
+            title = f"{streak.player_name} · {streak.team}"
+            metric = f"{streak.display_value} {tr(streak.unit)}"
+            detail = f"{streak.label} · {date_text}"
+            item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, streak)
-            item.setToolTip(item.text())
-            item.setSizeHint(QSize(0, 44))
+            item.setToolTip(f"{title}\n{metric} · {detail}")
+            item.setSizeHint(QSize(0, 58))
             self.streak_list.addItem(item)
+            self.streak_list.setItemWidget(
+                item,
+                self._build_dashboard_row(
+                    title,
+                    detail,
+                    badge=metric,
+                    accent="#75beff",
+                ),
+            )
 
     def _show_active_streak_empty(self, title: str, subtitle: str) -> None:
         self.streak_empty.set_content(
@@ -335,14 +403,22 @@ class DashboardView(QWidget):
                 detail_parts.append(
                     tr("{season} season").format(season=record["season"])
                 )
-            first_line = f"{name}  ·  {label}"
-            text = first_line
+            title = f"{name} · {label}"
+            text = title
             if detail_parts:
                 text += "\n" + "  ·  ".join(detail_parts)
-            item = QListWidgetItem(text)
+            detail = " · ".join(detail_parts)
+            item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, record)
             item.setToolTip(text)
-            item.setSizeHint(QSize(0, 44 if detail_parts else 32))
+            item.setSizeHint(QSize(0, 58 if detail_parts else 50))
+            self.recent_list.addItem(item)
+            row = self._build_dashboard_row(
+                title,
+                detail,
+                badge=tr("Milestone"),
+                accent=RED_TEXT if is_injury else dashboard_milestone_color(grade),
+            )
             if is_injury:
                 item.setForeground(QColor(RED_TEXT))
                 f = item.font()
@@ -350,7 +426,7 @@ class DashboardView(QWidget):
                 item.setFont(f)
             else:
                 item.setForeground(QColor(dashboard_milestone_color(grade)))
-            self.recent_list.addItem(item)
+            self.recent_list.setItemWidget(item, row)
 
     def refresh_near_predictions(self) -> None:
         self.near_list.clear()
@@ -386,17 +462,20 @@ class DashboardView(QWidget):
         for pred in self._near_predictions:
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, pred)
-            item.setSizeHint(QSize(0, 62))
+            item.setSizeHint(QSize(0, 70))
             self.near_list.addItem(item)
             self.near_list.setItemWidget(item, self._build_near_row(pred))
 
     def _build_near_row(self, pred: CachedPrediction) -> QWidget:
         row = QWidget()
+        row.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         layout = QVBoxLayout(row)
-        layout.setContentsMargins(10, 6, 10, 6)
-        layout.setSpacing(3)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(4)
 
-        header = QLabel(f"🔥 {pred.player_name}  ·  {pred.milestone_label}")
+        header = QLabel(f"{pred.player_name} · {pred.milestone_label}")
+        header.setObjectName("playerName")
+        header.setWordWrap(True)
         header.setStyleSheet("font-weight: 600;")
 
         bar = QProgressBar()
@@ -406,17 +485,56 @@ class DashboardView(QWidget):
         bar.setValue(max(0, min(1000, int(pred.progress_pct * 10))))
 
         detail = QLabel(
-            tr("{current:,.0f} / {target:,.0f}  ·  {remaining:,.0f} remaining").format(
+            tr("{current:,.0f} of {target:,.0f} · {remaining:,.0f} left").format(
                 current=pred.current_value,
                 target=pred.threshold,
                 remaining=pred.remaining,
             )
         )
+        detail.setObjectName("helperText")
+        detail.setWordWrap(True)
         detail.setStyleSheet(hint_style(TEXT_SECONDARY))
 
         layout.addWidget(header)
         layout.addWidget(bar)
         layout.addWidget(detail)
+        return row
+
+    def _build_dashboard_row(
+        self,
+        title: str,
+        detail: str,
+        *,
+        badge: str,
+        accent: str,
+    ) -> QWidget:
+        row = QWidget()
+        row.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(10, 7, 10, 7)
+        layout.setSpacing(12)
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
+        title_label = QLabel(title)
+        title_label.setObjectName("playerName")
+        title_label.setWordWrap(True)
+        detail_label = QLabel(detail or " ")
+        detail_label.setObjectName("helperText")
+        detail_label.setWordWrap(True)
+        detail_label.setStyleSheet(hint_style(TEXT_SECONDARY))
+        text_col.addWidget(title_label)
+        text_col.addWidget(detail_label)
+        layout.addLayout(text_col, stretch=1)
+
+        badge_label = QLabel(badge)
+        badge_label.setObjectName("secondaryStat")
+        badge_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        badge_label.setMinimumWidth(72)
+        badge_label.setStyleSheet(
+            f"color: {accent}; font-weight: 700; padding-left: 8px;"
+        )
+        layout.addWidget(badge_label)
         return row
 
     def _on_recent_clicked(self, item: QListWidgetItem) -> None:

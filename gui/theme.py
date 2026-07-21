@@ -193,6 +193,29 @@ QFrame#cardPanel {{
     border-radius: 10px;
 }}
 
+QFrame#dashboardHero {{
+    background-color: #22262b;
+    border: 1px solid #3a4149;
+    border-radius: 14px;
+}}
+
+QFrame#dashboardSectionCard {{
+    background-color: {BG_PANEL};
+    border: 1px solid {BORDER_SUBTLE};
+    border-radius: 14px;
+}}
+
+QFrame#readinessCompleteChip {{
+    background-color: #17332b;
+    border: 1px solid {GREEN_BORDER};
+    border-radius: 10px;
+}}
+
+QSplitter#dashboardSplitter::handle {{
+    background-color: transparent;
+    width: 12px;
+}}
+
 QLabel#cardTitle {{
     color: {TEXT_PRIMARY};
     font-size: 13px;
@@ -535,6 +558,11 @@ QLabel#dashboardMilestoneName {{
 }}
 
 QListWidget#dashboardMilestoneList {{
+    background-color: transparent;
+    border: none;
+}}
+QListWidget#dashboardStreakList,
+QListWidget#dashboardNearList {{
     background-color: transparent;
     border: none;
 }}

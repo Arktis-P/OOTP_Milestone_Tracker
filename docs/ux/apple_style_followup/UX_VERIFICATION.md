@@ -6,7 +6,8 @@
 
 | 영역 | 결과 | 근거 |
 |---|---|---|
-| 전체 회귀 | 통과 | 365 passed, 2 skipped |
+| 전체 회귀 | 통과 | 368 passed, 2 skipped |
+| 대시보드 시각 구조 | 통과 | hero/단일 CTA, compact readiness chip, borderless 목록, 50~70px 행 높이, 한국어 번역 테스트 |
 | 메모리 검색 | 통과 | 1,000명: 1건 1.95ms, 0건 2.21ms, 1,000건 11.77ms; 기준 <=100ms |
 | 상태 복원 | 통과 | 전역 geometry/마지막 화면, 세이브별 splitter/모드/시즌, offscreen fallback |
 | 키보드·접근성 | 통과 | StrongFocus, accessible name/description, focus QSS 집중 테스트 |
@@ -22,7 +23,8 @@
 - 핵심 화면 접근성: 3 passed
 - 초기 가져오기: 11 passed
 - 상태 복원·대량 편집·테마 통합 집중: 16 passed
-- 전체: 365 passed, 2 skipped
+- 대시보드 리디자인: 3 passed
+- 전체: 368 passed, 2 skipped
 - `git diff --check`: 통과
 
 ## 실제 Windows에서 사용자 확인 필요

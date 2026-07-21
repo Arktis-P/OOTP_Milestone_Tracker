@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core.app_state import ReadinessItem
 from core.i18n import tr
@@ -30,14 +38,30 @@ class ReadinessChecklistCard(QWidget):
         self._rows_layout.setSpacing(6)
         self._card.content_layout.addLayout(self._rows_layout)
 
+        self._collapsed_chip = QFrame()
+        self._collapsed_chip.setObjectName("readinessCompleteChip")
+        self._collapsed_chip.setSizePolicy(
+            QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed
+        )
+        chip_layout = QHBoxLayout(self._collapsed_chip)
+        chip_layout.setContentsMargins(12, 6, 12, 6)
+        chip_layout.setSpacing(6)
+        chip_layout.addStretch()
         self._collapsed_label = QLabel(tr("✅ Setup complete"))
-        self._collapsed_label.setStyleSheet(hint_style(GREEN_TEXT))
-
+        self._collapsed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._collapsed_label.setStyleSheet(
+            f"color: {GREEN_TEXT}; font-weight: 650; font-size: 12px;"
+        )
+        chip_layout.addWidget(self._collapsed_label)
+        chip_layout.addStretch()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._card)
-        layout.addWidget(self._collapsed_label)
-        self._collapsed_label.setVisible(False)
+        layout.addWidget(
+            self._collapsed_chip,
+            alignment=Qt.AlignmentFlag.AlignLeft,
+        )
+        self._collapsed_chip.setVisible(False)
 
     def set_items(self, items: list[ReadinessItem]) -> None:
         while self._rows_layout.count():
@@ -48,7 +72,7 @@ class ReadinessChecklistCard(QWidget):
 
         all_done = all(item.done for item in items)
         self._card.setVisible(not all_done)
-        self._collapsed_label.setVisible(all_done)
+        self._collapsed_chip.setVisible(all_done)
         if all_done:
             return
 
@@ -73,6 +97,7 @@ class ReadinessChecklistCard(QWidget):
         else:
             title.setStyleSheet("font-weight: 600;")
         detail = QLabel(item.detail)
+        detail.setWordWrap(True)
         detail.setStyleSheet(hint_style(TEXT_SECONDARY))
         text_col.addWidget(title)
         text_col.addWidget(detail)
