@@ -61,22 +61,41 @@ class PredictView(QWidget):
                 "Normally updated automatically when boxscores are imported."
             )
         )
+        self.refresh_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.refresh_button.setAccessibleName(tr("Regenerate prediction list"))
+        self.refresh_button.setAccessibleDescription(self.refresh_button.toolTip())
         self.refresh_button.clicked.connect(lambda: self.refresh(force_reseed=True))
 
         self.player_filter = QComboBox()
         self.player_filter.addItem(tr("All Players"), None)
+        self.player_filter.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.player_filter.setAccessibleName(tr("Player filter"))
+        self.player_filter.setAccessibleDescription(
+            tr("Filters career milestone predictions by player.")
+        )
         self.grade_filter = QComboBox()
         self.grade_filter.addItem(tr("All Grades"), "")
+        self.grade_filter.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.grade_filter.setAccessibleName(tr("Grade filter"))
+        self.grade_filter.setAccessibleDescription(
+            tr("Filters career milestone predictions by milestone grade.")
+        )
         for grade in ("common", "uncommon", "rare", "epic", "legendary"):
             self.grade_filter.addItem(grade, grade)
         self.player_filter.currentIndexChanged.connect(self.refresh)
         self.grade_filter.currentIndexChanged.connect(self.refresh)
 
         self.near_only_checkbox = QCheckBox(tr("🔥 Near Only"))
+        self.near_only_checkbox.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.near_only_checkbox.setAccessibleName(tr("Near predictions only"))
+        self.near_only_checkbox.setAccessibleDescription(
+            tr("Shows only predictions that are close to the target. The Status column also marks near rows.")
+        )
         self.near_only_checkbox.toggled.connect(self.refresh)
 
         title = QLabel(tr("Achievement Predictions (Career)"))
         title.setObjectName("pageTitle")
+        title.setWordWrap(True)
 
         controls = QHBoxLayout()
         controls.setSpacing(10)
@@ -107,6 +126,13 @@ class PredictView(QWidget):
             ]
         )
         self.table.setToolTip(tr("Double-click a prediction to open player details."))
+        self.table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.table.setAccessibleName(tr("Career prediction table"))
+        self.table.setAccessibleDescription(
+            tr(
+                "Prediction rows include player, milestone, current value, target, remaining value, progress, status, and season basis."
+            )
+        )
         self.table.cellDoubleClicked.connect(self._open_player_details)
         table_card = CardPanel(tr("Career Achievement Predictions"))
         table_card.add_widget(self.table)
@@ -227,6 +253,12 @@ class PredictView(QWidget):
                     cell.setBackground(near_row_bg)
                     if col_idx != 3:
                         cell.setForeground(near_row_fg)
+                    cell.setToolTip(
+                        tr("Near target: {remaining} remaining. {basis}").format(
+                            remaining=f"{item.remaining:,.0f}",
+                            basis=render_season_basis(item.season_note),
+                        )
+                    )
                 if col_idx == 3:
                     apply_grade_style(cell, grade)
                     if item.is_near:

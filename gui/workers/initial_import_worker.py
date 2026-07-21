@@ -17,6 +17,7 @@ class InitialImportWorker(QThread):
     """Run initial import on a worker thread with its own SQLite connection."""
 
     completed = pyqtSignal(object)
+    cancelled = pyqtSignal(str, object)
     progress = pyqtSignal(int, int, str)
     discovered_teams = pyqtSignal(object)
     error = pyqtSignal(str)
@@ -42,6 +43,10 @@ class InitialImportWorker(QThread):
         self.persist = persist
         self.known_teams = dict(known_teams or {})
 
+    def cancel(self) -> None:
+        """Request cancellation at the next safe file boundary."""
+        self.requestInterruption()
+
     def run(self) -> None:
         try:
             if self.persist:
@@ -57,6 +62,8 @@ class InitialImportWorker(QThread):
                     self._snapshot_database(preview_db)
                     results = self._run_against(preview_db)
             self.completed.emit(results)
+        except _InitialImportCancelled as exc:
+            self.cancelled.emit(str(exc), exc.results)
         except Exception as exc:
             self.error.emit(str(exc))
 
@@ -77,10 +84,13 @@ class InitialImportWorker(QThread):
                 tasks.append(("pitching", self.pitching_path, "player_pitching_stats.txt"))
             total = len(tasks)
             for index, (kind, path, label) in enumerate(tasks, start=1):
+                self._raise_if_cancelled(results)
                 self.progress.emit(index, total, label)
                 fn = importer.import_batting if kind == "batting" else importer.import_pitching
                 results.append(fn(path, self.mode, self.current_season, persist=self.persist))
+                self._raise_if_cancelled(results)
             if not self.persist:
+                self._raise_if_cancelled(results)
                 unknown = importer.discover_unknown_mlb_teams(
                     self.batting_path,
                     self.pitching_path,
@@ -88,3 +98,18 @@ class InitialImportWorker(QThread):
                 )
                 self.discovered_teams.emit(unknown)
         return results
+
+    def _raise_if_cancelled(self, results: list[InitImportResult]) -> None:
+        if self.isInterruptionRequested():
+            raise _InitialImportCancelled(
+                "Initial import was cancelled after the current file finished.",
+                list(results),
+            )
+
+
+class _InitialImportCancelled(Exception):
+    """Internal control-flow exception carrying any completed file results."""
+
+    def __init__(self, message: str, results: list[InitImportResult]) -> None:
+        super().__init__(message)
+        self.results = results

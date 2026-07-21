@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -37,6 +38,7 @@ class AppSettings:
     language_selected: bool = False
     gemini_api_key: str = ""
     gemini_model_preference: str = "gemini-3.5-flash"
+    ui_state: dict = field(default_factory=dict)
     ratio_qualifiers: dict[str, float] = field(
         default_factory=lambda: {
             "batting_ab_per_game": 3.1,
@@ -141,6 +143,7 @@ class SettingsManager:
             "language_selected": settings.language_selected,
             "gemini_api_key": settings.gemini_api_key,
             "gemini_model_preference": settings.gemini_model_preference,
+            "ui_state": _sanitize_ui_state(settings.ui_state),
         }
         self.path.write_text(
             json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
@@ -226,6 +229,7 @@ class SettingsManager:
             gemini_model_preference=str(
                 raw.get("gemini_model_preference", "gemini-3.5-flash")
             ),
+            ui_state=_sanitize_ui_state(raw.get("ui_state", {})),
             ratio_qualifiers=dict(
                 raw.get(
                     "ratio_qualifiers",
@@ -259,6 +263,30 @@ class SettingsManager:
             "last_import_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
         return settings
+
+
+def save_ui_state_key(save_path: str) -> str:
+    """Stable, non-path-leaking key for per-save UI state."""
+    text = str(Path(save_path).expanduser()) if save_path else ""
+    if not text:
+        return ""
+    try:
+        text = str(Path(text).resolve())
+    except OSError:
+        text = str(Path(text).absolute())
+    normalized = text.casefold()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:24]
+
+
+def _sanitize_ui_state(value) -> dict:
+    if not isinstance(value, dict):
+        return {"global": {}, "saves": {}}
+    global_state = value.get("global", {})
+    saves = value.get("saves", {})
+    return {
+        "global": dict(global_state) if isinstance(global_state, dict) else {},
+        "saves": dict(saves) if isinstance(saves, dict) else {},
+    }
 
 
 def load_settings(path: str | Path | None = None) -> AppSettings:

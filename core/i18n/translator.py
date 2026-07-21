@@ -290,8 +290,43 @@ _KO: dict[str, str] = {
     "Please select a batting file.": "타격 파일을 선택하세요.",
     "Please select a pitching file.": "투구 파일을 선택하세요.",
     "Please select a batting or pitching file.": "타격 또는 투구 파일을 선택하세요.",
+    "Cancel current initial import":     "현재 초기 임포트 취소",
+    "Cancel current import step":        "현재 임포트 단계 취소",
+    "Retry previous initial import":     "이전 초기 임포트 다시 시도",
+    "Retry the last import attempt":     "마지막 임포트 시도 다시 실행",
+    "Load batting baseline stats":       "타격 baseline 기록 적재",
+    "Load pitching baseline stats":      "투구 baseline 기록 적재",
+    "Load batting and pitching baseline stats": "타격 및 투구 baseline 기록 적재",
+    "Batting export file path":          "타격 export 파일 경로",
+    "Pitching export file path":         "투구 export 파일 경로",
+    "Path to player_batting_stats.txt. This value is preserved after failures for retry.":
+        "player_batting_stats.txt 경로입니다. 실패 후 다시 시도할 수 있도록 값이 유지됩니다.",
+    "Path to player_pitching_stats.txt. This value is preserved after failures for retry.":
+        "player_pitching_stats.txt 경로입니다. 실패 후 다시 시도할 수 있도록 값이 유지됩니다.",
+    "Action: {message}":                 "조치: {message}",
+    "Cancels after the current file finishes; the file currently being parsed cannot be interrupted immediately.":
+        "현재 파일 처리가 끝난 뒤 취소합니다. 지금 파싱 중인 파일은 즉시 중단할 수 없습니다.",
+    "Runs the previous initial import again with the same files and mode.":
+        "같은 파일과 모드로 이전 초기 임포트를 다시 실행합니다.",
+    "Retry":                         "다시 시도",
     "Saving... ({current}/{total}) {filename}":
         "저장 중... ({current}/{total}) {filename}",
+    "Preview failed. No live data was changed. Check the export file and retry with the same paths.":
+        "미리보기 실패입니다. 실제 데이터는 변경되지 않았습니다. export 파일을 확인한 뒤 같은 경로로 다시 시도하세요.",
+    "Preview cancelled after the current file finished. No live data was changed.":
+        "현재 파일 처리가 끝난 뒤 미리보기가 취소되었습니다. 실제 데이터는 변경되지 않았습니다.",
+    "Preview cancelled. No data was changed. You can retry with the same files and mode.":
+        "미리보기가 취소되었습니다. 데이터는 변경되지 않았습니다. 같은 파일과 모드로 다시 시도할 수 있습니다.",
+    "Import was incomplete. Some selected files may already be saved; review status or restore a backup before retrying.":
+        "임포트가 완료되지 않았습니다. 선택한 일부 파일은 이미 저장되었을 수 있으므로 다시 시도하기 전에 상태를 확인하거나 백업을 복원하세요.",
+    "Import failed after saving started. Data from an earlier file may already be saved.":
+        "저장이 시작된 뒤 임포트가 실패했습니다. 앞선 파일의 데이터는 이미 저장되었을 수 있습니다.",
+    "Import cancelled after the current file finished. A completed earlier file may already be saved.":
+        "현재 파일 처리가 끝난 뒤 임포트가 취소되었습니다. 앞서 완료된 파일은 이미 저장되었을 수 있습니다.",
+    "Import cancelled after the current file finished. {completed} file(s) may already have been saved; review status or restore a backup before retrying.":
+        "현재 파일 처리가 끝난 뒤 임포트가 취소되었습니다. {completed}개 파일은 이미 저장되었을 수 있으므로 다시 시도하기 전에 상태를 확인하거나 백업을 복원하세요.",
+    "Cancelling after the current file finishes. The file currently being parsed cannot be interrupted immediately.":
+        "현재 파일 처리가 끝난 뒤 취소합니다. 지금 파싱 중인 파일은 즉시 중단할 수 없습니다.",
     "Done":                          "완료",
     "Import completed successfully.": "임포트가 완료되었습니다.",
     "Import Failed":                 "임포트 실패",
@@ -862,6 +897,17 @@ _KO: dict[str, str] = {
     "- None":                            "- 없음",
     "Use these backups to restore the original roster files.":
         "원본 로스터 파일을 복원하려면 이 백업을 사용하세요.",
+    "Rating Changes Saved":             "레이팅 변경 저장 완료",
+    "Saved roster outputs and backups are listed below.":
+        "저장된 로스터 출력과 백업이 아래에 표시됩니다.",
+    "Save Result":                       "저장 결과",
+    "Output files":                      "출력 파일",
+    "Backup files":                      "백업 파일",
+    "Open Output Folder":                "출력 폴더 열기",
+    "Open Backup Folder":                "백업 폴더 열기",
+    "Open Output and Backup Folder":     "출력 및 백업 폴더 열기",
+    "Could not open folder. Use the path shown above: {path}":
+        "폴더를 열 수 없습니다. 위에 표시된 경로를 사용하세요: {path}",
 
     # ── Milestone view — game log ─────────────────────────────────────────
     "Game log directory is not configured.": "게임 로그 경로가 설정되지 않았습니다.",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QByteArray, Qt, pyqtSignal
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QApplication,
@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.config import AppSettings, SettingsManager, get_bundle_root, resolve_data_path
+from core.config.settings_manager import save_ui_state_key
 from core.i18n import format_full_datetime, format_relative_datetime, tr
 from core.db.validation import format_overlap_warning, validate_no_overlap
 from core.milestone.definitions import load_milestones
@@ -50,8 +51,10 @@ class MainWindow(QMainWindow):
         self.settings_manager = settings_manager or SettingsManager()
         self.settings = settings or self.settings_manager.load()
         self.settings = self.settings_manager.ensure_derived_paths(self.settings)
+        self._active_save_state_key = save_ui_state_key(self.settings.active_save_path)
 
         self.setWindowTitle("OOTP Milestone Tracker")
+        self.setMinimumSize(760, 520)
         self.resize(*MAIN_WINDOW_SIZE)
 
         self._aggregator = Aggregator(resolve_data_path(self.settings.db_path))
@@ -94,6 +97,7 @@ class MainWindow(QMainWindow):
         self._update_status_message()
         self._status.mousePressEvent = self._on_status_clicked  # type: ignore[method-assign]
         self.setStatusBar(self._status)
+        self._restore_ui_state()
 
         self._check_overlap_warning()
 
@@ -195,6 +199,7 @@ class MainWindow(QMainWindow):
         previous = self._sidebar.current_index()
         self._sidebar.set_current_index(min(previous, self._stack.count() - 1), emit=False)
         self._stack.setCurrentIndex(self._sidebar.current_index())
+        self._restore_save_ui_state()
         self._refresh_settings_tab_badge()
         return True
 
@@ -318,8 +323,11 @@ class MainWindow(QMainWindow):
         if self._initial_import_in_progress():
             self._show_initial_import_blocked(tr("applying settings"))
             return False
+        self._capture_ui_state(save_key=self._active_save_state_key)
         settings = self.settings_manager.ensure_derived_paths(settings)
+        settings.ui_state = self.settings.ui_state
         self.settings = settings
+        self._active_save_state_key = save_ui_state_key(self.settings.active_save_path)
         self._reload_aggregator()
         self._sync_view_settings()
         self._update_status_message()
@@ -347,6 +355,7 @@ class MainWindow(QMainWindow):
 
     def _on_main_page_changed(self, index: int) -> None:
         self._stack.setCurrentIndex(index)
+        self._ui_global_state()["last_page_index"] = int(index)
         if self._setup_tab is not None and index == self._setup_tab_index:
             self._setup_tab.refresh_bundle_updates_status()
 
@@ -458,7 +467,85 @@ class MainWindow(QMainWindow):
             self._show_initial_import_blocked(tr("closing the application"))
             event.ignore()
             return
+        self._capture_ui_state(save_key=self._active_save_state_key)
+        self.settings_manager.save(self.settings)
         super().closeEvent(event)
+
+    def _ui_global_state(self) -> dict:
+        state = self.settings.ui_state if isinstance(self.settings.ui_state, dict) else {}
+        global_state = state.setdefault("global", {})
+        state.setdefault("saves", {})
+        self.settings.ui_state = state
+        return global_state if isinstance(global_state, dict) else {}
+
+    def _ui_save_states(self) -> dict:
+        state = self.settings.ui_state if isinstance(self.settings.ui_state, dict) else {}
+        state.setdefault("global", {})
+        saves = state.setdefault("saves", {})
+        self.settings.ui_state = state
+        return saves if isinstance(saves, dict) else {}
+
+    def _capture_ui_state(self, *, save_key: str | None = None) -> None:
+        global_state = self._ui_global_state()
+        global_state["geometry"] = bytes(self.saveGeometry().toBase64()).decode("ascii")
+        global_state["last_page_index"] = int(self._stack.currentIndex())
+        key = save_key or save_ui_state_key(self.settings.active_save_path)
+        if key and self._stats_view is not None:
+            self._ui_save_states()[key] = {"stats": self._stats_view.export_ui_state()}
+
+    def _restore_ui_state(self) -> None:
+        global_state = self._ui_global_state()
+        geometry = global_state.get("geometry")
+        restored = False
+        if isinstance(geometry, str) and geometry:
+            try:
+                restored = self.restoreGeometry(QByteArray.fromBase64(geometry.encode("ascii")))
+            except Exception:
+                restored = False
+        if not restored or not self._frame_intersects_any_screen():
+            self._reset_to_safe_geometry()
+        if self.width() < self.minimumWidth() or self.height() < self.minimumHeight():
+            self.resize(
+                max(self.width(), self.minimumWidth(), MAIN_WINDOW_SIZE[0]),
+                max(self.height(), self.minimumHeight(), MAIN_WINDOW_SIZE[1]),
+            )
+        page = global_state.get("last_page_index")
+        if isinstance(page, int) and 0 <= page < self._stack.count():
+            self._sidebar.set_current_index(page, emit=False)
+            self._stack.setCurrentIndex(page)
+
+    def _frame_intersects_any_screen(self) -> bool:
+        screens = QApplication.screens()
+        if not screens:
+            return True
+        frame = self.frameGeometry()
+        return any(frame.intersects(screen.availableGeometry()) for screen in screens)
+
+    def _reset_to_safe_geometry(self) -> None:
+        self.resize(*MAIN_WINDOW_SIZE)
+        screens = QApplication.screens()
+        if not screens:
+            return
+        primary = QApplication.primaryScreen() or screens[0]
+        available = primary.availableGeometry()
+        frame = self.frameGeometry()
+        target_x = available.x() + max(0, (available.width() - frame.width()) // 2)
+        target_y = available.y() + max(0, (available.height() - frame.height()) // 2)
+        if not available.contains(target_x, target_y):
+            target_x = available.x() + 20
+            target_y = available.y() + 20
+        self.move(target_x, target_y)
+
+    def _restore_save_ui_state(self) -> None:
+        if self._stats_view is None:
+            return
+        key = save_ui_state_key(self.settings.active_save_path)
+        if not key:
+            return
+        save_state = self._ui_save_states().get(key, {})
+        if not isinstance(save_state, dict):
+            return
+        self._stats_view.restore_ui_state(save_state.get("stats", {}))
 
 
 class _LanguageSelectDialog(QDialog):

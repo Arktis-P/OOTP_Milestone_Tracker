@@ -115,6 +115,49 @@ def meta_panel_style() -> str:
 
 def apply_app_theme(app: QApplication) -> None:
     app.setStyle("Fusion")
+    palette = _base_palette()
+    app.setPalette(palette)
+
+    font = QFont()
+    for family in ("Segoe UI", "Malgun Gothic", "sans-serif"):
+        font.setFamily(family)
+        if font.exactMatch() or family != "sans-serif":
+            break
+    font.setPointSize(9)
+    app.setFont(font)
+    apply_high_contrast_overrides(app, False)
+
+
+def apply_high_contrast_overrides(app: QApplication, enabled: bool) -> None:
+    """Apply the app theme with optional high-contrast-safe overrides.
+
+    The default theme stays the baseline. When enabled, the helper appends a
+    small override sheet that increases edge contrast and adds non-color
+    selection/warning cues without changing widget layout contracts.
+    """
+
+    if enabled:
+        palette = _base_palette()
+        palette.setColor(QPalette.ColorRole.Window, QColor("#000000"))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor("#ffffff"))
+        palette.setColor(QPalette.ColorRole.Base, QColor("#000000"))
+        palette.setColor(QPalette.ColorRole.AlternateBase, QColor("#101010"))
+        palette.setColor(QPalette.ColorRole.Text, QColor("#ffffff"))
+        palette.setColor(QPalette.ColorRole.Button, QColor("#101010"))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor("#ffffff"))
+        palette.setColor(QPalette.ColorRole.Highlight, QColor("#ffff00"))
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#000000"))
+        palette.setColor(QPalette.ColorRole.Link, QColor("#00ffff"))
+        palette.setColor(QPalette.ColorRole.PlaceholderText, QColor("#d0d0d0"))
+        app.setPalette(palette)
+        app.setStyleSheet(_STYLESHEET + "\n" + _HIGH_CONTRAST_STYLESHEET)
+        return
+
+    app.setPalette(_base_palette())
+    app.setStyleSheet(_STYLESHEET)
+
+
+def _base_palette() -> QPalette:
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(BG_WINDOW))
     palette.setColor(QPalette.ColorRole.WindowText, QColor(TEXT_PRIMARY))
@@ -127,16 +170,7 @@ def apply_app_theme(app: QApplication) -> None:
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
     palette.setColor(QPalette.ColorRole.Link, QColor(ACCENT_TEXT))
     palette.setColor(QPalette.ColorRole.PlaceholderText, QColor(TEXT_MUTED))
-    app.setPalette(palette)
-
-    font = QFont()
-    for family in ("Segoe UI", "Malgun Gothic", "sans-serif"):
-        font.setFamily(family)
-        if font.exactMatch() or family != "sans-serif":
-            break
-    font.setPointSize(9)
-    app.setFont(font)
-    app.setStyleSheet(_STYLESHEET)
+    return palette
 
 
 _STYLESHEET = f"""
@@ -177,6 +211,76 @@ QLabel#pageTitle {{
     color: {TEXT_PRIMARY};
     font-size: 15px;
     font-weight: 700;
+    min-height: 32px;
+    padding: 2px 0;
+}}
+
+QLabel#sectionTitle {{
+    color: {TEXT_PRIMARY};
+    font-size: 11px;
+    font-weight: 600;
+    min-height: 24px;
+    padding: 2px 0;
+}}
+
+QLabel#playerName {{
+    color: #f3f3f3;
+    font-size: 12px;
+    font-weight: 700;
+    min-height: 28px;
+    padding: 2px 0;
+}}
+
+QLabel#primaryStat {{
+    color: {TEXT_PRIMARY};
+    font-size: 14px;
+    font-weight: 700;
+    min-height: 34px;
+    padding: 3px 0;
+}}
+
+QLabel#secondaryStat {{
+    color: {TEXT_SECONDARY};
+    font-size: 10px;
+    font-weight: 500;
+    min-height: 24px;
+    padding: 2px 0;
+}}
+
+QLabel#fieldLabel {{
+    color: {TEXT_SECONDARY};
+    font-size: 8px;
+    font-weight: 600;
+    min-height: 22px;
+    padding: 2px 0;
+}}
+
+QLabel#helperText {{
+    color: {TEXT_MUTED};
+    font-size: 8px;
+    font-weight: 400;
+    min-height: 20px;
+    padding: 2px 0;
+}}
+
+QLabel#statusText {{
+    color: {TEXT_SECONDARY};
+    font-size: 9px;
+    font-weight: 500;
+    min-height: 24px;
+    padding: 2px 0;
+}}
+
+QLabel#warningText {{
+    color: {AMBER_TEXT};
+    background-color: {AMBER_BG};
+    border: 1px solid {AMBER_BORDER};
+    border-left: 4px solid {AMBER_TEXT};
+    border-radius: 8px;
+    font-size: 9px;
+    font-weight: 600;
+    min-height: 24px;
+    padding: 5px 8px;
 }}
 
 QLabel#mutedLabel {{
@@ -187,6 +291,9 @@ QLabel#mutedLabel {{
 QLabel#errorLabel {{
     color: {RED_TEXT};
     font-size: 12px;
+    min-height: 24px;
+    padding-left: 8px;
+    border-left: 4px solid {RED_TEXT};
 }}
 
 QLabel#accentLabel {{
@@ -261,15 +368,21 @@ QTabBar::tab {{
     border-top-right-radius: 6px;
     padding: 6px 14px;
     margin-right: 2px;
+    min-height: 22px;
 }}
 QTabBar::tab:selected {{
     background-color: {BG_PANEL};
     color: {ACCENT_TEXT};
     border-bottom: 2px solid {ACCENT};
+    font-weight: 700;
 }}
 QTabBar::tab:hover:!selected {{
     color: {TEXT_PRIMARY};
     background-color: {BG_HOVER};
+}}
+QTabBar::tab:disabled {{
+    color: {TEXT_MUTED};
+    background-color: {BG_PANEL};
 }}
 
 QPushButton {{
@@ -278,7 +391,7 @@ QPushButton {{
     border: 1px solid {BORDER};
     border-radius: 8px;
     padding: 6px 12px;
-    min-height: 1.2em;
+    min-height: 24px;
 }}
 QPushButton:hover {{
     background-color: {BG_HOVER};
@@ -327,6 +440,7 @@ QPushButton#modeBtn:checked {{
     background-color: {ACCENT};
     color: #ffffff;
     border-color: {ACCENT_HOVER};
+    font-weight: 700;
 }}
 
 QLineEdit, QSpinBox, QComboBox, QTextEdit, QPlainTextEdit {{
@@ -335,9 +449,18 @@ QLineEdit, QSpinBox, QComboBox, QTextEdit, QPlainTextEdit {{
     border: 1px solid {BORDER};
     border-radius: 8px;
     padding: 5px 8px;
+    min-height: 24px;
     selection-background-color: {ACCENT};
 }}
-QLineEdit:focus, QSpinBox:focus, QComboBox:focus, QTextEdit:focus {{
+QLineEdit:hover, QSpinBox:hover, QComboBox:hover, QTextEdit:hover, QPlainTextEdit:hover {{
+    border-color: #4e4e52;
+}}
+QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled, QTextEdit:disabled, QPlainTextEdit:disabled {{
+    color: {TEXT_MUTED};
+    background-color: {BG_PANEL};
+    border-color: {BORDER_SUBTLE};
+}}
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus, QTextEdit:focus, QPlainTextEdit:focus {{
     border-color: {ACCENT};
 }}
 QComboBox::drop-down {{
@@ -377,6 +500,17 @@ QTableWidget, QTableView {{
     selection-background-color: {ACCENT_SUBTLE};
     selection-color: {ACCENT_TEXT};
 }}
+QTableWidget::item, QTableView::item {{
+    min-height: 24px;
+    padding: 4px 6px;
+}}
+QTableWidget::item:selected, QTableView::item:selected {{
+    border-left: 3px solid {ACCENT};
+    font-weight: 600;
+}}
+QTableWidget::item:hover:!selected, QTableView::item:hover:!selected {{
+    background-color: {BG_HOVER};
+}}
 QHeaderView::section {{
     background-color: {BG_SIDEBAR};
     color: {TEXT_SECONDARY};
@@ -386,6 +520,7 @@ QHeaderView::section {{
     padding: 6px 8px;
     font-size: 11px;
     font-weight: 600;
+    min-height: 24px;
 }}
 
 QLabel#dashboardPlayerName {{
@@ -425,11 +560,13 @@ QListWidget {{
 QListWidget::item {{
     padding: 8px 10px;
     border-bottom: 1px solid {BORDER_SUBTLE};
+    min-height: 24px;
 }}
 QListWidget::item:selected {{
     background-color: {ACCENT_SUBTLE};
     color: {ACCENT_TEXT};
     border-left: 3px solid {ACCENT};
+    font-weight: 600;
 }}
 QListWidget::item:hover:!selected {{
     background-color: {BG_HOVER};
@@ -451,10 +588,15 @@ QProgressBar::chunk {{
 QCheckBox, QRadioButton {{
     spacing: 6px;
     color: {TEXT_SECONDARY};
+    min-height: 24px;
+    padding: 2px 0;
+}}
+QCheckBox:hover, QRadioButton:hover {{
+    color: {TEXT_PRIMARY};
 }}
 QCheckBox::indicator, QRadioButton::indicator {{
-    width: 15px;
-    height: 15px;
+    width: 16px;
+    height: 16px;
     border-radius: 4px;
     border: 1px solid {BORDER};
     background-color: {BG_INPUT};
@@ -462,6 +604,11 @@ QCheckBox::indicator, QRadioButton::indicator {{
 QCheckBox::indicator:checked, QRadioButton::indicator:checked {{
     background-color: {ACCENT};
     border-color: {ACCENT_HOVER};
+    border-width: 2px;
+}}
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {{
+    background-color: {BG_PANEL};
+    border-color: {BORDER_SUBTLE};
 }}
 QRadioButton::indicator {{
     border-radius: 8px;
@@ -556,10 +703,87 @@ QTextEdit:focus,
 QPlainTextEdit:focus,
 QListWidget:focus,
 QTableWidget:focus,
-QTableView:focus {{
+QTableView:focus,
+QTabBar:focus,
+QCheckBox:focus,
+QRadioButton:focus {{
     outline: 2px solid {FOCUS_RING};
 }}
-QPushButton:disabled:focus {{
+QPushButton:disabled:focus,
+QLineEdit:disabled:focus,
+QSpinBox:disabled:focus,
+QComboBox:disabled:focus,
+QCheckBox:disabled:focus,
+QRadioButton:disabled:focus {{
     outline: none;
 }}
+"""
+
+
+_HIGH_CONTRAST_STYLESHEET = """
+QMainWindow, QDialog, QWidget {
+    background-color: #000000;
+    color: #ffffff;
+}
+
+QFrame#cardPanel, QGroupBox, QTableWidget, QTableView, QListWidget,
+QLineEdit, QSpinBox, QComboBox, QTextEdit, QPlainTextEdit {
+    background-color: #000000;
+    color: #ffffff;
+    border: 2px solid #ffffff;
+}
+
+QPushButton {
+    background-color: #101010;
+    color: #ffffff;
+    border: 2px solid #ffffff;
+    min-height: 28px;
+}
+QPushButton:hover {
+    background-color: #202020;
+    border-color: #00ffff;
+}
+QPushButton:focus,
+QLineEdit:focus,
+QSpinBox:focus,
+QComboBox:focus,
+QTextEdit:focus,
+QPlainTextEdit:focus,
+QListWidget:focus,
+QTableWidget:focus,
+QTableView:focus,
+QTabBar:focus,
+QCheckBox:focus,
+QRadioButton:focus {
+    outline: 3px solid #ffff00;
+}
+QPushButton:disabled, QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled,
+QTextEdit:disabled, QPlainTextEdit:disabled, QCheckBox:disabled, QRadioButton:disabled {
+    color: #b0b0b0;
+    background-color: #050505;
+    border-color: #777777;
+}
+
+QPushButton#primaryButton, QPushButton#modeBtn:checked,
+QListWidget::item:selected, QTableWidget::item:selected, QTableView::item:selected,
+QTabBar::tab:selected {
+    background-color: #000000;
+    color: #ffff00;
+    border: 2px solid #ffff00;
+    border-left: 5px solid #ffff00;
+    font-weight: 700;
+}
+
+QLabel#warningText, QLabel#errorLabel {
+    background-color: #000000;
+    color: #ffff00;
+    border: 2px solid #ffff00;
+    border-left: 6px solid #ffff00;
+    font-weight: 700;
+}
+
+QCheckBox::indicator:checked, QRadioButton::indicator:checked {
+    background-color: #000000;
+    border: 3px solid #ffff00;
+}
 """

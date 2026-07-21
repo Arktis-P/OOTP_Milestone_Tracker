@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
-from PyQt6.QtWidgets import QApplication, QDialogButtonBox, QLabel
+from PyQt6.QtWidgets import QApplication, QDialogButtonBox, QLabel, QPushButton
 
 from core.i18n import tr
 from core.roster.bulk_rating import (
@@ -14,7 +15,7 @@ from core.roster.bulk_rating import (
     RatingCellChange,
     RatingCellSkip,
 )
-from gui.widgets.bulk_rating_dialog import BulkRatingPreviewDialog
+from gui.widgets.bulk_rating_dialog import BulkRatingPreviewDialog, BulkRatingSaveResultDialog
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -92,3 +93,77 @@ def test_preview_dialog_uses_cancel_as_default_escape_path(qapp) -> None:
 
     dialog.reject()
     assert dialog.result() == BulkRatingPreviewDialog.DialogCode.Rejected
+
+
+def test_save_result_dialog_shows_outputs_backups_and_actions(qapp, tmp_path: Path) -> None:
+    output = tmp_path / "mod_mlb_rosters.txt"
+    backup = tmp_path / "backup" / "mod_mlb_rosters.txt.bak"
+    output.write_text("out", encoding="utf-8")
+    backup.parent.mkdir()
+    backup.write_text("backup", encoding="utf-8")
+    opened: list[Path] = []
+    dialog = BulkRatingSaveResultDialog(
+        changed_players=2,
+        changed_cells=5,
+        output_paths=[output],
+        backup_paths=[backup],
+        opener=lambda path: opened.append(Path(path)) or True,
+    )
+
+    details = dialog.detail_text.toPlainText()
+    assert str(output) in details
+    assert str(backup) in details
+    assert tr("Use these backups to restore the original roster files.") in details
+    labels = [button.text() for button in dialog.findChildren(QPushButton)]
+    assert tr("Open Output Folder") in labels
+    assert tr("Open Backup Folder") in labels
+
+    dialog.output_button.click()
+    dialog.backup_button.click()
+
+    assert output.parent in opened
+    assert backup.parent in opened
+
+
+def test_save_result_dialog_merges_same_folder_and_keeps_warning_on_open_failure(
+    qapp,
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "mod_mlb_rosters.txt"
+    backup = tmp_path / "mod_mlb_rosters.txt.bak"
+    output.write_text("out", encoding="utf-8")
+    backup.write_text("backup", encoding="utf-8")
+    dialog = BulkRatingSaveResultDialog(
+        changed_players=1,
+        changed_cells=1,
+        output_paths=[output],
+        backup_paths=[backup],
+        opener=lambda _path: False,
+    )
+
+    labels = [button.text() for button in dialog.findChildren(QPushButton)]
+    assert tr("Open Output and Backup Folder") in labels
+    assert tr("Open Output Folder") not in labels
+    assert tr("Open Backup Folder") not in labels
+
+    dialog.output_button.click()
+
+    assert not dialog.warning_label.isHidden()
+    assert str(tmp_path) in dialog.warning_label.text()
+    assert str(output) in dialog.detail_text.toPlainText()
+
+
+def test_save_result_dialog_close_and_escape_are_safe(qapp, tmp_path: Path) -> None:
+    dialog = BulkRatingSaveResultDialog(
+        changed_players=1,
+        changed_cells=1,
+        output_paths=[],
+        backup_paths=[],
+    )
+
+    close = dialog.buttons.button(QDialogButtonBox.StandardButton.Close)
+    assert close is not None
+    assert close.isDefault()
+
+    dialog.reject()
+    assert dialog.result() == BulkRatingSaveResultDialog.DialogCode.Rejected

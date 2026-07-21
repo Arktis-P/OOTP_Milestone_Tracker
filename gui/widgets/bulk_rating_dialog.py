@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QTableView,
@@ -43,6 +44,7 @@ from core.roster.korean_names import KoreanNameMapper, load_korean_name_mapper
 from core.roster.ootp_format import player_display_name
 from core.roster.position_filter import POSITION_GROUP_OPTIONS, matches_position_group
 from core.stats.aggregator import Aggregator
+from gui.utils.file_open import open_path_in_default_app
 from gui.ui_compact import scale_size
 from gui.widgets.app_dialog import (
     add_dialog_footer,
@@ -215,6 +217,101 @@ class BulkRatingPreviewDialog(QDialog):
         else:
             sections.append(tr("- None"))
         return "\n".join(sections).strip()
+
+
+class BulkRatingSaveResultDialog(QDialog):
+    """Post-save result with safe follow-up actions for outputs and backups."""
+
+    def __init__(
+        self,
+        *,
+        changed_players: int,
+        changed_cells: int,
+        output_paths,
+        backup_paths,
+        parent: QWidget | None = None,
+        opener=open_path_in_default_app,
+    ) -> None:
+        super().__init__(parent)
+        self._opener = opener
+        self.output_paths = [path for path in output_paths if path is not None]
+        self.backup_paths = [path for path in backup_paths if path is not None]
+        self.setWindowTitle(tr("Rating Changes Saved"))
+        self.resize(*scale_size(980, 620))
+
+        summary = summary_label(
+            tr("Changed {players:,} players / {cells:,} cells").format(
+                players=changed_players,
+                cells=changed_cells,
+            )
+        )
+        self.warning_label = QLabel("")
+        self.warning_label.setObjectName("errorLabel")
+        self.warning_label.setWordWrap(True)
+        self.warning_label.hide()
+
+        self.detail_text = QPlainTextEdit()
+        self.detail_text.setReadOnly(True)
+        self.detail_text.setPlainText(self._detail_text())
+
+        self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close = self.buttons.button(QDialogButtonBox.StandardButton.Close)
+        if close is not None:
+            close.setDefault(True)
+        self.output_button = QPushButton(tr("Open Output Folder"))
+        self.backup_button = QPushButton(tr("Open Backup Folder"))
+        output_folder = self._first_existing_parent(self.output_paths)
+        backup_folder = self._first_existing_parent(self.backup_paths)
+        if output_folder is not None and backup_folder is not None and output_folder == backup_folder:
+            self.output_button.setText(tr("Open Output and Backup Folder"))
+            self.buttons.addButton(self.output_button, QDialogButtonBox.ButtonRole.ActionRole)
+            self.output_button.clicked.connect(lambda: self._open_folder(output_folder))
+        else:
+            if output_folder is not None:
+                self.buttons.addButton(self.output_button, QDialogButtonBox.ButtonRole.ActionRole)
+                self.output_button.clicked.connect(lambda: self._open_folder(output_folder))
+            if backup_folder is not None:
+                self.buttons.addButton(self.backup_button, QDialogButtonBox.ButtonRole.ActionRole)
+                self.backup_button.clicked.connect(lambda: self._open_folder(backup_folder))
+        self.buttons.rejected.connect(self.reject)
+
+        layout = init_dialog_layout(self)
+        layout.addWidget(summary)
+        layout.addWidget(muted_label(tr("Saved roster outputs and backups are listed below.")))
+        layout.addWidget(table_card(tr("Save Result"), self.detail_text), stretch=1)
+        layout.addWidget(self.warning_label)
+        add_dialog_footer(layout, self.buttons)
+
+    def _detail_text(self) -> str:
+        lines = [tr("Output files")]
+        if self.output_paths:
+            lines.extend(f"- {path}" for path in self.output_paths)
+        else:
+            lines.append(tr("- None"))
+        lines.extend(("", tr("Backup files")))
+        if self.backup_paths:
+            lines.extend(f"- {path}" for path in self.backup_paths)
+            lines.extend(("", tr("Use these backups to restore the original roster files.")))
+        else:
+            lines.append(tr("- None"))
+        return "\n".join(lines)
+
+    @staticmethod
+    def _first_existing_parent(paths):
+        for path in paths:
+            parent = path.parent
+            if parent.exists():
+                return parent
+        return None
+
+    def _open_folder(self, folder) -> None:
+        if not self._opener(folder):
+            self.warning_label.setText(
+                tr("Could not open folder. Use the path shown above: {path}").format(
+                    path=folder
+                )
+            )
+            self.warning_label.show()
 
 
 class BulkRatingDialog(QDialog):
@@ -559,28 +656,13 @@ class BulkRatingDialog(QDialog):
             return
 
         self.progress.setValue(plan.changed_player_count)
-        parts = [
-            tr("Changed {players:,} players / {cells:,} cells").format(
-                players=plan.changed_player_count, cells=plan.changed_cell_count
-            )
-        ]
-        if result.mlb_output:
-            parts.append(f"MLB: {result.mlb_output.name}")
-        if result.kbo_output:
-            parts.append(f"KBO: {result.kbo_output.name}")
-        if result.backups:
-            parts.append(
-                tr("Backups: {names}").format(
-                    names=", ".join(path.name for path in result.backups)
-                )
-            )
-            parts.append(tr("Use these backups to restore the original roster files."))
-
         self.progress.setVisible(False)
         self.progress_label.setVisible(False)
-        QMessageBox.information(
-            self,
-            tr("Saved"),
-            "\n".join(parts),
-        )
+        BulkRatingSaveResultDialog(
+            changed_players=plan.changed_player_count,
+            changed_cells=plan.changed_cell_count,
+            output_paths=[path for path in (result.mlb_output, result.kbo_output) if path],
+            backup_paths=list(result.backups),
+            parent=self,
+        ).exec()
         self.accept()

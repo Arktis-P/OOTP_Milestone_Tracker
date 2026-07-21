@@ -6,10 +6,12 @@ from pathlib import Path
 
 import pytest
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication
 
+from core.config import AppSettings, SettingsManager
 from core.db.meta import get_init_season_coverage
 from core.stats.aggregator import Aggregator
-from core.stats.initial_import import InitialImporter
+from core.stats.initial_import import InitialImporter, InitImportResult
 from gui.workers.initial_import_worker import InitialImportWorker
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -21,6 +23,11 @@ def aggregator(tmp_path: Path) -> Aggregator:
     agg = Aggregator(tmp_path / "test.db")
     yield agg
     agg.close()
+
+
+@pytest.fixture
+def qapp() -> QApplication:
+    return QApplication.instance() or QApplication([])
 
 
 def test_first_time_uses_first_column_player_id(aggregator: Aggregator) -> None:
@@ -253,3 +260,104 @@ def test_preview_worker_uses_snapshot_and_leaves_live_db_unchanged(
         for table in before
     }
     assert after == before
+
+
+def test_initial_import_worker_cancels_between_files(
+    aggregator: Aggregator, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    worker = InitialImportWorker(
+        aggregator.db_path,
+        batting_path=str(SAMPLES_STATS / "player_batting_stats.txt"),
+        pitching_path=str(SAMPLES_STATS / "player_pitching_stats.txt"),
+        mode="first_time",
+        current_season=2026,
+        persist=False,
+    )
+
+    def fake_batting(self, path, mode, current_season, *, persist=True):
+        worker.cancel()
+        return InitImportResult(
+            mode=mode,
+            kind="batting",
+            total_scanned=1,
+            saved=persist,
+        )
+
+    def fake_pitching(self, path, mode, current_season, *, persist=True):
+        raise AssertionError("pitching import should not start after cancellation")
+
+    monkeypatch.setattr(InitialImporter, "import_batting", fake_batting)
+    monkeypatch.setattr(InitialImporter, "import_pitching", fake_pitching)
+
+    completed: list[object] = []
+    cancelled: list[tuple[str, object]] = []
+    errors: list[str] = []
+    worker.completed.connect(completed.append, Qt.ConnectionType.DirectConnection)
+    worker.cancelled.connect(
+        lambda message, results: cancelled.append((message, results)),
+        Qt.ConnectionType.DirectConnection,
+    )
+    worker.error.connect(errors.append, Qt.ConnectionType.DirectConnection)
+
+    worker.start()
+    assert worker.wait(5_000)
+
+    assert completed == []
+    assert errors == []
+    assert cancelled
+    message, results = cancelled[0]
+    assert "cancelled" in message.lower()
+    assert isinstance(results, list)
+    assert [result.kind for result in results] == ["batting"]
+
+
+def test_initial_import_view_cancel_and_retry_preserve_payload(
+    qapp: QApplication, aggregator: Aggregator, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from gui.views.initial_import_view import InitialImportView
+
+    settings = AppSettings(current_season=2026)
+    settings_manager = SettingsManager(tmp_path / "settings.json")
+    view = InitialImportView(aggregator, settings, settings_manager)
+    payload = {
+        "batting_path": str(SAMPLES_STATS / "player_batting_stats.txt"),
+        "pitching_path": str(SAMPLES_STATS / "player_pitching_stats.txt"),
+        "mode": "first_time",
+        "season": 2026,
+    }
+    view._pending_import = dict(payload)
+
+    started_payloads: list[dict] = []
+
+    def fake_start_preview() -> None:
+        assert view._pending_import is not None
+        started_payloads.append(dict(view._pending_import))
+
+    monkeypatch.setattr(view, "_start_preview_worker", fake_start_preview)
+    view._set_retry_available(True)
+    assert not view.retry_button.isHidden()
+    assert view.retry_button.isEnabled()
+
+    view._retry_pending_import()
+    assert started_payloads == [payload]
+    assert view._pending_import == payload
+
+    class DummyWorker:
+        def __init__(self) -> None:
+            self.cancelled = False
+
+        def cancel(self) -> None:
+            self.cancelled = True
+
+    dummy = DummyWorker()
+    view._active_stage = "preview"
+    view._preview_worker = dummy  # type: ignore[assignment]
+    view.cancel_button.setVisible(True)
+    view.cancel_button.setEnabled(True)
+
+    view._cancel_operation()
+
+    assert dummy.cancelled is True
+    assert view.cancel_button.isEnabled() is False
+    assert not view.progress_label.isHidden()
+    assert view._pending_import == payload

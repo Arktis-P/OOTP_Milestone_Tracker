@@ -234,19 +234,19 @@ class StatsView(QWidget):
         detail_card.content_layout.addWidget(self.info_label)
         detail_card.content_layout.addWidget(self.stats_tabs, stretch=1)
 
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(list_card)
-        splitter.addWidget(detail_card)
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        splitter.setSizes([240, 560])
+        self.splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.splitter.addWidget(list_card)
+        self.splitter.addWidget(detail_card)
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setSizes([240, 560])
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.banner)
         layout.addWidget(toolbar_card)
-        layout.addWidget(splitter, stretch=1)
+        layout.addWidget(self.splitter, stretch=1)
 
         self.player_search.textChanged.connect(self._apply_player_filter)
         self._reload_seasons()
@@ -263,6 +263,65 @@ class StatsView(QWidget):
             self.career_toggle.blockSignals(False)
         self._career_mode = career
         self._postseason_mode = (mode == "postseason")
+        self.season_combo.setEnabled(mode == "season")
+        self._refresh_player_stats()
+
+    def export_ui_state(self) -> dict:
+        mode = "postseason" if self._postseason_mode else "career" if self._career_mode else "season"
+        season_data = self.season_combo.currentData()
+        season = season_data if isinstance(season_data, int) else self.settings.current_season
+        return {
+            "splitter_sizes": [int(size) for size in self.splitter.sizes()],
+            "mode": mode,
+            "season": int(season),
+        }
+
+    def restore_ui_state(self, state: dict) -> None:
+        if not isinstance(state, dict):
+            return
+        sizes = state.get("splitter_sizes")
+        if (
+            isinstance(sizes, list)
+            and len(sizes) == 2
+            and all(isinstance(size, int) and size > 0 for size in sizes)
+        ):
+            self.splitter.setSizes(sizes)
+
+        season = state.get("season")
+        available = [
+            self.season_combo.itemData(index)
+            for index in range(self.season_combo.count())
+            if isinstance(self.season_combo.itemData(index), int)
+        ]
+        target_season = season if isinstance(season, int) and season in available else None
+        if target_season is None:
+            target_season = (
+                self.settings.current_season
+                if self.settings.current_season in available
+                else (available[0] if available else None)
+            )
+        self.season_combo.blockSignals(True)
+        if target_season is not None:
+            index = self.season_combo.findData(target_season)
+            if index >= 0:
+                self.season_combo.setCurrentIndex(index)
+        self.season_combo.blockSignals(False)
+
+        mode = state.get("mode")
+        if mode not in ("season", "career", "postseason"):
+            mode = "season"
+        for button in (self.mode_season_btn, self.mode_career_btn, self.mode_postseason_btn):
+            button.blockSignals(True)
+        self.mode_season_btn.setChecked(mode == "season")
+        self.mode_career_btn.setChecked(mode == "career")
+        self.mode_postseason_btn.setChecked(mode == "postseason")
+        for button in (self.mode_season_btn, self.mode_career_btn, self.mode_postseason_btn):
+            button.blockSignals(False)
+        self.career_toggle.blockSignals(True)
+        self.career_toggle.setChecked(mode == "career")
+        self.career_toggle.blockSignals(False)
+        self._career_mode = mode == "career"
+        self._postseason_mode = mode == "postseason"
         self.season_combo.setEnabled(mode == "season")
         self._refresh_player_stats()
 

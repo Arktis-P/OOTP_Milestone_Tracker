@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QSizePolicy,
     QMessageBox,
     QVBoxLayout,
     QWidget,
@@ -32,28 +33,43 @@ class PlayerDetailSummary(QWidget):
 
         self.meta_label = QLabel()
         self.meta_label.setWordWrap(True)
-        self.meta_label.setObjectName("mutedLabel")
+        self.meta_label.setObjectName("secondaryStat")
+        self.meta_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        self.meta_label.setAccessibleName(tr("Player metadata"))
 
         self.status_label = QLabel()
         self.status_label.setWordWrap(True)
-        self.status_label.setObjectName("mutedLabel")
+        self.status_label.setObjectName("statusText")
+        self.status_label.setAccessibleName(tr("Player detail status"))
         self.status_label.setVisible(False)
 
         self.events_list = QListWidget()
-        self.events_list.setMaximumHeight(118)
+        self.events_list.setMinimumHeight(118)
+        self.events_list.setWordWrap(True)
+        self.events_list.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.events_list.setAccessibleName(tr("Recent player events"))
+        self.events_list.setAccessibleDescription(
+            tr("Recent events for the selected player. Items with game logs open on click.")
+        )
         self.events_list.itemClicked.connect(self._on_event_clicked)
 
         self.streaks_label = QLabel()
+        self.streaks_label.setObjectName("helperText")
         self.streaks_label.setWordWrap(True)
         self.streaks_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
+        self.streaks_label.setAccessibleName(tr("Active streak summary"))
 
         self.next_label = QLabel()
+        self.next_label.setObjectName("helperText")
         self.next_label.setWordWrap(True)
         self.next_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
+        self.next_label.setAccessibleName(tr("Next milestone summary"))
 
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
@@ -172,13 +188,16 @@ class PlayerDetailSummary(QWidget):
 
 def _section(text: str) -> QLabel:
     label = QLabel(text)
-    label.setObjectName("sectionLabel")
+    label.setObjectName("sectionTitle")
+    label.setWordWrap(True)
+    label.setAccessibleName(text)
     return label
 
 
 def _summary_box(child: QLabel) -> QFrame:
     frame = QFrame()
     frame.setObjectName("toolRow")
+    frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.MinimumExpanding)
     layout = QHBoxLayout(frame)
     layout.setContentsMargins(10, 8, 10, 8)
     layout.addWidget(child)
