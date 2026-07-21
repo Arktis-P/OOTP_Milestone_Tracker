@@ -1,0 +1,4 @@
+interface:
+  display_name: "OOTP Milestone UX"
+  short_description: "PyQt 기록 탐색·대량 편집 UX 규칙"
+  default_prompt: "Use $ootp-milestone-ux to review or improve OOTP Milestone Tracker UI flows."

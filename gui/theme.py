@@ -27,6 +27,9 @@ ACCENT_PRESSED = "#006cbe"
 ACCENT_SUBTLE = "#264f78"
 ACCENT_TEXT = "#75beff"
 
+# Keyboard focus ring — kept distinct from hover/selected/disabled treatments
+FOCUS_RING = ACCENT_TEXT
+
 # Semantic
 RED_BG = "#3b1219"
 RED_BORDER = "#8b2e2e"
@@ -538,5 +541,25 @@ QPushButton#navBtnIdle {{
 QPushButton#navBtnIdle:hover {{
     background-color: {BG_HOVER};
     color: {TEXT_PRIMARY};
+}}
+
+/* Keyboard focus — a dedicated outline so it never reads as hover
+   (border-color swap), selected (accent background/left-border), or
+   disabled (muted colors). Applies uniformly across button variants
+   because `outline` is otherwise unused, so it can't be shadowed by
+   the more specific #id border/background rules above. */
+QPushButton:focus,
+QLineEdit:focus,
+QSpinBox:focus,
+QComboBox:focus,
+QTextEdit:focus,
+QPlainTextEdit:focus,
+QListWidget:focus,
+QTableWidget:focus,
+QTableView:focus {{
+    outline: 2px solid {FOCUS_RING};
+}}
+QPushButton:disabled:focus {{
+    outline: none;
 }}
 """

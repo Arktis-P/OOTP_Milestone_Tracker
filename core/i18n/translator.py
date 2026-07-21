@@ -157,6 +157,14 @@ _KO: dict[str, str] = {
     "Milestone History":                "마일스톤 이력",
     "Subject":                          "대상",
     "Search":                           "검색",
+    "No active filters.":               "활성 필터가 없습니다.",
+    "Shows how many milestone records match the current filters.":
+        "현재 필터와 일치하는 마일스톤 기록 수를 표시합니다.",
+    "Showing {shown:,} / {total:,} records": "표시 {shown:,}건 / 전체 {total:,}건",
+    " · Active filters: {filters}":      " · 적용된 필터: {filters}",
+    "Clear active filters: {filters}":  "적용된 필터 초기화: {filters}",
+    " · No active filters":              " · 적용된 필터 없음",
+    "Search: {text}":                    "검색: {text}",
     "Imports Major League boxscores only. KBO, WBC, etc. are skipped.":
         "메이저리그 박스스코어만 가져옵니다. KBO·WBC 등은 건너뜁니다.",
 
@@ -818,12 +826,42 @@ _KO: dict[str, str] = {
     "Nation":                            "국가",
     "Prospects only":                    "유망주만 보기",
     "Showing {shown:,} / {total:,} players": "표시 {shown:,}명 / 전체 {total:,}명",
+    "Player search":                    "선수 검색",
+    "Filter the in-memory player list immediately by name or ID.":
+        "메모리의 선수 목록을 이름 또는 ID로 즉시 필터링합니다.",
+    "Position filter":                  "포지션 필터",
+    "Filter tracked players by position group.": "추적 선수를 포지션 그룹으로 필터링합니다.",
+    "Shows how many tracked players match the current filters.":
+        "현재 필터와 일치하는 추적 선수 수를 표시합니다.",
+    "No players match the current search or position filter.":
+        "현재 검색어나 포지션 필터와 일치하는 선수가 없습니다.",
+    "Reset player filters":             "선수 필터 초기화",
+    "Clear player search and position filters.": "선수 검색과 포지션 필터를 초기화합니다.",
     "Options":                           "옵션",
     "Filter":                            "필터",
     "Player List":                       "선수 목록",
     "No rating changes to apply.":       "적용할 레이팅 변경이 없습니다.",
     "Applying... {index}/{total}":       "적용 중... {index}/{total}",
     "Apply and Save":                    "적용 후 저장",
+    "Confirm Rating Changes":            "레이팅 변경 확인",
+    "Changed {players:,} players / {cells:,} cells · Unchanged {unchanged:,} · Skipped {skipped:,} · Invalid cells {skipped_cells:,}":
+        "선수 {players:,}명 / 셀 {cells:,}개 변경 · 변경 없음 {unchanged:,}명 · 제외 {skipped:,}명 · 잘못된 셀 {skipped_cells:,}개",
+    "Field":                             "필드",
+    "Before":                            "변경 전",
+    "After":                             "변경 후",
+    "Showing the first {shown:,} changed cells. {remaining:,} more changed cells will also be applied.":
+        "변경 셀 중 처음 {shown:,}개를 표시합니다. 추가 {remaining:,}개도 함께 적용됩니다.",
+    "All changed cells are shown.":      "변경되는 모든 셀을 표시했습니다.",
+    "Review the exact before/after rating changes before saving.":
+        "저장 전에 정확한 레이팅 변경 전후 값을 확인하세요.",
+    "Rating Changes":                    "레이팅 변경 내역",
+    "Unchanged and Skipped Details":     "변경 없음 및 제외 상세",
+    "Unchanged targets":                 "변경 없는 대상",
+    "Skipped players":                   "제외된 선수",
+    "Skipped cells":                     "제외된 셀",
+    "- None":                            "- 없음",
+    "Use these backups to restore the original roster files.":
+        "원본 로스터 파일을 복원하려면 이 백업을 사용하세요.",
 
     # ── Milestone view — game log ─────────────────────────────────────────
     "Game log directory is not configured.": "게임 로그 경로가 설정되지 않았습니다.",

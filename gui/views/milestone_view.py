@@ -275,7 +275,14 @@ class MilestoneView(QWidget):
 
         self.reset_filters_button = QPushButton(tr("Reset Filters"))
         self.reset_filters_button.setObjectName("linkButton")
+        self.reset_filters_button.setToolTip(tr("No active filters."))
         self.reset_filters_button.clicked.connect(self.reset_filters)
+        self.filter_summary_label = QLabel("")
+        self.filter_summary_label.setObjectName("mutedLabel")
+        self.filter_summary_label.setWordWrap(True)
+        self.filter_summary_label.setToolTip(
+            tr("Shows how many milestone records match the current filters.")
+        )
 
         self.season_spin = QSpinBox()
         self.season_spin.setRange(1900, 2100)
@@ -379,7 +386,7 @@ class MilestoneView(QWidget):
         type_filter_row.addWidget(self.grade_combo)
         type_filter_row.addWidget(section_label(tr("Source")))
         type_filter_row.addWidget(self.source_combo)
-        type_filter_row.addStretch()
+        type_filter_row.addWidget(self.filter_summary_label, stretch=1)
         type_filter_row.addWidget(self.reset_filters_button)
 
         action_row = QHBoxLayout()
@@ -568,6 +575,9 @@ class MilestoneView(QWidget):
         worker.deleteLater()
 
     def refresh(self) -> None:
+        previous_record_id = self._highlight_id or self._selected_record_id_from_table()
+        if previous_record_id is None:
+            previous_record_id = self._selected_record_id
         checker = MilestoneChecker(
             self.aggregator,
             self.milestones,
@@ -605,6 +615,7 @@ class MilestoneView(QWidget):
             self._records.append(record)
 
         total_count = len(checker.get_recorded_milestones())
+        self._update_filter_summary(len(self._records), total_count)
         self.table_panel.table.setVisible(bool(self._records))
         self.empty_state.setVisible(not self._records)
         if not self._records:
@@ -702,10 +713,60 @@ class MilestoneView(QWidget):
 
                 self.table_panel.table.setItem(row_idx, col_idx, item)
         self.table_panel.table.setSortingEnabled(True)
+        selected = False
+        if previous_record_id is not None:
+            selected = select_record_row(self.table_panel.table, previous_record_id)
         if self._highlight_id is not None:
-            select_record_row(self.table_panel.table, self._highlight_id)
             self._highlight_id = None
+        if selected:
+            self._update_meta_panel()
+        else:
+            self.table_panel.table.clearSelection()
+            self._update_meta_panel()
         self._update_selection_actions()
+
+    def _active_filter_descriptions(self) -> list[str]:
+        """Return human-readable active filters for the history toolbar."""
+        filters: list[str] = []
+        for label, combo in (
+            (tr("Subject"), self.subject_combo),
+            (tr("Team"), self.team_filter),
+            (tr("Scope"), self.scope_combo),
+            (tr("Event Type"), self.event_type_combo),
+            (tr("Grade"), self.grade_combo),
+            (tr("Source"), self.source_combo),
+        ):
+            data = combo.currentData()
+            if data not in (None, "", "all"):
+                filters.append(f"{label}: {combo.currentText()}")
+        season = self.season_spin.value()
+        if season:
+            filters.append(tr("Season: {season}").format(season=season))
+        search = self.table_panel.filter_bar.search_input.text().strip()
+        if search:
+            filters.append(tr("Search: {text}").format(text=search))
+        return filters
+
+    def _update_filter_summary(self, shown: int, total: int) -> None:
+        filters = self._active_filter_descriptions()
+        count_text = tr("Showing {shown:,} / {total:,} records").format(
+            shown=shown,
+            total=total,
+        )
+        if filters:
+            summary = count_text + tr(" · Active filters: {filters}").format(
+                filters=", ".join(filters)
+            )
+            self.reset_filters_button.setEnabled(True)
+            self.reset_filters_button.setToolTip(
+                tr("Clear active filters: {filters}").format(filters=", ".join(filters))
+            )
+        else:
+            summary = count_text + tr(" · No active filters")
+            self.reset_filters_button.setEnabled(False)
+            self.reset_filters_button.setToolTip(tr("No active filters."))
+        self.filter_summary_label.setText(summary)
+        self.filter_summary_label.setToolTip(summary)
 
     def reset_filters(self) -> None:
         """Clear every history filter in one action."""

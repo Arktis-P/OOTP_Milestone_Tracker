@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -136,16 +136,41 @@ class StatsView(QWidget):
         self.player_search = QLineEdit()
         self.player_search.setPlaceholderText(tr("Search player..."))
         self.player_search.setClearButtonEnabled(True)
+        self.player_search.setAccessibleName(tr("Player search"))
         self.player_search.setToolTip(
-            tr("Filter list by name or ID. Does not re-query DB on each input.")
+            tr("Filter the in-memory player list immediately by name or ID.")
         )
-        self._search_timer = QTimer(self)
-        self._search_timer.setSingleShot(True)
-        self._search_timer.setInterval(250)
-        self._search_timer.timeout.connect(self._apply_player_filter)
+        self.position_combo.setAccessibleName(tr("Position filter"))
+        self.position_combo.setToolTip(tr("Filter tracked players by position group."))
 
         self.player_list = QListWidget()
         self.player_list.currentRowChanged.connect(self._on_list_selection)
+
+        self.player_count_label = QLabel("")
+        self.player_count_label.setStyleSheet(hint_style(TEXT_SECONDARY))
+        self.player_count_label.setToolTip(
+            tr("Shows how many tracked players match the current filters.")
+        )
+
+        self.empty_filter_panel = QWidget()
+        empty_filter_layout = QVBoxLayout(self.empty_filter_panel)
+        empty_filter_layout.setContentsMargins(8, 8, 8, 8)
+        empty_filter_layout.setSpacing(6)
+        self.empty_filter_label = QLabel(
+            tr("No players match the current search or position filter.")
+        )
+        self.empty_filter_label.setObjectName("mutedLabel")
+        self.empty_filter_label.setWordWrap(True)
+        self.reset_player_filters_button = QPushButton(tr("Reset Filters"))
+        self.reset_player_filters_button.setObjectName("linkButton")
+        self.reset_player_filters_button.setAccessibleName(tr("Reset player filters"))
+        self.reset_player_filters_button.setToolTip(
+            tr("Clear player search and position filters.")
+        )
+        self.reset_player_filters_button.clicked.connect(self.reset_player_filters)
+        empty_filter_layout.addWidget(self.empty_filter_label)
+        empty_filter_layout.addWidget(self.reset_player_filters_button)
+        self.empty_filter_panel.hide()
 
         self.player_header = QLabel()
         self.player_header.setWordWrap(True)
@@ -199,7 +224,8 @@ class StatsView(QWidget):
         toolbar_card.content_layout.addLayout(import_row)
         toolbar_card.content_layout.addLayout(filter_row)
 
-        list_card = CardPanel(tr("Tracked Players"))
+        list_card = CardPanel(tr("Tracked Players"), trailing=self.player_count_label)
+        list_card.add_widget(self.empty_filter_panel)
         list_card.add_widget(self.player_list)
 
         detail_card = CardPanel()
@@ -222,7 +248,7 @@ class StatsView(QWidget):
         layout.addWidget(toolbar_card)
         layout.addWidget(splitter, stretch=1)
 
-        self.player_search.textChanged.connect(self._on_search_text_changed)
+        self.player_search.textChanged.connect(self._apply_player_filter)
         self._reload_seasons()
         self.reload_players()
 
@@ -239,9 +265,6 @@ class StatsView(QWidget):
         self._postseason_mode = (mode == "postseason")
         self.season_combo.setEnabled(mode == "season")
         self._refresh_player_stats()
-
-    def _on_search_text_changed(self, _text: str) -> None:
-        self._search_timer.start()
 
     def _on_career_toggled(self, checked: bool) -> None:
         self._career_mode = checked
@@ -289,6 +312,7 @@ class StatsView(QWidget):
         self._players_by_id = {int(p["player_id"]): p for p in self._players}
         if not self._players:
             self.player_list.clear()
+            self._update_player_filter_state(0, 0)
             self.player_header.setText(tr("Please select a player."))
             self.info_label.setText("")
             self.batting_table.setRowCount(0)
@@ -357,6 +381,7 @@ class StatsView(QWidget):
         needle = self.player_search.text().strip().lower()
         position_group = str(self.position_combo.currentData() or "")
         previous_id = self._selected_player_id()
+        selected = False
         self.player_list.blockSignals(True)
         self.player_list.clear()
         for player in self._players:
@@ -377,10 +402,12 @@ class StatsView(QWidget):
                 item = self.player_list.item(row)
                 if item and int(item.data(Qt.ItemDataRole.UserRole)) == previous_id:
                     self.player_list.setCurrentRow(row)
+                    selected = True
                     break
-        elif self.player_list.count():
+        if not selected and self.player_list.count():
             self.player_list.setCurrentRow(0)
         self.player_list.blockSignals(False)
+        self._update_player_filter_state(self.player_list.count(), len(self._players))
         if self.player_list.currentRow() >= 0:
             self._refresh_player_stats()
         else:
@@ -390,6 +417,32 @@ class StatsView(QWidget):
             self.pitching_table.setRowCount(0)
             self.player_detail_summary.clear()
             self.milestone_timeline.load_player(None)
+
+    def _has_active_player_filters(self) -> bool:
+        return bool(
+            self.player_search.text().strip()
+            or str(self.position_combo.currentData() or "")
+        )
+
+    def _update_player_filter_state(self, shown: int, total: int) -> None:
+        self.player_count_label.setText(
+            tr("Showing {shown:,} / {total:,} players").format(
+                shown=shown,
+                total=total,
+            )
+        )
+        has_empty_filter = total > 0 and shown == 0 and self._has_active_player_filters()
+        self.empty_filter_panel.setVisible(has_empty_filter)
+        self.player_list.setVisible(not has_empty_filter)
+
+    def reset_player_filters(self) -> None:
+        self.player_search.blockSignals(True)
+        self.player_search.clear()
+        self.player_search.blockSignals(False)
+        self.position_combo.blockSignals(True)
+        self.position_combo.setCurrentIndex(0)
+        self.position_combo.blockSignals(False)
+        self._apply_player_filter()
 
     def _on_list_selection(self, row: int) -> None:
         if row >= 0:
