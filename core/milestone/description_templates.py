@@ -42,6 +42,48 @@ TEAM_GAME_TEMPLATE_MAP: dict[str, tuple[str, str]] = {
 
 NameResolver = Callable[[int, str], str]
 
+# Season ratio milestones are recorded with the value the player actually
+# finished on, so the description reads "시즌 타율 .361" rather than the
+# generic threshold carried by the milestone label.
+SEASON_RATIO_DESCRIPTION_LABELS: dict[str, str] = {
+    "season_avg": "시즌 타율",
+    "season_obp": "시즌 출루율",
+    "season_slg": "시즌 장타율",
+    "season_ops": "시즌 OPS",
+    "season_era": "시즌 ERA",
+    "season_whip": "시즌 WHIP",
+}
+
+# AVG/OBP/SLG/OPS use three decimals with the leading zero dropped (.361),
+# ERA exactly two (2.25). WHIP keeps three decimals — that is the precision the
+# aggregator stores it at (ROUND(..., 3)) — and keeps its leading zero because
+# it is not a "hitless" rate in the .xxx family.
+_RATE_STATS_NO_LEADING_ZERO: frozenset[str] = frozenset(
+    {"season_avg", "season_obp", "season_slg", "season_ops"}
+)
+_RATIO_DECIMALS: dict[str, int] = {"season_era": 2, "season_whip": 3}
+
+
+def format_ratio_value(stat: str, value: float) -> str:
+    """Format a season ratio stat the way it is displayed in records."""
+    number = float(value)
+    if stat in _RATE_STATS_NO_LEADING_ZERO:
+        text = f"{number:.3f}"
+        if text.startswith("0."):
+            return text[1:]
+        if text.startswith("-0."):
+            return f"-{text[2:]}"
+        return text
+    return f"{number:.{_RATIO_DECIMALS.get(stat, 3)}f}"
+
+
+def build_season_ratio_description(stat: str, value: float) -> str | None:
+    """Return e.g. '시즌 타율 .361' / '시즌 ERA 2.25', or None for unknown stats."""
+    label = SEASON_RATIO_DESCRIPTION_LABELS.get(stat)
+    if not label:
+        return None
+    return f"{label} {format_ratio_value(stat, value)}"
+
 
 def fill_description(
     milestone: MilestoneDefinition,

@@ -114,6 +114,61 @@ _KO: dict[str, str] = {
     "View New Milestones":              "새 마일스톤 보기",
     "View First Error":                 "첫 오류 확인",
     "Import Errors":                    "가져오기 오류",
+    "View Errors ({count})":            "오류 {count}건 보기",
+    "Error Message":                    "오류 내용",
+    "Unknown error":                    "알 수 없는 오류",
+    "Copy Selected":                    "선택 항목 복사",
+    "Copy All":                         "전체 복사",
+    "{count} import error(s)":          "가져오기 오류 {count}건",
+    "{remaining:,.0f} remaining":       "{remaining:,.0f}개 남음",
+    "{current:,.0f} / {target:,.0f}  ·  {pct:.1f}%":
+        "{current:,.0f} / {target:,.0f}  ·  {pct:.1f}%",
+    "Continue":                         "계속",
+    "Cancel":                           "취소",
+    "Export File Problem":              "스탯 Export 파일 문제",
+    "No Season Data":                   "시즌 데이터 없음",
+    "No OOTP stats export was found in: {path}":
+        "다음 폴더에서 OOTP 스탯 Export 파일을 찾지 못했습니다: {path}",
+    "No export file was selected. Choose the OOTP stats files and retry.":
+        "Export 파일이 선택되지 않았습니다. OOTP 스탯 파일을 확인한 뒤 다시 시도하세요.",
+    "Export file not found: {path}":     "Export 파일을 찾지 못했습니다: {path}",
+    "The export file is empty: {path}": "Export 파일이 비어 있습니다: {path}",
+    "The export file cannot be read: {path} ({error})":
+        "Export 파일을 읽을 수 없습니다: {path} ({error})",
+    "The export file could not be parsed: {path} ({error})":
+        "Export 파일을 분석할 수 없습니다: {path} ({error})",
+    "The export file has no data rows: {path}":
+        "Export 파일에 스탯 데이터 행이 없습니다: {path}",
+    "Export the {season} season player stats from OOTP before continuing.\n\n"
+    "If you still need to export, select Cancel. If the stats files "
+    "already exist, select Continue.":
+        "계속하기 전에 OOTP에서 {season}시즌 선수 스탯을 Export하세요.\n\n"
+        "아직 Export가 필요하면 취소를, 스탯 파일이 이미 있으면 계속을 선택하세요.",
+    "{season} season AVG/OBP/SLG/OPS/ERA milestones will be judged from "
+    "the exported OOTP stats files.\n\n"
+    "If you still need to export, select Cancel. If these files are the "
+    "latest export, select Continue.":
+        "{season}시즌 타율/출루율/장타율/OPS/ERA 마일스톤을 OOTP 스탯 "
+        "Export 파일로 판정합니다.\n\n"
+        "아직 Export가 필요하면 취소를, 최신 파일이 맞으면 계속을 선택하세요.",
+    "No export folder is configured. Set it in Settings and retry.":
+        "Export 폴더가 설정되지 않았습니다. 설정에서 지정한 뒤 다시 시도하세요.",
+    "Not found: {path}":                "파일 없음: {path}",
+    "The export files contain no {season} season MLB records, "
+    "so nothing was judged or saved.":
+        "Export 파일에 {season}시즌 MLB 기록이 없어 아무 기록도 판정하거나 저장하지 않았습니다.",
+    "The export files do not contain current {season} season rows. "
+    "Export both batting and pitching player stats from OOTP, then retry.":
+        "Export 파일에 현재 {season}시즌 타격/투구 기록이 들어 있지 않습니다. "
+        "OOTP에서 타격과 투구 선수 스탯을 모두 Export한 뒤 다시 시도하세요.",
+    "The exported stats look older than the imported boxscores. "
+    "Export the final {season} season player stats from OOTP, then retry.":
+        "Export 스탯이 가져온 박스스코어 누적보다 오래된 중간 시즌 파일일 수 있습니다. "
+        "OOTP에서 {season}시즌 최종 선수 스탯을 Export한 뒤 다시 시도하세요.",
+    "Showing {shown} of {total} issue(s):":
+        "전체 {total}건 중 대표 {shown}건:",
+    "{player_name} · {category}/{stat}: Export {export_value} < boxscore {db_value}":
+        "{player_name} · {category}/{stat}: Export {export_value} < 박스스코어 {db_value}",
 
     # ── Milestone view — table columns ───────────────────────────────────
     "Date":                             "날짜",

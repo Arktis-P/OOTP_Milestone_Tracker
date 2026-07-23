@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
 
 from core.i18n import tr
 from core.milestone.composite_stats import composite_crossed
+from core.milestone.description_templates import build_season_ratio_description
 from core.milestone.definitions import (
     ACTIVE_SCOPES,
     MilestoneDefinition,
@@ -53,6 +54,13 @@ SEASON_COUNT_STATS = {
     "season_ip": ("pitching", "sum_ip", "ip_outs"),
     "season_holds": ("pitching", "season_holds", "hold"),
 }
+
+# Lower-is-better milestones whose label names a band ("시즌 ERA 2점대") instead
+# of a ceiling ("… 이하"): the threshold is exclusive, so an ERA of exactly 3.00
+# is a 3점대 season and does not qualify.
+STRICT_LOWER_MILESTONE_KEYS: frozenset[str] = frozenset(
+    {"pit_season_era_2", "pit_season_era_1", "pit_season_era_0"}
+)
 
 
 @dataclass
@@ -162,41 +170,65 @@ class MilestoneChecker:
         return self._career_pitching_cache[player_id]
 
     def check_season_ratios(
-        self, season: int, achieved_date: str | None = None
+        self,
+        season: int,
+        achieved_date: str | None = None,
+        *,
+        totals_override: Mapping[str, list[dict[str, Any]]] | None = None,
     ) -> list[MilestoneAchievement]:
-        """Record season ratio milestones (타율·ERA 등) at season close."""
+        """Record season ratio milestones (타율·ERA 등) at season close.
+
+        ``totals_override`` replaces the DB-derived season totals with rows in
+        the same shape (typically an OOTP export snapshot, see
+        :meth:`core.stats.initial_import.InitialImporter.read_season_snapshot`).
+        A present-but-empty list means "the export has no such players", so the
+        DB is not silently used as a fallback for that category.
+        """
         date = achieved_date or f"{season}-12-31"
+        override = totals_override or {}
         achievements: list[MilestoneAchievement] = []
+        batting_rows: list[dict[str, Any]] | None = None
+        pitching_rows: list[dict[str, Any]] | None = None
         for milestone in self.definitions.all_milestones:
             if milestone.scope not in ("season_ratio", "season"):
                 continue
             if milestone.stat not in RATIO_BATTING_STATS | RATIO_PITCHING_STATS:
                 continue
             if milestone.stat in RATIO_BATTING_STATS:
-                rows = self.aggregator.get_season_batting_totals(season)
+                if batting_rows is None:
+                    batting_rows = (
+                        list(override["batting"])
+                        if "batting" in override
+                        else self.aggregator.get_season_batting_totals(season)
+                    )
                 min_ab = get_batting_qualifier(self.season_games_total, self.ratio_qualifiers)
-                for row in rows:
+                for row in batting_rows:
                     if not self._row_player_is_tracked(row):
                         continue
                     if int(row.get("ab") or 0) < min_ab:
                         continue
                     current = float(row.get(_ratio_column(milestone.stat), 0) or 0)
-                    if self._is_achieved(current, milestone):
+                    if self._ratio_achieved(current, milestone):
                         achievements.append(
                             self._build_ratio_achievement(row, milestone, current, season, date)
                         )
             elif milestone.stat in RATIO_PITCHING_STATS:
-                rows = self.aggregator.get_season_pitching_totals(season)
+                if pitching_rows is None:
+                    pitching_rows = (
+                        list(override["pitching"])
+                        if "pitching" in override
+                        else self.aggregator.get_season_pitching_totals(season)
+                    )
                 min_outs = get_pitching_qualifier_outs(
                     self.season_games_total, self.ratio_qualifiers
                 )
-                for row in rows:
+                for row in pitching_rows:
                     if not self._row_player_is_tracked(row):
                         continue
                     if int(row.get("ip_outs") or 0) < min_outs:
                         continue
                     current = float(row.get(_ratio_column(milestone.stat), 0) or 0)
-                    if self._is_achieved(current, milestone):
+                    if self._ratio_achieved(current, milestone):
                         achievements.append(
                             self._build_ratio_achievement(row, milestone, current, season, date)
                         )
@@ -996,6 +1028,7 @@ class MilestoneChecker:
             achieved_date=achieved_date,
             game_id=None,
             season=season,
+            description=build_season_ratio_description(milestone.stat, current),
         )
 
     def _achievement_exists(self, item: MilestoneAchievement) -> bool:
@@ -1042,6 +1075,18 @@ class MilestoneChecker:
                 (item.player_id, item.milestone.key, item.game_id),
             ).fetchone()
         return row is not None
+
+    @staticmethod
+    def _ratio_achieved(current: float, milestone: MilestoneDefinition) -> bool:
+        """Season ratio judgement, with exclusive thresholds where the label is a band.
+
+        "시즌 ERA 2점대" means a final ERA below 3.00, so an exact 3.00 does not
+        qualify — it is a 3점대 season. Every other lower-is-better milestone
+        (labelled "… 이하") keeps the inclusive ``_is_achieved`` semantics.
+        """
+        if milestone.key in STRICT_LOWER_MILESTONE_KEYS:
+            return current < milestone.threshold
+        return MilestoneChecker._is_achieved(current, milestone)
 
     @staticmethod
     def _is_achieved(current: float, milestone: MilestoneDefinition) -> bool:

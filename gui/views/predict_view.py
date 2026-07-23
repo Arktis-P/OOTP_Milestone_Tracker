@@ -34,7 +34,16 @@ from gui.theme import RED_BG, RED_TEXT
 from gui.widgets.card_panel import CardPanel, section_label
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.grade_styles import apply_grade_style
-from gui.widgets.table_widgets import SortableTable
+from gui.widgets.milestone_progress_delegate import (
+    IS_NEAR_ROLE,
+    PROGRESS_ROLE,
+    MilestoneProgressDelegate,
+)
+from gui.widgets.table_widgets import NumericSortItem, SortableTable
+
+_GRADE_COL = 3
+_PROGRESS_COL = 4
+_SEASON_COL = 6
 
 
 class PredictView(QWidget):
@@ -98,9 +107,6 @@ class PredictView(QWidget):
                 tr("Korean Name"),
                 tr("Milestone"),
                 tr("Grade"),
-                tr("Current"),
-                tr("Target"),
-                tr("Remaining"),
                 tr("Progress"),
                 tr("Status"),
                 tr("This Season"),
@@ -108,6 +114,8 @@ class PredictView(QWidget):
         )
         self.table.setToolTip(tr("Double-click a prediction to open player details."))
         self.table.cellDoubleClicked.connect(self._open_player_details)
+        self._progress_delegate = MilestoneProgressDelegate(self.table)
+        self.table.setItemDelegateForColumn(_PROGRESS_COL, self._progress_delegate)
         table_card = CardPanel(tr("Career Achievement Predictions"))
         table_card.add_widget(self.table)
 
@@ -192,9 +200,6 @@ class PredictView(QWidget):
             self.settings.import_export_dir or self.settings.initial_stats_dir
         )
 
-        near_row_bg = QColor(RED_BG)
-        near_row_fg = QColor(RED_TEXT)
-
         self.table.setSortingEnabled(False)
         self.table.setRowCount(len(predictions))
         for row_idx, item in enumerate(predictions):
@@ -206,32 +211,36 @@ class PredictView(QWidget):
                 player_id=item.player_id,
                 roster_names=roster_names,
             )
-            season_col = 9  # "This Season" is the last table column
+            progress_label = tr("{remaining:,.0f} remaining").format(
+                remaining=item.remaining
+            )
+            progress_tooltip = tr("{current:,.0f} / {target:,.0f}  ·  {pct:.1f}%").format(
+                current=item.current_value, target=item.threshold, pct=item.progress_pct
+            )
             values = [
                 item.player_name,
                 korean_name,
                 item.milestone_label,
                 grade,
-                f"{item.current_value:,.0f}",
-                f"{item.threshold:,.0f}",
-                f"{item.remaining:,.0f}",
-                f"{item.progress_pct:.1f}%",
+                progress_label,
                 status,
                 render_season_note(item.season_note),
             ]
             for col_idx, value in enumerate(values):
-                cell = QTableWidgetItem(str(value))
+                if col_idx == _PROGRESS_COL:
+                    cell: QTableWidgetItem = NumericSortItem(
+                        str(value), item.progress_pct
+                    )
+                    cell.setData(PROGRESS_ROLE, float(item.progress_pct))
+                    cell.setData(IS_NEAR_ROLE, bool(item.is_near))
+                    cell.setToolTip(progress_tooltip)
+                else:
+                    cell = QTableWidgetItem(str(value))
                 cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 cell.setData(Qt.ItemDataRole.UserRole, int(item.player_id))
-                if item.is_near:
-                    cell.setBackground(near_row_bg)
-                    if col_idx != 3:
-                        cell.setForeground(near_row_fg)
-                if col_idx == 3:
+                if col_idx == _GRADE_COL:
                     apply_grade_style(cell, grade)
-                    if item.is_near:
-                        cell.setBackground(near_row_bg)
-                if col_idx == season_col:
+                if col_idx == _SEASON_COL:
                     cell.setToolTip(render_season_basis(item.season_note))
                 self.table.setItem(row_idx, col_idx, cell)
         self.table.setSortingEnabled(True)

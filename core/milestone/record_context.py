@@ -76,6 +76,11 @@ def _fill_achievement_description(
     *,
     game_logs_dir: str | Path | None = None,
 ) -> str | None:
+    if achievement.description:
+        # The checker already produced a value-bearing description (season ratio
+        # finals such as "시즌 타율 .361"); templates must not overwrite it.
+        return achievement.description
+
     milestone = achievement.milestone
     if not milestone.description_template or milestone.description_template == "situational":
         return None

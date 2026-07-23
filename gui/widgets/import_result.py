@@ -33,13 +33,20 @@ def show_import_result_banner(
     *,
     on_view_milestones: Callable[[], None],
     on_view_error: Callable[[], None] | None = None,
+    on_view_errors: Callable[[], None] | None = None,
 ) -> None:
     message = build_import_message(payload)
     actions: list[tuple[str, Callable[[], None]]] = []
     if payload.milestones:
         actions.append((tr("View New Milestones"), on_view_milestones))
-    if payload.batch.errors and on_view_error:
-        actions.append((tr("View First Error"), on_view_error))
+    error_action = on_view_errors or on_view_error
+    if payload.batch.errors and error_action:
+        actions.append(
+            (
+                tr("View Errors ({count})").format(count=len(payload.batch.errors)),
+                error_action,
+            )
+        )
 
     if payload.batch.errors:
         banner.show_warning(message, actions)

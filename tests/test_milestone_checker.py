@@ -328,6 +328,108 @@ def test_lower_direction_era(aggregator: Aggregator) -> None:
     assert bad == []
 
 
+def test_season_ratio_override_records_actual_value_description(
+    aggregator: Aggregator,
+) -> None:
+    milestone = MilestoneDefinition(
+        key="season_avg_350_export",
+        label="시즌 타율 .350",
+        stat="season_avg",
+        threshold=0.350,
+        scope="season_ratio",
+        category="batting",
+    )
+    checker = MilestoneChecker(
+        aggregator,
+        MilestoneDefinitions(batting=[milestone], pitching=[]),
+        season_games_total=162,
+    )
+    aggregator.upsert_player(8101, "Export Batter", "E. Batter")
+
+    achievements = checker.check_season_ratios(
+        2026,
+        totals_override={
+            "batting": [
+                {
+                    "id": 8101,
+                    "player_id": 8101,
+                    "name": "E. Batter",
+                    "team": "NYY",
+                    "ab": 502,
+                    "avg": 0.361,
+                }
+            ],
+            "pitching": [],
+        },
+    )
+
+    assert len(achievements) == 1
+    assert achievements[0].current_value == pytest.approx(0.361)
+    assert achievements[0].description == "시즌 타율 .361"
+    assert checker.record_achievements(achievements) == 1
+    stored = aggregator.conn.execute(
+        "SELECT achieved_value, description FROM milestone_records "
+        "WHERE milestone_key = ?",
+        (milestone.key,),
+    ).fetchone()
+    assert stored["achieved_value"] == pytest.approx(0.361)
+    assert stored["description"] == "시즌 타율 .361"
+
+
+@pytest.mark.parametrize(
+    ("key", "threshold", "current", "achieved"),
+    [
+        ("pit_season_era_2", 3.00, 3.00, False),
+        ("pit_season_era_2", 3.00, 2.99, True),
+        ("pit_season_era_1", 2.00, 2.00, False),
+        ("pit_season_era_1", 2.00, 1.99, True),
+        ("pit_season_era_0", 1.00, 1.00, False),
+        ("pit_season_era_0", 1.00, 0.99, True),
+    ],
+)
+def test_season_era_band_thresholds_are_exclusive(
+    aggregator: Aggregator,
+    key: str,
+    threshold: float,
+    current: float,
+    achieved: bool,
+) -> None:
+    milestone = MilestoneDefinition(
+        key=key,
+        label="ERA band",
+        stat="season_era",
+        threshold=threshold,
+        scope="season_ratio",
+        category="pitching",
+        direction="lower",
+    )
+    checker = MilestoneChecker(
+        aggregator,
+        MilestoneDefinitions(batting=[], pitching=[milestone]),
+        season_games_total=162,
+    )
+    aggregator.upsert_player(8201, "Export Pitcher", "E. Pitcher")
+    achievements = checker.check_season_ratios(
+        2026,
+        totals_override={
+            "batting": [],
+            "pitching": [
+                    {
+                        "id": 8201,
+                        "player_id": 8201,
+                    "name": "E. Pitcher",
+                    "team": "NYY",
+                    "ip_outs": 486,
+                    "era": current,
+                }
+            ],
+        },
+    )
+    assert bool(achievements) is achieved
+    if achieved:
+        assert achievements[0].description == f"시즌 ERA {current:.2f}"
+
+
 def test_season_ratio_only_best_milestone_recorded(aggregator: Aggregator) -> None:
     """시즌 비율 마일스톤은 가장 좋은 기록 하나만 반환해야 한다.
 

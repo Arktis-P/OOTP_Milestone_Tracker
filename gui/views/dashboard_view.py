@@ -33,6 +33,7 @@ from gui.widgets.card_panel import CardPanel
 from gui.widgets.empty_state import EmptyStateWidget
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.grade_styles import dashboard_milestone_color
+from gui.widgets.import_errors_dialog import ImportErrorsDialog
 from gui.widgets.import_result import build_import_message, show_import_result_banner
 from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.widgets.readiness_checklist import ReadinessChecklistCard
@@ -529,11 +530,7 @@ class DashboardView(QWidget):
             self.banner,
             payload,
             on_view_milestones=lambda: MilestoneAchievedDialog(payload.milestones, self).exec(),
-            on_view_error=lambda: QMessageBox.warning(
-                self,
-                tr("Import Errors"),
-                payload.batch.errors[0].error if payload.batch.errors else "",
-            ),
+            on_view_errors=lambda: ImportErrorsDialog(payload.batch.errors, self).exec(),
         )
 
     def _on_import_error(self, message: str) -> None:

@@ -1927,6 +1927,7 @@ class Aggregator:
                 SUM(b.r) AS r,
                 SUM(b.rbi) AS rbi,
                 SUM(b.bb) AS bb,
+                SUM(b.hit_by_pitch) AS hbp,
                 SUM(b.k) AS k,
                 SUM(b.home_runs) AS hr,
                 SUM(b.stolen_bases) AS sb,

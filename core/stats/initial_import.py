@@ -8,8 +8,9 @@ from typing import Any, Literal
 
 from core.db.meta import get_init_season_coverage, touch_import_meta
 from core.db.sqlite_config import commit_if_in_transaction
+from core.i18n import tr
 from core.stats.aggregator import Aggregator
-from core.stats.ip_utils import ip_to_outs
+from core.stats.ip_utils import ip_to_outs, outs_to_ip_float
 from core.stats.team_filter import (
     discover_mlb_teams_from_rows,
     find_unknown_mlb_teams,
@@ -18,6 +19,10 @@ from core.stats.team_filter import (
 
 ImportMode = Literal["first_time", "refresh", "mid_season"]
 SeasonFilter = Literal["lt", "eq", "gap", "all"]
+
+# Standard OOTP export file names inside a stats snapshot directory.
+SNAPSHOT_BATTING_FILENAME = "player_batting_stats.txt"
+SNAPSHOT_PITCHING_FILENAME = "player_pitching_stats.txt"
 
 BATTING_COLS = [
     "player_id",
@@ -161,6 +166,32 @@ PITCHING_SUM_FIELDS = [
 
 BATTING_COMPARE_STATS = ["h", "hr", "rbi", "sb", "bb", "k", "doubles", "triples", "ab"]
 PITCHING_COMPARE_STATS = ["w", "l", "s", "k", "er", "bb", "hr", "ha"]
+BATTING_SNAPSHOT_VALIDATE_STATS = [
+    "ab",
+    "h",
+    "r",
+    "rbi",
+    "bb",
+    "hbp",
+    "k",
+    "hr",
+    "sb",
+    "doubles",
+    "triples",
+]
+PITCHING_SNAPSHOT_VALIDATE_STATS = [
+    "ip_outs",
+    "h",
+    "er",
+    "bb",
+    "k",
+    "hr",
+    "w",
+    "l",
+    "sv",
+    "gs",
+    "holds",
+]
 
 
 @dataclass
@@ -175,6 +206,80 @@ class StatDiff:
     @property
     def diff(self) -> float:
         return float(self.file_value) - float(self.db_value)
+
+
+class ExportSnapshotError(RuntimeError):
+    """An OOTP export could not be turned into a read-only season snapshot."""
+
+
+class ExportFileMissingError(ExportSnapshotError):
+    """No export file was supplied, or the supplied path does not exist."""
+
+
+class ExportFileEmptyError(ExportSnapshotError):
+    """The export file exists but carries no stat rows at all."""
+
+
+class ExportParseError(ExportSnapshotError):
+    """The export file exists but its contents could not be parsed."""
+
+
+@dataclass(frozen=True)
+class SeasonExportSnapshot:
+    """Read-only season totals parsed straight from OOTP export files.
+
+    The rows carry the same keys as
+    ``Aggregator.get_season_batting_totals`` / ``get_season_pitching_totals`` so
+    they can be handed to ``MilestoneChecker.check_season_ratios`` as an
+    override. Building a snapshot never writes to the database, so it cannot
+    contaminate career init tables or double-add box score data.
+    """
+
+    season: int
+    batting: tuple[dict[str, Any], ...] = ()
+    pitching: tuple[dict[str, Any], ...] = ()
+    sources: tuple[str, ...] = ()
+    kinds: tuple[str, ...] = ()
+
+    def is_empty(self) -> bool:
+        return not self.batting and not self.pitching
+
+    def as_totals_override(self) -> dict[str, list[dict[str, Any]]]:
+        """Override map for the checker — only categories actually exported.
+
+        A category that was read stays in the map even when it produced no
+        rows, so the checker judges "no qualified players" instead of quietly
+        falling back to box-score totals the export was meant to correct.
+        """
+        override: dict[str, list[dict[str, Any]]] = {}
+        if "batting" in self.kinds:
+            override["batting"] = list(self.batting)
+        if "pitching" in self.kinds:
+            override["pitching"] = list(self.pitching)
+        return override
+
+
+SnapshotValidationStatus = Literal["complete", "no_current_season", "incomplete"]
+
+
+@dataclass(frozen=True)
+class SeasonSnapshotValidationIssue:
+    category: str
+    player_id: int
+    player_name: str
+    stat: str
+    export_value: int
+    db_value: int
+
+
+@dataclass(frozen=True)
+class SeasonSnapshotValidationResult:
+    status: SnapshotValidationStatus
+    issues: tuple[SeasonSnapshotValidationIssue, ...] = ()
+
+    @property
+    def is_complete(self) -> bool:
+        return self.status == "complete"
 
 
 @dataclass
@@ -288,6 +393,310 @@ class InitialImporter:
             "pitching_imported_at": get_meta(conn, "init_pitching_imported_at", ""),
             "last_refreshed_at": get_meta(conn, "init_last_refreshed_at", ""),
         }
+
+    def validate_season_snapshot(
+        self, snapshot: SeasonExportSnapshot
+    ) -> SeasonSnapshotValidationResult:
+        """Check that export season rows are at least as complete as DB boxscores.
+
+        This is intentionally read-only. Export totals may be greater than DB
+        totals because a season-final export can include games the local
+        boxscore database has not imported yet.
+        """
+        if not snapshot.batting and not snapshot.pitching:
+            return SeasonSnapshotValidationResult(status="no_current_season")
+        if {"batting", "pitching"} <= set(snapshot.kinds) and (
+            not snapshot.batting or not snapshot.pitching
+        ):
+            return SeasonSnapshotValidationResult(status="no_current_season")
+
+        batting_issues = self._validate_snapshot_category(
+            "batting",
+            snapshot.batting,
+            self.aggregator.get_season_batting_totals(snapshot.season),
+            BATTING_SNAPSHOT_VALIDATE_STATS,
+        )
+        pitching_issues = self._validate_snapshot_category(
+            "pitching",
+            snapshot.pitching,
+            self.aggregator.get_season_pitching_totals(snapshot.season),
+            PITCHING_SNAPSHOT_VALIDATE_STATS,
+        )
+        issues = (*batting_issues, *pitching_issues)
+        return SeasonSnapshotValidationResult(
+            status="incomplete" if issues else "complete",
+            issues=issues,
+        )
+
+    def _validate_snapshot_category(
+        self,
+        category: str,
+        export_rows: tuple[dict[str, Any], ...],
+        db_rows: list[dict[str, Any]],
+        stats: list[str],
+    ) -> tuple[SeasonSnapshotValidationIssue, ...]:
+        export_by_player = {
+            self._row_player_id(row): row
+            for row in export_rows
+            if self._row_player_id(row) is not None
+        }
+        issues: list[SeasonSnapshotValidationIssue] = []
+        for db_row in db_rows:
+            player_id = self._row_player_id(db_row)
+            if player_id is None:
+                continue
+            export_row = export_by_player.get(player_id, {})
+            for stat in stats:
+                export_value = self._counting_value(export_row, stat)
+                db_value = self._counting_value(db_row, stat)
+                if export_value < db_value:
+                    issues.append(
+                        SeasonSnapshotValidationIssue(
+                            category=category,
+                            player_id=player_id,
+                            player_name=self._validation_player_name(db_row, export_row),
+                            stat=stat,
+                            export_value=export_value,
+                            db_value=db_value,
+                        )
+                    )
+        return tuple(issues)
+
+    @staticmethod
+    def _row_player_id(row: dict[str, Any]) -> int | None:
+        raw = row.get("player_id", row.get("id"))
+        if raw is None:
+            return None
+        return int(raw)
+
+    @staticmethod
+    def _counting_value(row: dict[str, Any], stat: str) -> int:
+        return int(row.get(stat, 0) or 0)
+
+    @staticmethod
+    def _validation_player_name(
+        db_row: dict[str, Any], export_row: dict[str, Any]
+    ) -> str:
+        for row in (db_row, export_row):
+            for key in ("name", "full_name"):
+                value = str(row.get(key) or "").strip()
+                if value:
+                    return value
+        player_id = db_row.get("player_id", db_row.get("id", ""))
+        return str(player_id)
+
+    def read_season_snapshot_dir(
+        self, directory: str | Path, *, season: int
+    ) -> SeasonExportSnapshot:
+        """Read the standard export files of a snapshot directory. Never writes.
+
+        Only the files that are actually present are read, so a directory that
+        holds batting stats alone yields a batting-only snapshot (the checker
+        then keeps its DB totals for pitching). Raises
+        :class:`ExportFileMissingError` when neither file is there.
+        """
+        base = Path(directory)
+        batting_path = base / SNAPSHOT_BATTING_FILENAME
+        pitching_path = base / SNAPSHOT_PITCHING_FILENAME
+        found_batting = batting_path.is_file()
+        found_pitching = pitching_path.is_file()
+        if not found_batting and not found_pitching:
+            raise ExportFileMissingError(
+                tr("No OOTP stats export was found in: {path}").format(path=base)
+            )
+        return self.read_season_snapshot(
+            season=season,
+            batting_path=batting_path if found_batting else None,
+            pitching_path=pitching_path if found_pitching else None,
+        )
+
+    def read_season_snapshot(
+        self,
+        *,
+        season: int,
+        batting_path: str | Path | None = None,
+        pitching_path: str | Path | None = None,
+    ) -> SeasonExportSnapshot:
+        """Parse export files into read-only season totals. Never writes.
+
+        Raises an :class:`ExportSnapshotError` subclass with a user-facing
+        message when a file is missing (:class:`ExportFileMissingError`), empty
+        (:class:`ExportFileEmptyError`) or unparseable
+        (:class:`ExportParseError`). A file that simply carries no MLB rows for
+        ``season`` yields an empty category rather than an error.
+        """
+        if not batting_path and not pitching_path:
+            raise ExportFileMissingError(
+                tr("No export file was selected. Choose the OOTP stats files and retry.")
+            )
+
+        batting: tuple[dict[str, Any], ...] = ()
+        pitching: tuple[dict[str, Any], ...] = ()
+        sources: list[str] = []
+        kinds: list[str] = []
+        for kind, raw_path in (("batting", batting_path), ("pitching", pitching_path)):
+            if not raw_path:
+                continue
+            path = Path(raw_path)
+            rows = self._read_snapshot_rows(path, kind)
+            totals = self._filter_and_aggregate(
+                rows,
+                season_filter="eq",
+                current_season=season,
+                target_season=season,
+            )
+            teams = self._snapshot_teams(rows, season)
+            if kind == "batting":
+                batting = tuple(
+                    self._snapshot_batting_row(player_id, row, teams.get(player_id, ""))
+                    for (player_id, _season), row in sorted(totals.items())
+                )
+            else:
+                pitching = tuple(
+                    self._snapshot_pitching_row(player_id, row, teams.get(player_id, ""))
+                    for (player_id, _season), row in sorted(totals.items())
+                )
+            sources.append(str(path))
+            kinds.append(kind)
+
+        return SeasonExportSnapshot(
+            season=season,
+            batting=batting,
+            pitching=pitching,
+            sources=tuple(sources),
+            kinds=tuple(kinds),
+        )
+
+    def _read_snapshot_rows(self, path: Path, kind: str) -> list[dict[str, Any]]:
+        try:
+            if not path.is_file():
+                raise ExportFileMissingError(
+                    tr("Export file not found: {path}").format(path=path)
+                )
+            if path.stat().st_size == 0:
+                raise ExportFileEmptyError(
+                    tr("The export file is empty: {path}").format(path=path)
+                )
+        except OSError as exc:
+            raise ExportParseError(
+                tr("The export file cannot be read: {path} ({error})").format(
+                    path=path, error=exc
+                )
+            ) from exc
+
+        col_names = BATTING_COLS if kind == "batting" else PITCHING_COLS
+        try:
+            rows = self._parse_file(path, col_names)
+        except Exception as exc:
+            raise ExportParseError(
+                tr("The export file could not be parsed: {path} ({error})").format(
+                    path=path, error=exc
+                )
+            ) from exc
+        if not rows:
+            raise ExportFileEmptyError(
+                tr("The export file has no data rows: {path}").format(path=path)
+            )
+        return rows
+
+    @staticmethod
+    def _snapshot_teams(rows: list[dict[str, Any]], season: int) -> dict[int, str]:
+        teams: dict[int, str] = {}
+        for row in rows:
+            if not is_ootp_mlb_league_row(row) or int(row["season"]) != season:
+                continue
+            abbr = str(row.get("team_abbr") or "").strip()
+            if abbr:
+                teams[int(row["player_id"])] = abbr
+        return teams
+
+    def _snapshot_batting_row(
+        self, player_id: int, totals: dict[str, Any], team: str
+    ) -> dict[str, Any]:
+        ab = int(totals.get("ab", 0) or 0)
+        hits = int(totals.get("h", 0) or 0)
+        doubles = int(totals.get("doubles", 0) or 0)
+        triples = int(totals.get("triples", 0) or 0)
+        hr = int(totals.get("hr", 0) or 0)
+        bb = int(totals.get("bb", 0) or 0)
+        hbp = int(totals.get("hbp", 0) or 0)
+        total_bases = (hits - doubles - triples - hr) + 2 * doubles + 3 * triples + 4 * hr
+        on_base_denom = ab + bb + hbp
+        # Same formulas the aggregator uses for DB-derived season totals, so an
+        # overridden judgement stays comparable with an un-overridden one.
+        obp_raw = (hits + bb + hbp) / on_base_denom if on_base_denom else None
+        slg_raw = total_bases / ab if ab else None
+        return {
+            "id": player_id,
+            "player_id": player_id,
+            "name": self._snapshot_player_name(player_id, totals),
+            "full_name": "",
+            "team": team,
+            "ab": ab,
+            "h": hits,
+            "r": int(totals.get("r", 0) or 0),
+            "rbi": int(totals.get("rbi", 0) or 0),
+            "bb": bb,
+            "hbp": hbp,
+            "k": int(totals.get("k", 0) or 0),
+            "hr": hr,
+            "sb": int(totals.get("sb", 0) or 0),
+            "doubles": doubles,
+            "triples": triples,
+            "avg": round(hits / ab, 3) if ab else None,
+            "obp": round(obp_raw, 3) if obp_raw is not None else None,
+            "slg": round(slg_raw, 3) if slg_raw is not None else None,
+            "ops": (
+                round(obp_raw + slg_raw, 3)
+                if obp_raw is not None and slg_raw is not None
+                else None
+            ),
+            "games_played": int(totals.get("g", 0) or 0),
+        }
+
+    def _snapshot_pitching_row(
+        self, player_id: int, totals: dict[str, Any], team: str
+    ) -> dict[str, Any]:
+        ip_outs = int(totals.get("ip_outs", 0) or 0)
+        er = int(totals.get("er", 0) or 0)
+        bb = int(totals.get("bb", 0) or 0)
+        hits = int(totals.get("ha", 0) or 0)
+        return {
+            "id": player_id,
+            "player_id": player_id,
+            "name": self._snapshot_player_name(player_id, totals),
+            "full_name": "",
+            "team": team,
+            "ip_outs": ip_outs,
+            "ip": outs_to_ip_float(ip_outs),
+            "h": hits,
+            "er": er,
+            "bb": bb,
+            "k": int(totals.get("k", 0) or 0),
+            "hr": int(totals.get("hr", 0) or 0),
+            "w": int(totals.get("w", 0) or 0),
+            "l": int(totals.get("l", 0) or 0),
+            "sv": int(totals.get("s", 0) or 0),
+            "gs": int(totals.get("gs", 0) or 0),
+            "holds": int(totals.get("holds", 0) or 0),
+            "era": round(er * 27 / ip_outs, 2) if ip_outs else None,
+            "whip": round((bb + hits) / (ip_outs / 3.0), 3) if ip_outs else None,
+            "games": int(totals.get("g", 0) or 0),
+        }
+
+    def _snapshot_player_name(self, player_id: int, totals: dict[str, Any]) -> str:
+        """Resolve a display name without touching the players table."""
+        row = self.aggregator.conn.execute(
+            "SELECT COALESCE(short_name, full_name) AS name FROM players WHERE player_id = ?",
+            (player_id,),
+        ).fetchone()
+        if row and str(row["name"] or "").strip():
+            return str(row["name"]).strip()
+        first = str(totals.get("firstname", "") or "").strip()
+        last = str(totals.get("lastname", "") or "").strip()
+        if first and last:
+            return f"{first[:1]}. {last}"
+        return f"{first} {last}".strip() or str(player_id)
 
     def is_init_empty(self, kind: str = "batting") -> bool:
         table = "career_batting_init" if kind == "batting" else "career_pitching_init"

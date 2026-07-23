@@ -172,8 +172,8 @@ pitching,pit_season_k_250,시즌 250 탈삼진,season,season_k_pit,250,higher,ra
 pitching,pit_season_k_300,시즌 300 탈삼진,season,season_k_pit,300,higher,epic,,,season_pitching_stat
 pitching,pit_season_k_350,시즌 350 탈삼진,season,season_k_pit,350,higher,epic,,,season_pitching_stat
 pitching,pit_season_k_400plus,시즌 400+ 탈삼진,season,season_k_pit,400,higher,legendary,,,season_pitching_stat
-pitching,pit_season_era_2,시즌 ERA 2점대 이하,season,season_era,3.00,lower,rare,,,season_pitching_rate
-pitching,pit_season_era_1,시즌 ERA 1점대 이하,season,season_era,2.00,lower,epic,,,season_pitching_rate
+pitching,pit_season_era_2,시즌 ERA 2점대,season,season_era,3.00,lower,rare,,,season_pitching_rate
+pitching,pit_season_era_1,시즌 ERA 1점대,season,season_era,2.00,lower,epic,,,season_pitching_rate
 pitching,pit_season_era_0,시즌 ERA 0점대,season,season_era,1.00,lower,legendary,,,season_pitching_rate
 pitching,pit_season_saves_20,시즌 20 세이브,season,season_saves,20,higher,uncommon,,,season_pitching_stat
 pitching,pit_season_saves_30,시즌 30 세이브,season,season_saves,30,higher,rare,,,season_pitching_stat

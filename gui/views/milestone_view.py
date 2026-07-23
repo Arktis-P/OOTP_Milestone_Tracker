@@ -44,9 +44,16 @@ from core.roster.korean_names import (
 )
 from core.parser.game_log_html import extract_player_at_bats
 from core.stats.aggregator import Aggregator
+from core.stats.initial_import import (
+    SNAPSHOT_BATTING_FILENAME,
+    SNAPSHOT_PITCHING_FILENAME,
+    ExportSnapshotError,
+    InitialImporter,
+)
 from core.stats.team_filter import expand_tracked_teams
 from core.streak.export import export_streak_csvs as write_streak_csv_bundle
 from gui.widgets.error_banner import ErrorBanner
+from gui.widgets.import_errors_dialog import ImportErrorsDialog
 from gui.widgets.import_result import build_import_message, show_import_result_banner
 from gui.widgets.table_widgets import TablePanel
 from gui.widgets.edit_milestone_record_dialog import EditMilestoneRecordDialog
@@ -70,6 +77,37 @@ EVENT_TYPE_OPTIONS = (
     ("injury", "Injury"),
     ("other", "Other"),
 )
+
+
+def format_snapshot_validation_issue(issue: object) -> str:
+    return tr(
+        "{player_name} · {category}/{stat}: Export {export_value} < boxscore {db_value}"
+    ).format(
+        player_name=getattr(issue, "player_name", ""),
+        category=getattr(issue, "category", ""),
+        stat=getattr(issue, "stat", ""),
+        export_value=getattr(issue, "export_value", 0),
+        db_value=getattr(issue, "db_value", 0),
+    )
+
+
+def build_snapshot_incomplete_message(
+    validation: object, *, season: int, limit: int = 8
+) -> str:
+    issues = list(getattr(validation, "issues", ()))
+    shown = issues[:limit]
+    lines = [
+        tr(
+            "The exported stats look older than the imported boxscores. "
+            "Export the final {season} season player stats from OOTP, then retry."
+        ).format(season=season),
+        "",
+        tr("Showing {shown} of {total} issue(s):").format(
+            shown=len(shown), total=len(issues)
+        ),
+    ]
+    lines.extend(format_snapshot_validation_issue(issue) for issue in shown)
+    return "\n".join(lines)
 
 EVENT_TYPE_LABELS = dict(EVENT_TYPE_OPTIONS)
 
@@ -333,11 +371,11 @@ class MilestoneView(QWidget):
         self.more_menu_button.setText(tr("More"))
         self.more_menu_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         more_menu = QMenu(self.more_menu_button)
-        more_menu.addAction(
-            tr("Determine Final Season Records"), self._record_season_ratio_milestones
-        )
         more_menu.addAction(tr("Refresh"), self.refresh)
         self.more_menu_button.setMenu(more_menu)
+
+        self.final_season_button = QPushButton(tr("Determine Final Season Records"))
+        self.final_season_button.clicked.connect(self._record_season_ratio_milestones)
 
         self.edit_button = QPushButton(tr("Edit"))
         self.delete_button = QPushButton(tr("Delete"))
@@ -393,6 +431,7 @@ class MilestoneView(QWidget):
         action_row.addWidget(self.record_menu_button)
         action_row.addStretch()
         action_row.addWidget(self.export_menu_button)
+        action_row.addWidget(self.final_season_button)
         action_row.addWidget(self.more_menu_button)
         action_row.addSpacing(12)
         action_row.addWidget(self.edit_button)
@@ -535,11 +574,9 @@ class MilestoneView(QWidget):
             self.banner,
             payload,
             on_view_milestones=lambda: MilestoneAchievedDialog(payload.milestones, self).exec(),
-            on_view_error=lambda: QMessageBox.warning(
-                self,
-                tr("Import Errors"),
-                payload.batch.errors[0].error if payload.batch.errors else "",
-            ),
+            on_view_errors=lambda: ImportErrorsDialog(
+                payload.batch.errors, self
+            ).exec(),
         )
 
     def _on_import_error(self, message: str) -> None:
@@ -869,6 +906,65 @@ class MilestoneView(QWidget):
             self.refresh()
             self.records_changed.emit()
 
+    def _season_export_paths(self) -> tuple[Path | None, Path | None]:
+        """Expected OOTP export files for the season-close ratio judgement."""
+        directory = self.settings.import_export_dir or self.settings.initial_stats_dir
+        if not directory:
+            return None, None
+        base = Path(directory)
+        return (
+            base / SNAPSHOT_BATTING_FILENAME,
+            base / SNAPSHOT_PITCHING_FILENAME,
+        )
+
+    def _confirm_season_ratio_export(
+        self, season: int, batting_path: Path | None, pitching_path: Path | None
+    ) -> bool:
+        """Ask before judging; missing files are handled after Continue."""
+        missing = [
+            path
+            for path in (batting_path, pitching_path)
+            if path is None or not path.is_file()
+        ]
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("Determine Final Season Records"))
+        if batting_path is None or pitching_path is None or missing:
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setText(
+                tr(
+                    "Export the {season} season player stats from OOTP before continuing.\n\n"
+                    "If you still need to export, select Cancel. If the stats files "
+                    "already exist, select Continue."
+                ).format(season=season)
+            )
+            if batting_path is None or pitching_path is None:
+                box.setInformativeText(
+                    tr("No export folder is configured. Set it in Settings and retry.")
+                )
+            else:
+                box.setInformativeText(
+                    "\n".join(tr("Not found: {path}").format(path=p) for p in missing)
+                )
+        else:
+            box.setIcon(QMessageBox.Icon.Question)
+            box.setText(
+                tr(
+                    "{season} season AVG/OBP/SLG/OPS/ERA milestones will be judged from "
+                    "the exported OOTP stats files.\n\n"
+                    "If you still need to export, select Cancel. If these files are the "
+                    "latest export, select Continue."
+                ).format(season=season)
+            )
+            box.setInformativeText(
+                "\n".join(str(path) for path in (batting_path, pitching_path))
+            )
+        box.setStandardButtons(QMessageBox.StandardButton.NoButton)
+        continue_button = box.addButton(tr("Continue"), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(tr("Cancel"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(continue_button)
+        box.exec()
+        return box.clickedButton() is continue_button
+
     def _record_season_ratio_milestones(self) -> None:
         season = self.season_spin.value() or self.settings.current_season
         if season <= 0:
@@ -878,17 +974,38 @@ class MilestoneView(QWidget):
                 tr("Please select a season year in the season filter and try again."),
             )
             return
-        confirm = QMessageBox.question(
-            self,
-            tr("Determine Final Season Records"),
-            tr(
-                "Records AVG/OBP/SLG/OPS/ERA milestones for {season} season based on current DB.\n\n"
-                "Recommended to run once after the season ends. Continue?"
-            ).format(season=season),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if confirm != QMessageBox.StandardButton.Yes:
+        batting_path, pitching_path = self._season_export_paths()
+        if not self._confirm_season_ratio_export(season, batting_path, pitching_path):
             return
+        try:
+            importer = InitialImporter(self.aggregator)
+            snapshot = importer.read_season_snapshot(
+                season=season,
+                batting_path=batting_path,
+                pitching_path=pitching_path,
+            )
+        except ExportSnapshotError as exc:
+            QMessageBox.warning(self, tr("Export File Problem"), str(exc))
+            return
+        validation = importer.validate_season_snapshot(snapshot)
+        if validation.status == "no_current_season":
+            QMessageBox.warning(
+                self,
+                tr("No Season Data"),
+                tr(
+                    "The export files do not contain current {season} season rows. "
+                    "Export both batting and pitching player stats from OOTP, then retry."
+                ).format(season=season),
+            )
+            return
+        if validation.status == "incomplete":
+            QMessageBox.warning(
+                self,
+                tr("Export File Problem"),
+                build_snapshot_incomplete_message(validation, season=season),
+            )
+            return
+
         default_date = f"{season}-12-31"
         date_str, ok = QInputDialog.getText(
             self,
@@ -908,6 +1025,7 @@ class MilestoneView(QWidget):
                 tr("Please enter the date in YYYY-MM-DD format."),
             )
             return
+
         checker = MilestoneChecker(
             self.aggregator,
             self.milestones,
@@ -916,7 +1034,11 @@ class MilestoneView(QWidget):
             tracked_teams=self.settings.tracked_teams,
             custom_teams=self.settings.custom_mlb_teams,
         )
-        achievements = checker.check_season_ratios(season, achieved_date=date_str)
+        achievements = checker.check_season_ratios(
+            season,
+            achieved_date=date_str,
+            totals_override=snapshot.as_totals_override(),
+        )
         recorded = checker.record_achievements(achievements)
         self.banner.show_info(
             tr("{season} season — {count} ratio milestone(s) recorded").format(
