@@ -1,0 +1,30 @@
+Best Defenders Announced by NL
+Who are the Great Glove Award winners? They are the guys that steal outs. They make spectacular plays, but they also consistently make the routine plays. This year in the National League these defensive stalwarts made a name for themselves with their gloves:
+
+<Pitcher:value_bold#0>
+<Logan Webb:player#1780> (<San Francisco Giants:team#25>)
+
+<Catcher:value_bold#0>
+<Patrick Bailey:player#23848> (<San Francisco Giants:team#25>)
+
+<First Baseman:value_bold#0>
+<Luis Garcia Jr.:player#19852> (<Washington Nationals:team#30>)
+
+<Second Baseman:value_bold#0>
+<Nico Hoerner:player#23401> (<Chicago Cubs:team#6>)
+
+<Third Baseman:value_bold#0>
+<Ke'Bryan Hayes:player#23468> (<Cincinnati Reds:team#7>)
+
+<Shortstop:value_bold#0>
+<Trea Turner:player#16> (<Philadelphia Phillies:team#21>)
+
+<Left Fielder:value_bold#0>
+<Ian Happ:player#20970> (<Chicago Cubs:team#6>)
+
+<Center Fielder:value_bold#0>
+<Brenton Doyle:player#26277> (<Colorado Rockies:team#9>)
+
+<Right Fielder:value_bold#0>
+<Jake Mangum:player#26211> (<Pittsburgh Pirates:team#22>)
+

@@ -1,0 +1,35 @@
+2026 #1 Player Chosen By AL
+At the age of 23, <Nick Kurtz:player#47098> of the <Athletics:team#20> could very well have his best years ahead of him.
+
+It's a startling thought when you consider the year he had in 2026 was good enough to win the first baseman the American League Most Valuable Player Award.
+
+"See the ball, hit the ball," he said. "That's my basic approach."
+
+The top hitter put up a .302 batting average this year, as well as a .383 on-base percentage. He played 159 games and racked up 182 hits, 40 doubles, 3 triples, 45 home runs, 122 RBIs and 117 runs scored. 
+
+He received 17 first place votes out of a possible 32. <Aaron Judge:player#33561> of the <New York Yankees:team#18> finished second in voting with 7 first place votes, while <Jazz Chisholm Jr.:player#1259> of the <New York Yankees:team#18> finished third with 7 first place votes.
+
+<Player - Team - First Place - Total Points:value_bold#0>
+<Nick Kurtz:player#47098> - <Athletics:team#20> - 17 - 359
+<Aaron Judge:player#33561> - <New York Yankees:team#18> - 7 - 309
+<Jazz Chisholm Jr.:player#1259> - <New York Yankees:team#18> - 7 - 291
+<Byron Buxton:player#32128> - <Minnesota Twins:team#17> - 0 - 211
+<Cal Raleigh:player#25129> - <Seattle Mariners:team#24> - 0 - 196
+<Cody Bellinger:player#33804> - <New York Yankees:team#18> - 0 - 130
+<Tarik Skubal:player#26105> - <Detroit Tigers:team#10> - 1 - 110
+<Vladimir Guerrero Jr.:player#40721> - <Toronto Blue Jays:team#29> - 0 - 67
+<Julio Rodriguez:player#23167> - <Seattle Mariners:team#24> - 0 - 62
+<Kyle Bradish:player#24461> - <Baltimore Orioles:team#3> - 0 - 49
+<Pete Alonso:player#26402> - <Baltimore Orioles:team#3> - 0 - 25
+<Randy Arozarena:player#38359> - <Seattle Mariners:team#24> - 0 - 18
+<Carson Williams:player#52670> - <Tampa Bay Rays:team#27> - 0 - 15
+<Bobby Witt Jr.:player#41333> - <Kansas City Royals:team#13> - 0 - 9
+<Kyle Teel:player#19986> - <Chicago White Sox:team#5> - 0 - 8
+<Danny Jansen:player#35011> - <Texas Rangers:team#28> - 0 - 6
+<Jose Ramirez:player#31896> - <Cleveland Guardians:team#8> - 0 - 6
+<Adley Rutschman:player#41245> - <Baltimore Orioles:team#3> - 0 - 5
+<Vinnie Pasquantino:player#1677> - <Kansas City Royals:team#13> - 0 - 4
+<Josh Naylor:player#23370> - <Seattle Mariners:team#24> - 0 - 3
+<Hunter Brown:player#44305> - <Houston Astros:team#12> - 0 - 2
+<Jacob Wilson:player#48865> - <Athletics:team#20> - 0 - 2
+<Wyatt Langford:player#47728> - <Texas Rangers:team#28> - 0 - 1

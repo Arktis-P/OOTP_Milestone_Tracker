@@ -1,0 +1,41 @@
+National League Platinum Stick Award Winners Picked
+It's a trophy on the mantle and certainly bragging rights around Major League Baseball locker rooms. The National League announced the winners of the Platinum Stick Award today, which goes to the top offensive performer at each position.
+
+Here are the 2026 winners:
+
+<Catcher:value_bold#0>
+<Shinho Ho:player#141875> (<Seoul Yukies:team#403>)
+.320/.417/.696, 497 AB, 51 HR, 15 SB, 115 R, 140 RBI, 7.9 WAR
+
+<First Baseman:value_bold#0>
+<Bo-kyung Moon:player#45705> (<Seoul Yukies:team#403>)
+.324/.417/.697, 445 AB, 42 HR, 5 SB, 117 R, 154 RBI, 7.0 WAR
+
+<Second Baseman:value_bold#0>
+<Hyeseong Kim:player#41756> (<Seoul Yukies:team#403>)
+.314/.363/.494, 650 AB, 21 HR, 60 SB, 153 R, 7.4 WAR
+
+<Third Baseman:value_bold#0>
+<Sung-mun Song:player#40805> (<Seoul Yukies:team#403>)
+.304/.383/.555, 573 AB, 34 HR, 26 SB, 116 R, 153 RBI, 5.3 WAR
+
+<Shortstop:value_bold#0>
+<Ha-seong Kim:player#39113> (<Seoul Yukies:team#403>)
+.357/.511/.610, 487 AB, 29 HR, 50 SB, 172 R, 11.1 WAR
+
+<Left Fielder:value_bold#0>
+<Teoscar Hernandez:player#32911> (<Los Angeles Dodgers:team#15>)
+.291/.336/.530, 492 AB, 26 HR, 5 SB, 2.1 WAR
+
+<Center Fielder:value_bold#0>
+<Jung-hoo Lee:player#41755> (<Seoul Yukies:team#403>)
+.390/.458/.669, 520 AB, 20 HR, 14 SB, 114 R, 137 RBI, 7.2 WAR
+
+<Right Fielder:value_bold#0>
+<Hyeon-min Ahn:player#54137> (<Seoul Yukies:team#403>)
+.381/.494/.765, 565 AB, 53 HR, 16 SB, 160 R, 152 RBI, 13.3 WAR
+
+<Designated Hitter:value_bold#0>
+<Do-young Kim:player#53669> (<Seoul Yukies:team#403>)
+.429/.501/.930, 557 AB, 67 HR, 32 SB, 188 R, 206 RBI, 14.8 WAR
+

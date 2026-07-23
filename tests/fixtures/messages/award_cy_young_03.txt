@@ -1,0 +1,15 @@
+Cy Young Award Goes to Seoul Hurler
+In 2027, the premier pitcher in the National League was <Dong-joo Moon:player#49880>. The <Seoul:team#403> starter is this year's recipient of the Cy Young Award.
+
+He went 28-2 in 34 starts with 314 strikeouts in 240.2 innings and an impressive 2.36 ERA.
+
+He received 20 first place votes out of a possible 32. <Tarik Skubal:player#26105> of the <Seoul Yukies:team#403> finished second in voting with 12 first place votes, while <Yuna Ah:player#143824> of the <Seoul Yukies:team#403> finished third.
+
+<Player - Team - First Place - Total Points:value_bold#0>
+<Dong-joo Moon:player#49880> - <Seoul Yukies:team#403> - 20 - 187
+<Tarik Skubal:player#26105> - <Seoul Yukies:team#403> - 12 - 164
+<Yuna Ah:player#143824> - <Seoul Yukies:team#403> - 0 - 97
+<Tae-in Won:player#45599> - <Seoul Yukies:team#403> - 0 - 60
+<Justin Steele:player#1244> - <Chicago Cubs:team#6> - 0 - 32
+<Marshall Kasowski:player#23807> - <San Francisco Giants:team#25> - 0 - 2
+<Paul Skenes:player#48634> - <Pittsburgh Pirates:team#22> - 0 - 2

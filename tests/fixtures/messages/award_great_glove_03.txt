@@ -1,0 +1,30 @@
+PIO Honors Top Glovemen for 2026
+Good glovemen take pride in their defensive skills. They know they make a difference in baseball. Even on days when they don't get a hit, they feel they can make a difference in the field -- and they do. The Pioneer League announced its Great Glove Award honorees for 2026. This year's recipients are:
+
+<Pitcher:value_bold#0>
+<Nestor Cortes:player#35283> (<Northern Colorado Owlz:team#330>)
+
+<Catcher:value_bold#0>
+<Chris Okey:player#33643> (<Great Falls Voyagers:team#317>)
+
+<First Baseman:value_bold#0>
+<Joe Dunand:player#1761> (<Grand Junction Jackalopes:team#316>)
+
+<Second Baseman:value_bold#0>
+<Anthony Servideo:player#25316> (<Rocky Mountain Vibes:team#314>)
+
+<Third Baseman:value_bold#0>
+<Jamari Baylor:player#44567> (<Modesto Roadsters:team#356>)
+
+<Shortstop:value_bold#0>
+<Robert Puason:player#46456> (<Grand Junction Jackalopes:team#316>)
+
+<Left Fielder:value_bold#0>
+<Tyler Baca:player#27257> (<Rocky Mountain Vibes:team#314>)
+
+<Center Fielder:value_bold#0>
+<Yhoswar Garcia:player#48508> (<Yuba-Sutter High Wheelers:team#346>)
+
+<Right Fielder:value_bold#0>
+<Trendon Craig:player#51323> (<Long Beach Coast:team#355>)
+

@@ -1,0 +1,81 @@
+MLB Headline News: The All-Star Game Rosters Have Been Announced
+The American League All-Stars versus the National League All-Stars. It happens every year halfway through the season. It's a baseball spectacle for the fans and the players alike. It's the 2026 Major League Baseball All-Star Game. The fans get to see all their favorite stars perform in the same game, and the outstanding players get to play against each other. The players are out to prove that their league is the best. Players are chosen by a vote of the fans.
+
+Representing the American League All-Stars this year will be:
+
+SP <Kyle Bradish:player#24461> (BAL) - 13-3, 2.77 ERA, 107.1 IP, 1.09 WHIP, 3.1 WAR
+SP <Hunter Brown:player#44305> (HOU) - 10-6, 2.62 ERA, 120.0 IP, 1.12 WHIP, 4.0 WAR
+SP <Garrett Crochet:player#44286> (BOS)* - 8-3, 2.73 ERA, 95.2 IP, 1.22 WHIP, 3.1 WAR
+SP <Cole Ragans:player#26998> (KC) - 4-8, 3.66 ERA, 105.2 IP, 1.04 WHIP, 2.0 WAR
+SP <Grayson Rodriguez:player#26902> (LAA) - 5-7, 3.72 ERA, 101.2 IP, 1.09 WHIP, 1.4 WAR
+SP <Tarik Skubal:player#26105> (DET) - 10-4, 3.21 ERA, 126.0 IP, 0.94 WHIP, 4.7 WAR
+SP <Bryan Woo:player#46816> (SEA) - 7-6, 4.10 ERA, 109.2 IP, 1.29 WHIP, 2.2 WAR
+RP <Joey Estes:player#44571> (ATH) - 2-0, 2.44 ERA, 51.2 IP, 0.91 WHIP, 0.6 WAR
+RP <Jordan Hicks:player#24753> (CWS) - 2-0, 2.62 ERA, 58.1 IP, 1.18 WHIP, 0.5 WAR
+RP <Brant Hurter:player#41991> (DET) - 0-0, 0.30 ERA, 30.0 IP, 0.63 WHIP, 1.0 WAR
+RP <Spencer Miles:player#50012> (TSK) - 2-2, 3.14 ERA, 48.2 IP, 1.29 WHIP, -0.1 WAR
+CL <Josh Hader:player#32868> (HOU)* - 1-5, 29 SV, 1.14 ERA, 39.1 IP, 0.76 WHIP, 1.1 WAR
+CL <Andres Munoz:player#1892> (SEA) - 6-1, 22 SV, 1.93 ERA, 37.1 IP, 1.07 WHIP, 0.8 WAR
+C <Yainer Diaz:player#23005> (HOU) - .310/.338/.487, 300 AB, 12 HR, 1.8 WAR
+C <Danny Jansen:player#35011> (TEX) - .279/.367/.589, 258 AB, 21 HR, 1 SB, 3.2 WAR
+C <Cal Raleigh:player#25129> (SEA)* - .246/.317/.522, 289 AB, 24 HR, 7 SB, 3.1 WAR
+1B <Pete Alonso:player#26402> (BAL) - .314/.368/.624, 245 AB, 17 HR, 1.8 WAR
+1B <Vladimir Guerrero Jr.:player#40721> (TOR)* - .307/.386/.571, 345 AB, 24 HR, 6 SB, 3.3 WAR
+1B <Nick Kurtz:player#47098> (ATH) - .318/.385/.649, 365 AB, 31 HR, 4.6 WAR
+2B <Jazz Chisholm Jr.:player#1259> (NYY) - .264/.370/.479, 326 AB, 20 HR, 18 SB, 4.0 WAR
+2B <Marcelo Mayer:player#47025> (BOS)* - .265/.339/.446, 287 AB, 10 HR, 4 SB, 2.0 WAR (Injured)
+3B <Carlos Correa:player#32135> (HOU)* - .290/.358/.491, 338 AB, 16 HR, 3.3 WAR
+3B <Jose Ramirez:player#31896> (CLE) - .292/.355/.503, 346 AB, 18 HR, 15 SB, 3.5 WAR
+SS <Colson Montgomery:player#49546> (CWS) - .249/.309/.492, 329 AB, 24 HR, 1.0 WAR
+SS <Corey Seager:player#32170> (TEX)* - .264/.351/.488, 330 AB, 20 HR, 3.3 WAR
+SS <Carson Williams:player#52670> (TB) - .249/.313/.517, 329 AB, 19 HR, 5 SB, 3.6 WAR
+LF <Yordan Alvarez:player#39226> (HOU)* - .298/.424/.513, 238 AB, 9 HR, 1.9 WAR
+LF <Randy Arozarena:player#38359> (SEA) - .288/.371/.511, 368 AB, 19 HR, 15 SB, 2.9 WAR
+LF <Cody Bellinger:player#33804> (NYY)* - .308/.358/.560, 357 AB, 21 HR, 2 SB, 3.0 WAR
+LF <Tyler Soderstrom:player#19968> (ATH) - .300/.348/.527, 347 AB, 17 HR, 5 SB, 1.7 WAR
+CF <Byron Buxton:player#32128> (MIN)* - .274/.340/.510, 263 AB, 15 HR, 12 SB, 2.8 WAR (Injured)
+CF <Jarren Duran:player#27939> (BOS) - .289/.344/.526, 363 AB, 13 HR, 10 SB, 1.9 WAR
+RF <Jo Adell:player#39642> (LAA) - .304/.354/.525, 335 AB, 20 HR, 5 SB, 2.5 WAR
+RF <Aaron Judge:player#33561> (NYY)* - .294/.405/.616, 289 AB, 25 HR, 8 SB, 2.6 WAR
+RF <George Valera:player#42056> (CLE) - .307/.356/.533, 212 AB, 10 HR, 1.3 WAR
+RF <Matt Wallner:player#21200> (MIN) - .288/.380/.531, 292 AB, 19 HR, 6 SB, 1.9 WAR
+
+
+The National League roster includes the following players:
+
+SP <Foster Griffin:player#1144> (WSH) - 3-4, 3.18 ERA, 110.1 IP, 1.19 WHIP, 2.0 WAR
+SP <Andre Pallante:player#44564> (STL) - 3-5, 3.03 ERA, 68.1 IP, 1.43 WHIP, 0.8 WAR
+SP <Freddy Peralta:player#38620> (NYM) - 10-4, 2.60 ERA, 114.1 IP, 0.97 WHIP, 3.3 WAR
+SP <Paul Skenes:player#48634> (PIT) - 7-8, 3.41 ERA, 118.2 IP, 1.17 WHIP, 2.9 WAR
+SP <Logan Webb:player#1780> (SF)* - 11-0, 2.28 ERA, 118.2 IP, 0.96 WHIP, 4.8 WAR
+SP <Brandon Woodruff:player#645> (MIL) - 4-2, 3.30 ERA, 103.2 IP, 1.14 WHIP, 2.2 WAR
+SP <Yoshinobu Yamamoto:player#41586> (LAD) - 6-2, 3.82 ERA, 103.2 IP, 1.20 WHIP, 1.8 WAR (Injured)
+RP <Brock Burke:player#19121> (CIN) - 4-2, 2.29 ERA, 51.0 IP, 1.10 WHIP, 0.9 WAR
+RP <Dylan Lee:player#20269> (ATL) - 3-2, 1.70 ERA, 53.0 IP, 1.13 WHIP, 1.6 WAR
+RP <Joe Ross:player#31164> (AZ) - 8-1, 2.14 ERA, 54.2 IP, 1.12 WHIP, 0.2 WAR
+CL <Edwin Diaz:player#32404> (LAD) - 3-5, 17 SV, 4.60 ERA, 31.1 IP, 1.02 WHIP, 1.5 WAR
+CL <Jhoan Duran:player#33990> (PHI)* - 2-2, 19 SV, 2.08 ERA, 30.1 IP, 1.12 WHIP, 1.6 WAR
+CL <Devin Williams:player#33769> (NYM) - 1-5, 25 SV, 3.93 ERA, 34.1 IP, 1.17 WHIP, 0.5 WAR
+C <William Contreras:player#26474> (MIL) - .291/.340/.493, 306 AB, 15 HR, 8 SB, 2.3 WAR
+C <Hunter Goodman:player#19517> (COL)* - .282/.318/.558, 301 AB, 22 HR, 2.1 WAR
+C <Shinho Ho:player#141875> (SY) - .333/.425/.670, 288 AB, 24 HR, 8 SB, 4.1 WAR
+C <Will Smith:player#20061> (LAD) - .232/.346/.405, 259 AB, 11 HR, 1.0 WAR
+1B <Freddie Freeman:player#25042> (LAD) - .346/.433/.592, 341 AB, 17 HR, 4 SB, 3.7 WAR
+1B <Bo-kyung Moon:player#45705> (SY)* - .364/.447/.793, 198 AB, 21 HR, 1 SB, 3.9 WAR (Injured)
+1B <Jorge Polanco:player#29735> (NYM) - .293/.354/.514, 348 AB, 20 HR, 7 SB, 2.2 WAR
+1B <Sung-mun Song:player#40805> (SY)* - .317/.378/.539, 347 AB, 18 HR, 18 SB, 2.4 WAR
+1B <Juan Soto:player#27214> (NYM) - .261/.390/.508, 333 AB, 20 HR, 9 SB, 1.9 WAR
+2B <Mookie Betts:player#31660> (LAD) - .292/.359/.557, 343 AB, 22 HR, 1 SB, 2.6 WAR
+2B <Xavier Edwards:player#39851> (MIA) - .296/.348/.431, 348 AB, 7 HR, 16 SB, 1.2 WAR
+2B <Nico Hoerner:player#23401> (CHC) - .315/.364/.439, 362 AB, 6 HR, 16 SB, 3.8 WAR
+2B <Hyeseong Kim:player#41756> (SY)* - .315/.372/.526, 378 AB, 16 HR, 40 SB, 5.1 WAR
+2B <Ketel Marte:player#33049> (AZ) - .269/.347/.498, 331 AB, 20 HR, 9 SB, 2.6 WAR
+3B <Eugenio Suarez:player#30482> (CIN) - .234/.308/.486, 346 AB, 25 HR, 2 SB, 0.3 WAR
+SS <Do-young Kim:player#53669> (SY)* - .428/.506/.905, 285 AB, 33 HR, 18 SB, 103 R, 107 RBI, 7.4 WAR
+SS <Ha-seong Kim:player#39113> (SY)* - .350/.510/.592, 260 AB, 14 HR, 29 SB, 5.7 WAR
+SS <Trea Turner:player#16> (PHI) - .260/.321/.436, 362 AB, 13 HR, 16 SB, 3.2 WAR
+LF <Jared Young:player#25017> (SY)* - .248/.354/.450, 222 AB, 10 HR, 8 SB, 0.4 WAR
+CF <Jung-hoo Lee:player#41755> (SY)* - .414/.483/.703, 273 AB, 10 HR, 7 SB, 4.7 WAR
+RF <Ronald Acuna Jr.:player#216> (ATL) - .338/.445/.570, 293 AB, 16 HR, 12 SB, 3.6 WAR
+RF <Hyeon-min Ahn:player#54137> (SY)* - .375/.485/.726, 328 AB, 27 HR, 6 SB, 6.7 WAR
+DH <Shohei Ohtani:player#36287> (LAD) - .291/.366/.608, 347 AB, 28 HR, 7 SB, 3.5 WAR

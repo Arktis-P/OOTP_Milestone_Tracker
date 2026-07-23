@@ -1,0 +1,41 @@
+Big Hitters Get Named FCL Platinum Stick Award Winners
+The winners of the Florida Complex League Platinum Stick Award all had a "remarkably productive," year at the plate, according to the Florida Complex League commissioner.
+
+For excelling offensively, the 2026 winners are:
+
+<Catcher:value_bold#0>
+<Christian Astudillo:player#139190> (<Baltimore (FCL) Orioles:team#115>)
+.358/.429/.724, 123 AB, 12 HR, 3 SB, 1.2 WAR
+
+<First Baseman:value_bold#0>
+<Jason Rooks:player#40349> (<Tampa Bay (FCL) Rays:team#136>)
+.321/.405/.582, 165 AB, 10 HR, 1 SB, 0.6 WAR
+
+<Second Baseman:value_bold#0>
+<Yeniel Laboy:player#55160> (<Seoul (FCL) Yukies:team#413>)
+.371/.475/.753, 97 AB, 10 HR, 3 SB, 1.2 WAR
+
+<Third Baseman:value_bold#0>
+<Juan Hernandez:player#137746> (<Detroit (FCL) Tigers:team#108>)
+.383/.458/.617, 196 AB, 11 HR, 6 SB, 1.8 WAR
+
+<Shortstop:value_bold#0>
+<Gavin Smith:player#140278> (<Toronto (FCL) Blue Jays:team#107>)
+.351/.450/.639, 194 AB, 13 HR, 2 SB, 1.8 WAR
+
+<Left Fielder:value_bold#0>
+<Will Decker:player#43758> (<Atlanta (FCL) Braves:team#105>)
+.379/.498/.571, 177 AB, 8 HR, 5 SB, 2.5 WAR
+
+<Center Fielder:value_bold#0>
+<Austin Davis:player#48067> (<Atlanta (FCL) Braves:team#105>)
+.426/.509/.638, 94 AB, 3 HR, 5 SB, 1.5 WAR
+
+<Right Fielder:value_bold#0>
+<Luis Leon:player#53459> (<Miami (FCL) Marlins:team#103>)
+.360/.444/.626, 139 AB, 8 HR, 4 SB, 1.4 WAR
+
+<Designated Hitter:value_bold#0>
+<Liosward Marin:player#138062> (<Boston (FCL) Red Sox:team#113>)
+.288/.414/.504, 125 AB, 6 HR, 3 SB, 0.6 WAR
+

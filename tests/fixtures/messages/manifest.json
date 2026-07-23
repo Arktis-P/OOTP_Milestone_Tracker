@@ -1,0 +1,406 @@
+{
+  "source_save": "SuperYukies_V1.0.lg",
+  "source_path_hint": "C:\\Users\\cwson\\OneDrive\\문서\\Out of the Park Developments\\OOTP Baseball 27\\saved_games\\SuperYukies_V1.0.lg",
+  "total_messages_in_save": 10065,
+  "naming_notes": {
+    "great_glove": "OOTP 인게임 명칭 — 기존 Gold Glove에 해당",
+    "platinum_stick": "OOTP 인게임 명칭 — 기존 Silver Slugger에 해당"
+  },
+  "categories": {
+    "trade_multi_player": {
+      "count": 2,
+      "samples": [
+        {
+          "fixture_file": "trade_multi_player_01.txt",
+          "source_file": "message1433.txt",
+          "title": "Cincinnati Swaps McCrystal to Tokyo for Winker",
+          "note": "3-for-1 트레이드, In return 구문"
+        },
+        {
+          "fixture_file": "trade_multi_player_02.txt",
+          "source_file": "message1487.txt",
+          "title": "Miami, Milwaukee Confirm Trade",
+          "note": "현금 포함 다자 트레이드"
+        }
+      ]
+    },
+    "trade_simple": {
+      "count": 2,
+      "samples": [
+        {
+          "fixture_file": "trade_simple_01.txt",
+          "source_file": "message1435.txt",
+          "title": "Los Angeles-Minnesota Deal: Ruiz for Banuelos",
+          "note": "1-for-1 트레이드"
+        },
+        {
+          "fixture_file": "trade_simple_02.txt",
+          "source_file": "message1477.txt",
+          "title": "Martin and Ramirez Traded",
+          "note": "2명 트레이드"
+        }
+      ]
+    },
+    "trade_deadline_news": {
+      "count": 1,
+      "samples": [
+        {
+          "fixture_file": "trade_deadline_news_01.txt",
+          "source_file": "message506.txt",
+          "title": "Breaking ATL News: Trade Deadline",
+          "note": "트레이드 데드라인 안내 (이벤트 자체는 마일스톤 아님)"
+        }
+      ]
+    },
+    "injury_game": {
+      "count": 3,
+      "samples": [
+        {
+          "fixture_file": "injury_game_01.txt",
+          "source_file": "message410.txt",
+          "title": "More Injury Problems for Miami's Kyle Stowers",
+          "note": "햄스트링, 3주 결장"
+        },
+        {
+          "fixture_file": "injury_game_02.txt",
+          "source_file": "message1007.txt",
+          "title": "Injury Shuts Down Arrieche for Season",
+          "note": "UCL 파열, 시즌 아웃"
+        },
+        {
+          "fixture_file": "injury_game_03.txt",
+          "source_file": "message816.txt",
+          "title": "Yordan Alvarez of Houston Injured, DTD",
+          "note": "경기 중 발목 염좌, 1주 결장"
+        }
+      ]
+    },
+    "injury_offfield": {
+      "count": 2,
+      "samples": [
+        {
+          "fixture_file": "injury_offfield_01.txt",
+          "source_file": "message22.txt",
+          "title": "Wilson Trips Running Up Stairs, May Miss Time",
+          "note": "계단 넘어짐"
+        },
+        {
+          "fixture_file": "injury_offfield_02.txt",
+          "source_file": "message179.txt",
+          "title": "Errant Ball KO's Toribio",
+          "note": "훈련 중 부상"
+        }
+      ]
+    },
+    "fa_signing_mlb": {
+      "count": 2,
+      "samples": [
+        {
+          "fixture_file": "fa_signing_mlb_01.txt",
+          "source_file": "message5095.txt",
+          "title": "SP Gray Commits to 1-Year Rockies Offer",
+          "note": "MLB FA 계약 체결"
+        },
+        {
+          "fixture_file": "fa_signing_mlb_02.txt",
+          "source_file": "message5338.txt",
+          "title": "SP May Excited to Play for Minnesota",
+          "note": "FA 영입 발표"
+        }
+      ]
+    },
+    "fa_signing_minor": {
+      "count": 1,
+      "samples": [
+        {
+          "fixture_file": "fa_signing_minor_01.txt",
+          "source_file": "message4968.txt",
+          "title": "SP Peralta Signs on with Boston",
+          "note": "마이너 FA 계약"
+        }
+      ]
+    },
+    "contract_extension": {
+      "count": 3,
+      "samples": [
+        {
+          "fixture_file": "contract_extension_01.txt",
+          "source_file": "message114.txt",
+          "title": "Seoul, Moon Agree on 15-Year Extension",
+          "note": "15년 연장 계약"
+        },
+        {
+          "fixture_file": "contract_extension_02.txt",
+          "source_file": "message2396.txt",
+          "title": "Mize Signs Extension with Tigers",
+          "note": "MLB 연장 계약 ($72M / 4년)"
+        },
+        {
+          "fixture_file": "contract_extension_03.txt",
+          "source_file": "message9788.txt",
+          "title": "San Francisco and Hentges Agree on Extension",
+          "note": "클로저 연장 계약"
+        }
+      ]
+    },
+    "award_mvp": {
+      "count": 3,
+      "samples": [
+        {
+          "fixture_file": "award_mvp_01.txt",
+          "source_file": "message4841.txt",
+          "title": "2026 #1 Player Chosen By AL",
+          "note": "AL MVP (Nick Kurtz)"
+        },
+        {
+          "fixture_file": "award_mvp_02.txt",
+          "source_file": "message4842.txt",
+          "title": "Great Year Gets Kim NL Most Valuable Player Award",
+          "note": "NL MVP (Do-young Kim, 2026)"
+        },
+        {
+          "fixture_file": "award_mvp_03.txt",
+          "source_file": "message10062.txt",
+          "title": "Do-young Kim Takes MVP Trophy",
+          "note": "NL MVP (Do-young Kim, 2027)"
+        }
+      ]
+    },
+    "award_cy_young": {
+      "count": 3,
+      "samples": [
+        {
+          "fixture_file": "award_cy_young_01.txt",
+          "source_file": "message4834.txt",
+          "title": "#1 AL Hurler Named",
+          "note": "AL CY Young 2026 (Tarik Skubal)"
+        },
+        {
+          "fixture_file": "award_cy_young_02.txt",
+          "source_file": "message4835.txt",
+          "title": "Best Pitcher Honor Goes to Peralta of New York",
+          "note": "NL CY Young 2026 (Freddy Peralta)"
+        },
+        {
+          "fixture_file": "award_cy_young_03.txt",
+          "source_file": "message10058.txt",
+          "title": "Cy Young Award Goes to Seoul Hurler",
+          "note": "NL CY Young 2027 (Dong-joo Moon)"
+        }
+      ]
+    },
+    "award_great_glove": {
+      "count": 3,
+      "samples": [
+        {
+          "fixture_file": "award_great_glove_01.txt",
+          "source_file": "message4802.txt",
+          "title": "Top Defensive Players Named by AL",
+          "note": "AL Great Glove (골드글러브 대체명)"
+        },
+        {
+          "fixture_file": "award_great_glove_02.txt",
+          "source_file": "message4803.txt",
+          "title": "Best Defenders Announced by NL",
+          "note": "NL Great Glove"
+        },
+        {
+          "fixture_file": "award_great_glove_03.txt",
+          "source_file": "message4393.txt",
+          "title": "PIO Honors Top Glovemen for 2026",
+          "note": "마이너 Great Glove (PIO)"
+        }
+      ]
+    },
+    "award_platinum_stick": {
+      "count": 3,
+      "samples": [
+        {
+          "fixture_file": "award_platinum_stick_01.txt",
+          "source_file": "message4820.txt",
+          "title": "Top Sluggers Win AL Platinum Stick Award Honors",
+          "note": "AL Platinum Stick (실버슬러거 대체명)"
+        },
+        {
+          "fixture_file": "award_platinum_stick_02.txt",
+          "source_file": "message4821.txt",
+          "title": "National League Platinum Stick Award Winners Picked",
+          "note": "NL Platinum Stick"
+        },
+        {
+          "fixture_file": "award_platinum_stick_03.txt",
+          "source_file": "message3152.txt",
+          "title": "Big Hitters Get Named FCL Platinum Stick Award Winners",
+          "note": "마이너 Platinum Stick (FCL)"
+        }
+      ]
+    },
+    "award_rookie_of_year": {
+      "count": 2,
+      "samples": [
+        {
+          "fixture_file": "award_rookie_of_year_01.txt",
+          "source_file": "message4324.txt",
+          "title": "BNBL Rookie of the Year Award Announced",
+          "note": "리그 ROY 수상"
+        },
+        {
+          "fixture_file": "award_rookie_of_year_02.txt",
+          "source_file": "message4447.txt",
+          "title": "PIO Best Newcomer Named",
+          "note": "투수 ROY"
+        }
+      ]
+    },
+    "award_batter_of_month": {
+      "count": 2,
+      "samples": [
+        {
+          "fixture_file": "award_batter_of_month_01.txt",
+          "source_file": "message771.txt",
+          "title": "New York's Judge Collects April Batting Honor",
+          "note": "AL Batter of the Month (Judge)"
+        },
+        {
+          "fixture_file": "award_batter_of_month_02.txt",
+          "source_file": "message772.txt",
+          "title": "Kim Crowned Batter of the Month in April",
+          "note": "NL Batter of the Month (Kim)"
+        }
+      ]
+    },
+    "award_pitcher_of_month": {
+      "count": 2,
+      "samples": [
+        {
+          "fixture_file": "award_pitcher_of_month_01.txt",
+          "source_file": "message773.txt",
+          "title": "Bradish Chosen April's Best AL Hurler",
+          "note": "AL Pitcher of the Month"
+        },
+        {
+          "fixture_file": "award_pitcher_of_month_02.txt",
+          "source_file": "message774.txt",
+          "title": "NL Pitcher of the Month Goes to Cabrera",
+          "note": "NL Pitcher of the Month"
+        }
+      ]
+    },
+    "award_rookie_of_month": {
+      "count": 1,
+      "samples": [
+        {
+          "fixture_file": "award_rookie_of_month_01.txt",
+          "source_file": "message809.txt",
+          "title": "April's Spotlight Falls on Rookie Star",
+          "note": "신인 월간 수상"
+        }
+      ]
+    },
+    "award_all_star_selection": {
+      "count": 2,
+      "samples": [
+        {
+          "fixture_file": "award_all_star_selection_01.txt",
+          "source_file": "message2280.txt",
+          "title": "MLB Headline News: The All-Star Game Rosters Have Been Announced",
+          "note": "MLB 올스타 로스터 발표"
+        },
+        {
+          "fixture_file": "award_all_star_selection_02.txt",
+          "source_file": "message1049.txt",
+          "title": "MLB News: The All-Star Game Voting Begins",
+          "note": "MLB 올스타 투표 시작"
+        }
+      ]
+    },
+    "postseason_wildcard": {
+      "count": 1,
+      "samples": [
+        {
+          "fixture_file": "postseason_wildcard_01.txt",
+          "source_file": "message4235.txt",
+          "title": "Wild Card Clinched by Astros",
+          "note": "와일드카드 진출 확정 (Astros)"
+        }
+      ]
+    },
+    "postseason_playoff_clinch": {
+      "count": 1,
+      "samples": [
+        {
+          "fixture_file": "postseason_playoff_clinch_01.txt",
+          "source_file": "message4335.txt",
+          "title": "Brewers Off to the Playoffs",
+          "note": "플레이오프 진출 확정 (Brewers)"
+        }
+      ]
+    },
+    "postseason_division": {
+      "count": 3,
+      "samples": [
+        {
+          "fixture_file": "postseason_division_01.txt",
+          "source_file": "message4202.txt",
+          "title": "American League West Division Winner is Seattle Mariners",
+          "note": "AL West 디비전 우승 (Mariners)"
+        },
+        {
+          "fixture_file": "postseason_division_02.txt",
+          "source_file": "message4325.txt",
+          "title": "Orioles Capture American League East Division",
+          "note": "AL East 디비전 우승 (Orioles)"
+        },
+        {
+          "fixture_file": "postseason_division_03.txt",
+          "source_file": "message9587.txt",
+          "title": "New York Mets Clinch First in National League East Division",
+          "note": "NL East 디비전 우승 (Mets)"
+        }
+      ]
+    },
+    "postseason_world_series": {
+      "count": 1,
+      "samples": [
+        {
+          "fixture_file": "postseason_world_series_01.txt",
+          "source_file": "message9924.txt",
+          "title": "Yukies Sweep Tigers",
+          "note": "WS 우승 — Seoul Yukies Sweep Tigers"
+        }
+      ]
+    },
+    "retirement": {
+      "count": 1,
+      "samples": [
+        {
+          "fixture_file": "retirement_01.txt",
+          "source_file": "message441.txt",
+          "title": "New York Reliever Hill Will Retire",
+          "note": "은퇴 발표"
+        }
+      ]
+    },
+    "hall_of_fame": {
+      "count": 2,
+      "samples": [
+        {
+          "fixture_file": "hall_of_fame_01.txt",
+          "source_file": "message5327.txt",
+          "title": "Hall of Fame Inducts Lee",
+          "note": "HOF 헌액 (당선)"
+        },
+        {
+          "fixture_file": "hall_of_fame_02.txt",
+          "source_file": "message5056.txt",
+          "title": "HH Headline News: The Hall of Fame Voting Begins",
+          "note": "HOF 투표 시작"
+        }
+      ]
+    }
+  },
+  "unavailable_in_save": {
+    "player_release": "방출/DFA는 인박스 뉴스로 나오지 않음 (의도적 제외)",
+    "player_purchase": "선수 구매/웨이버 클레임은 인박스 뉴스로 나오지 않음 (의도적 제외)"
+  }
+}

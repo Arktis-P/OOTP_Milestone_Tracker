@@ -1,0 +1,25 @@
+Great Year Gets Kim NL Most Valuable Player Award
+He may have less experience than most of his Major League Baseball peers, but that didn't slow <Do-young Kim:player#53669> down at all in 2026.
+
+At the age of 23, the <Seoul:team#403> shortstop has been named the winner of the National League Most Valuable Player Award.
+
+He had a .429 batting average and a .501 on-base percentage this year. In 134 games he piled up 239 hits, 66 doubles, 6 triples, 67 home runs, 206 RBIs and 188 runs scored.
+
+"I'm blown away by the season I was able to put together," he said. "I'm looking forward to trying to do it all again next year."
+
+He received 32 first place votes, as a unanimous winner. <Hyeon-min Ahn:player#54137> of the <Seoul Yukies:team#403> finished second in voting, while <Shinho Ho:player#141875> of the <Seoul Yukies:team#403> finished third.
+
+<Player - Team - First Place - Total Points:value_bold#0>
+<Do-young Kim:player#53669> - <Seoul Yukies:team#403> - 32 - 448
+<Hyeon-min Ahn:player#54137> - <Seoul Yukies:team#403> - 0 - 288
+<Shinho Ho:player#141875> - <Seoul Yukies:team#403> - 0 - 248
+<Ha-seong Kim:player#39113> - <Seoul Yukies:team#403> - 0 - 226
+<Jung-hoo Lee:player#41755> - <Seoul Yukies:team#403> - 0 - 169
+<Bo-kyung Moon:player#45705> - <Seoul Yukies:team#403> - 0 - 141
+<Hyeseong Kim:player#41756> - <Seoul Yukies:team#403> - 0 - 130
+<Kyle Schwarber:player#13> - <Philadelphia Phillies:team#21> - 0 - 115
+<Shohei Ohtani:player#36287> - <Los Angeles Dodgers:team#15> - 0 - 79
+<Sung-mun Song:player#40805> - <Seoul Yukies:team#403> - 0 - 37
+<Ronald Acuna Jr.:player#216> - <Atlanta Braves:team#2> - 0 - 3
+<Dong-joo Moon:player#49880> - <Seoul Yukies:team#403> - 0 - 3
+<Freddy Peralta:player#38620> - <New York Mets:team#19> - 0 - 1

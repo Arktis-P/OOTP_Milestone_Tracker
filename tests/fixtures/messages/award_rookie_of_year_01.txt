@@ -1,0 +1,14 @@
+BNBL Rookie of the Year Award Announced
+When <Luis Frias:player#56819> stepped onto the baseball field, he meant business. His solid play this year has netted the <Liverpool:team#359> rookie center fielder the British National Baseball League Rookie of the Year Award for 2026.
+
+Playing in 24 games, he hit for a .500 average with 53 hits, 4 home runs, 46 RBIs and 36 runs scored.
+
+He received 2 first place votes out of a possible 9. <Reinaldo De La Cruz:player#137663> of the <Liverpool Trojans:team#359> finished second in voting with 1 first place vote, while <Quin Cotton:player#41306> of the <London Mets:team#340> finished third with 3 first place votes.
+
+<Player - Team - First Place - Total Points:value_bold#0>
+<Luis Frias:player#56819> - <Liverpool Trojans:team#359> - 2 - 22
+<Reinaldo De La Cruz:player#137663> - <Liverpool Trojans:team#359> - 1 - 20
+<Quin Cotton:player#41306> - <London Mets:team#340> - 3 - 16
+<Jose Pimentel:player#141502> - <Liverpool Trojans:team#359> - 3 - 16
+<Bobby Anderson:player#55439> - <Herts Toucans:team#339> - 0 - 6
+<Kevin Tamburini:player#139424> - <Liverpool Trojans:team#359> - 0 - 1

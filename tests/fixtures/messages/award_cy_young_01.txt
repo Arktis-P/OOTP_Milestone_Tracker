@@ -1,0 +1,18 @@
+#1 AL Hurler Named
+In 2026, the premier pitcher in the American League was <Tarik Skubal:player#26105>. The <Detroit:team#10> starter is this year's recipient of the Cy Young Award.
+
+He went 18-6 in 33 starts with 256 strikeouts in 207.2 innings and an impressive 3.16 ERA.
+
+He received 32 first place votes, as a unanimous winner. <Kyle Bradish:player#24461> of the <Baltimore Orioles:team#3> finished second in voting, while <Hunter Brown:player#44305> of the <Houston Astros:team#12> finished third.
+
+<Player - Team - First Place - Total Points:value_bold#0>
+<Tarik Skubal:player#26105> - <Detroit Tigers:team#10> - 32 - 224
+<Kyle Bradish:player#24461> - <Baltimore Orioles:team#3> - 0 - 125
+<Hunter Brown:player#44305> - <Houston Astros:team#12> - 0 - 97
+<Garrett Crochet:player#44286> - <Boston Red Sox:team#4> - 0 - 65
+<Logan Gilbert:player#24272> - <Seattle Mariners:team#24> - 0 - 11
+<Cole Ragans:player#26998> - <Kansas City Royals:team#13> - 0 - 9
+<Trevor Rogers:player#22518> - <Baltimore Orioles:team#3> - 0 - 6
+<Andres Munoz:player#1892> - <Seattle Mariners:team#24> - 0 - 5
+<Anthony Banda:player#32383> - <Minnesota Twins:team#17> - 0 - 1
+<Anthony Kay:player#34609> - <Chicago White Sox:team#5> - 0 - 1

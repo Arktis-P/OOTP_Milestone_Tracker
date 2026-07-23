@@ -1,0 +1,17 @@
+PIO Best Newcomer Named
+They say first impressions are lasting impressions. If this is true, Pioneer League hitters had better be wary -- <Brandyn Sittinger:player#23282> could be around for years to come. The <Modesto:team#356> starter took home the 2026 PIO Rookie of the Year Award today.
+
+<Sittinger:player#23282> fashioned a 12-1 mark in 20 starts. He threw 117 innings, collected 118 strikeouts and put up a 4.54 ERA.
+
+He received 10 first place votes out of a possible 14. <Frankie Bartow:player#27248> of the <Rocky Mountain Vibes:team#314> finished second in voting, while <Damiano Palmegiani:player#27338> of the <Modesto Roadsters:team#356> finished third with 3 first place votes.
+
+<Player - Team - First Place - Total Points:value_bold#0>
+<Brandyn Sittinger:player#23282> - <Modesto Roadsters:team#356> - 10 - 51
+<Frankie Bartow:player#27248> - <Rocky Mountain Vibes:team#314> - 0 - 24
+<Damiano Palmegiani:player#27338> - <Modesto Roadsters:team#356> - 3 - 19
+<Drew Mendoza:player#27325> - <Rocky Mountain Vibes:team#314> - 1 - 18
+<Manuel Veloz:player#46084> - <Glacier Range Riders:team#329> - 0 - 5
+<Kyle Martin:player#40453> - <Oakland Ballers:team#345> - 0 - 3
+<Jose Atencio:player#44741> - <Modesto Roadsters:team#356> - 0 - 2
+<Justin Janas:player#50003> - <Missoula PaddleHeads:team#315> - 0 - 2
+<Grant Lavigne:player#25960> - <Modesto Roadsters:team#356> - 0 - 2

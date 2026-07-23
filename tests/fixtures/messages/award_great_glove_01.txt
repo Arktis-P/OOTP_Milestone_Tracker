@@ -1,0 +1,30 @@
+Top Defensive Players Named by AL
+Great Glove Awards are the symbol for defensive excellence, a recognition of the best of the best in defense. The American League Great Glove Award trophies for 2026 have been awarded to these outstanding fielders:
+
+<Pitcher:value_bold#0>
+<Tanner Bibee:player#44215> (<Cleveland Guardians:team#8>)
+
+<Catcher:value_bold#0>
+<Austin Wells:player#33622> (<New York Yankees:team#18>)
+
+<First Baseman:value_bold#0>
+<Munetaka Murakami:player#43667> (<Chicago White Sox:team#5>)
+
+<Second Baseman:value_bold#0>
+<Brayan Rocchio:player#42739> (<Tampa Bay Rays:team#27>)
+
+<Third Baseman:value_bold#0>
+<Maikel Garcia:player#22307> (<Kansas City Royals:team#13>)
+
+<Shortstop:value_bold#0>
+<Bobby Witt Jr.:player#41333> (<Kansas City Royals:team#13>)
+
+<Left Fielder:value_bold#0>
+<Cody Bellinger:player#33804> (<New York Yankees:team#18>)
+
+<Center Fielder:value_bold#0>
+<Kyle Isbel:player#22318> (<Kansas City Royals:team#13>)
+
+<Right Fielder:value_bold#0>
+<Wilyer Abreu:player#42200> (<Boston Red Sox:team#4>)
+

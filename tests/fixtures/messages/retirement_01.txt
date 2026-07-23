@@ -1,0 +1,5 @@
+New York Reliever Hill Will Retire
+"I've made up my mind to leave baseball," <Tim Hill:player#23960> said. "It's time to move into the second phase of my life."
+The <New York:team#18> reliever announced his retirement today at a press conference, saying it would be his last season.
+
+Taking the hill 454 times in his career, <Hill:player#23960> has compiled an ERA of 3.83. He has tossed 390 innings with 278 strikeouts and 120 free passes. Opponents have hit .258 against him. He has a record of 24-18.

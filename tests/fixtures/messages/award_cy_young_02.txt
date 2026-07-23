@@ -1,0 +1,17 @@
+Best Pitcher Honor Goes to Peralta of New York
+The National League made the official announcement today. The 2026 National League Cy Young Award has gone to <Freddy Peralta:player#38620> of <New York:team#19>.
+
+He had a superlative season, chalking up a 17-6 won-lost mark with an impressive 2.79 ERA.
+
+<Peralta:player#38620> logged 34 starts, threw 193.1 innings, yielded 126 hits, struck out 192 and held the opposition to a .184 batting average.
+
+He received 22 first place votes out of a possible 32. <Cristopher Sanchez:player#39043> of the <Philadelphia Phillies:team#21> finished second in voting with 5 first place votes, while <Paul Skenes:player#48634> of the <Pittsburgh Pirates:team#22> finished third with 1 first place vote.
+
+<Player - Team - First Place - Total Points:value_bold#0>
+<Freddy Peralta:player#38620> - <New York Mets:team#19> - 22 - 189
+<Cristopher Sanchez:player#39043> - <Philadelphia Phillies:team#21> - 5 - 121
+<Paul Skenes:player#48634> - <Pittsburgh Pirates:team#22> - 1 - 83
+<Logan Webb:player#1780> - <San Francisco Giants:team#25> - 0 - 66
+<Dong-joo Moon:player#49880> - <Seoul Yukies:team#403> - 4 - 52
+<Nolan McLean:player#23732> - <New York Mets:team#19> - 0 - 27
+<Brandon Woodruff:player#645> - <Milwaukee Brewers:team#16> - 0 - 6

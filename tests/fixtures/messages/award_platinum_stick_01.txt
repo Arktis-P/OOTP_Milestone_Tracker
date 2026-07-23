@@ -1,0 +1,41 @@
+Top Sluggers Win AL Platinum Stick Award Honors
+They were the standout hitters at their respective positions all season and now they've got the hardware to prove it.
+
+The American League Platinum Stick Award for 2026 has been given to the following players:
+
+<Catcher:value_bold#0>
+<Cal Raleigh:player#25129> (<Seattle Mariners:team#24>)
+.245/.316/.540, 493 AB, 43 HR, 9 SB, 102 RBI, 5.3 WAR
+
+<First Baseman:value_bold#0>
+<Nick Kurtz:player#47098> (<Athletics:team#20>)
+.302/.383/.602, 603 AB, 45 HR, 117 R, 122 RBI, 6.6 WAR
+
+<Second Baseman:value_bold#0>
+<Jazz Chisholm Jr.:player#1259> (<New York Yankees:team#18>)
+.275/.372/.503, 579 AB, 35 HR, 27 SB, 109 R, 7.1 WAR
+
+<Third Baseman:value_bold#0>
+<Jose Ramirez:player#31896> (<Cleveland Guardians:team#8>)
+.280/.335/.481, 593 AB, 26 HR, 21 SB, 4.8 WAR
+
+<Shortstop:value_bold#0>
+<Carson Williams:player#52670> (<Tampa Bay Rays:team#27>)
+.249/.318/.501, 547 AB, 32 HR, 10 SB, 5.6 WAR
+
+<Left Fielder:value_bold#0>
+<Cody Bellinger:player#33804> (<New York Yankees:team#18>)
+.292/.345/.507, 603 AB, 29 HR, 8 SB, 4.5 WAR
+
+<Center Fielder:value_bold#0>
+<Byron Buxton:player#32128> (<Minnesota Twins:team#17>)
+.292/.353/.579, 473 AB, 34 HR, 17 SB, 103 RBI, 6.4 WAR
+
+<Right Fielder:value_bold#0>
+<Aaron Judge:player#33561> (<New York Yankees:team#18>)
+.287/.392/.600, 523 AB, 45 HR, 14 SB, 112 RBI, 5.3 WAR
+
+<Designated Hitter:value_bold#0>
+<Randy Arozarena:player#38359> (<Seattle Mariners:team#24>)
+.271/.358/.466, 635 AB, 29 HR, 22 SB, 101 R, 3.2 WAR
+

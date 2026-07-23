@@ -1,0 +1,29 @@
+Do-young Kim Takes MVP Trophy
+The future looks extremely bright for <Do-young Kim:player#53669>. At the age of 24, many players are still trying to find their way in Major League Baseball.
+
+<Kim:player#53669> has not only found his way, he's already established himself as one of the game's brightest stars, today being named the winner of the National League Most Valuable Player Award.
+
+"I didn't expect to hit .458 this year, that's for sure," the third baseman said.
+
+The <Seoul Yukies:team#403> star also put up a .550 on-base percentage this year, with 254 hits, 68 doubles, 15 triples, 85 home runs, 255 RBIs and 228 runs scored. 
+
+He received 31 first place votes out of a possible 32. <Shinho Ho:player#141875> of the <Seoul Yukies:team#403> finished second in voting with 1 first place vote, while <Bo-kyung Moon:player#45705> of the <Seoul Yukies:team#403> finished third.
+
+<Player - Team - First Place - Total Points:value_bold#0>
+<Do-young Kim:player#53669> - <Seoul Yukies:team#403> - 31 - 443
+<Shinho Ho:player#141875> - <Seoul Yukies:team#403> - 1 - 293
+<Bo-kyung Moon:player#45705> - <Seoul Yukies:team#403> - 0 - 256
+<Jung-hoo Lee:player#41755> - <Seoul Yukies:team#403> - 0 - 224
+<Ha-seong Kim:player#39113> - <Seoul Yukies:team#403> - 0 - 169
+<Sung-mun Song:player#40805> - <Seoul Yukies:team#403> - 0 - 142
+<Dong-joo Moon:player#49880> - <Seoul Yukies:team#403> - 0 - 102
+<Hyeon-min Ahn:player#54137> - <Seoul Yukies:team#403> - 0 - 89
+<Tarik Skubal:player#26105> - <Seoul Yukies:team#403> - 0 - 84
+<Yuna Ah:player#143824> - <Seoul Yukies:team#403> - 0 - 37
+<Bryce Harper:player#29353> - <Philadelphia Phillies:team#21> - 0 - 18
+<Corbin Carroll:player#24895> - <Arizona Diamondbacks:team#1> - 0 - 9
+<Jackson Chourio:player#53859> - <Milwaukee Brewers:team#16> - 0 - 7
+<Juan Soto:player#27214> - <New York Mets:team#19> - 0 - 7
+<Hyeseong Kim:player#41756> - <Seoul Yukies:team#403> - 0 - 3
+<Austin Riley:player#23357> - <Atlanta Braves:team#2> - 0 - 3
+<Oneil Cruz:player#26298> - <Philadelphia Phillies:team#21> - 0 - 2
