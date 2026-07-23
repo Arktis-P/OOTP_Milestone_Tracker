@@ -25,15 +25,31 @@
 ### 팀
 - 선발전원안타/타점/득점, 팀 노히터·퍼펙트, 시즌 팀 승수
 
-## 수동 입력 전용
+## 수동 입력 전용 (현행)
 
-수상·리그 1위·플레이오프·명예의 전당 등 — **「수동 전용 입력」** 버튼 사용.
+수상·리그 1위·플레이오프·명예의 전당·이적·부상 등 — 달성 기록 탭 **「기록 추가」** 통합 팝업.
 
 선택 시 `「{이름}」 마일스톤은 수동으로 입력해야 합니다.` 안내 표시.
 
 대상 stat: `title_*`, `award_*`, `hall_of_fame`, `retired_number`,
 `division_title`, `wildcard_series_win`, `division_series_win`,
 `league_championship_series_win`, `world_series_win`
+
+이적·부상은 CSV 밖 `manual_event` (`manual_transfer_*`, `manual_injury`).
+
+## 예정 — `messages/` 자동화
+
+박스스코어에 없는 수상·이적·부상·일부 포스트시즌은 OOTP `messages/` 텍스트로
+자동 기록하는 것을 검토 중. **아직 파서 미구현.**
+
+- 필드 규칙: [`message_automation_field_rules.md`](message_automation_field_rules.md)
+- 샘플: `tests/fixtures/messages/`
+- 수집: `scripts/collect_message_samples.py`
+
+OOTP 인게임 명칭: Gold Glove → **Great Glove**, Silver Slugger → **Platinum Stick**
+(CSV key는 `award_gold_glove` / `award_silver_slugger` 유지).
+
+---
 
 ## ERA threshold 참고
 
@@ -48,4 +64,5 @@
 - `core/parser/boxscore_html.py` — 홀드 `H (N)` 파싱
 - `core/parser/batting_notes.py` — 그랜드슬램 `3 on` 파싱
 - `core/milestone/implementation.py` — 수동 전용·비율 시즌 구분
-- `gui/views/milestone_view.py` — 수동 전용·시즌 비율 버튼
+- `gui/views/milestone_view.py` — 기록 추가·시즌 비율 버튼
+- (예정) `messages/` 파서 — [`message_automation_field_rules.md`](message_automation_field_rules.md)

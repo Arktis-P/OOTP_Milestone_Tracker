@@ -17,28 +17,36 @@ python scripts/collect_message_samples.py
 
 방출·웨이버·선수 구매는 인박스 뉴스가 나오지 않아 **의도적으로 제외**.
 
+**기록 필드 규칙(설명·내용·비고 등):** [`docs/message_automation_field_rules.md`](../../../docs/message_automation_field_rules.md)
+
 ## 자동화 가능 항목
 
-| 자동화 대상 | milestone / API | 샘플 fixture |
-|-------------|-----------------|--------------|
-| 트레이드 | `manual_transfer_trade` | `trade_multi_player_*`, `trade_simple_*` |
-| FA 계약 | `manual_transfer_fa_contract` | `fa_signing_mlb_*`, `fa_signing_minor_*` |
-| 계약 연장 | `manual_transfer_extension_contract` | `contract_extension_*` |
-| 부상 | `manual_injury` | `injury_game_*`, `injury_offfield_*` |
-| MVP | `award_mvp` | `award_mvp_*` |
-| CY Young | `award_cy_young` | `award_cy_young_*` |
-| Great Glove | `award_gold_glove` (키는 유지, 파싱어는 Great Glove) | `award_great_glove_*` |
-| Platinum Stick | `award_silver_slugger` (키는 유지, 파싱어는 Platinum Stick) | `award_platinum_stick_*` |
-| 신인왕 | `award_rookie_of_year` | `award_rookie_of_year_*` |
-| 월간 타자/투수 | `award_player_of_month` | `award_batter_of_month_*`, `award_pitcher_of_month_*` |
-| 신인 월간 | `award_player_of_month` | `award_rookie_of_month_*` |
-| 올스타 선발 | `award_all_star` | `award_all_star_selection_*` |
-| 디비전 우승 | `division_title` | `postseason_division_*` |
-| 와일드카드 | `wildcard_series_win` | `postseason_wildcard_*` |
-| 플레이오프 진출 | 수동/신규 | `postseason_playoff_clinch_*` |
-| **월드시리즈 우승** | `world_series_win` | `postseason_world_series_*` |
-| 명예의 전당 | `hall_of_fame` | `hall_of_fame_*` |
-| 은퇴 | (현재 마일스톤 없음) | `retirement_*` |
+| 자동화 대상 | milestone / API | 샘플 fixture | 비고 |
+|-------------|-----------------|--------------|------|
+| 트레이드 | `manual_transfer_trade` | `trade_multi_player_*`, `trade_simple_*` | |
+| FA 계약 | `manual_transfer_fa_contract` | `fa_signing_mlb_*`, `fa_signing_minor_*` | 설명: `{N}년 ${총액} FA 계약 체결` |
+| 계약 연장 | `manual_transfer_extension_contract` | `contract_extension_*` | 설명: `{N}년 ${총액} 연장 계약 체결` |
+| 부상 | `manual_injury` | `injury_game_*`, `injury_offfield_*` | 설명: `{부상 종류} 부상으로 {기간} 진단` |
+| MVP | `award_mvp` | `award_mvp_*` | 투표 문구·추적팀 순위는 비고 |
+| CY Young | `award_cy_young` | `award_cy_young_*` | 동일 |
+| Great Glove | `award_gold_glove` (파싱어 Great Glove) | `award_great_glove_*` | |
+| Platinum Stick | `award_silver_slugger` (파싱어 Platinum Stick) | `award_platinum_stick_*` | |
+| 신인왕 | `award_rookie_of_year` | `award_rookie_of_year_*` | |
+| 이달의 타자/투수/신인 | `award_player_of_month` | `award_batter_of_month_*`, `award_pitcher_of_month_*`, `award_rookie_of_month_*` | 직전 달. **이주의 선수는 기록 안 함** |
+| 올스타 선발 | `award_all_star` | `award_all_star_selection_01` (로스터 발표) | `_02` 투표 시작은 **기록 안 함** (샘플만) |
+| 디비전 우승 | `division_title` | `postseason_division_*` | |
+| **월드시리즈 우승** | `world_series_win` | `postseason_world_series_*` | |
+| 명예의 전당 헌액 | `hall_of_fame` | `hall_of_fame_01` | `_02` 투표 시작은 기록 안 함 |
+
+### 샘플만 두고 1차 자동화에서 제외
+
+| fixture | 이유 |
+|---------|------|
+| `postseason_wildcard_*` | CSV는 「와일드카드 **시리즈 승리**」 — 진출 확정과 불일치 |
+| `postseason_playoff_clinch_*` | 대응 milestone key 없음 |
+| `trade_deadline_news_*` | 실제 트레이드 아님 |
+| `retirement_*` | 은퇴 마일스톤 미정의 |
+| `award_all_star_selection_02`, `hall_of_fame_02` | 투표 시작 |
 
 ## 샘플 파일 목록
 

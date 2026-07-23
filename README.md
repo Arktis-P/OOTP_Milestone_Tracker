@@ -163,6 +163,8 @@ samples/
 
 - `docs/releases/` — **릴리즈 노트** (버전별 사용자 안내)
 - `docs/milestone_rules.md` — 마일스톤 scope·판정 규칙
+- `docs/milestone_implementation.md` — 자동/수동 판정·messages 자동화 예정
+- `docs/message_automation_field_rules.md` — 수상·이적·부상 메시지 자동화 필드 규칙
 - `docs/roster_format.md` — OOTP 로스터 export 포맷
 - `docs/dev_notes.md` — 상세 개발·구현 노트
 - `docs/public_release_followups.md` — 공개 품질 후속 작업·정책 결정

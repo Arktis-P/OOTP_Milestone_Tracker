@@ -3,6 +3,7 @@
 ## 백로그 (TODO)
 
 - [ ] **공개 품질 후속 작업** — 통합 기록·선수 상세·연속 기록 센터·설명 가능한 예측·데이터 정책은 [`public_release_followups.md`](public_release_followups.md)에서 추적
+- [ ] **`messages/` 자동화** — 수상·이적·부상·일부 포스트시즌을 인박스 메시지로 기록. 필드 규칙은 [`message_automation_field_rules.md`](message_automation_field_rules.md). 샘플은 `tests/fixtures/messages/`. (옵션 연수·부상명 Gemini 번역 등 TODO는 해당 문서 §13)
 
 - [x] **레이팅 일괄 편집** — MLB+KBO 통합 팝업, 인지도/유망주 규칙, `mod_*_rosters.txt` 저장
 - [x] **마일스톤 기준 재정의** — `milestones_v1.csv` 반영 (266건), `boolean`·복합 threshold 로더 지원
