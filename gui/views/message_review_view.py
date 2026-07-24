@@ -60,6 +60,7 @@ class MessageReviewView(QWidget):
     review_changed = pyqtSignal()
     save_completed = pyqtSignal(object)
     reanalysis_requested = pyqtSignal(str)
+    exclusions_requested = pyqtSignal(object)
 
     def __init__(
         self,
@@ -217,7 +218,17 @@ class MessageReviewView(QWidget):
         return changed
 
     def exclude_selected(self) -> int:
-        changed = self.model.exclude(self.selected_rows())
+        rows = self.selected_rows()
+        changed = self.model.exclude(rows)
+        if changed:
+            self.exclusions_requested.emit(
+                [
+                    self.model[row]
+                    for row in rows
+                    if 0 <= row < len(self.model)
+                    and self.model[row].status == STATUS_EXCLUDED
+                ]
+            )
         self.refresh()
         return changed
 
@@ -256,10 +267,26 @@ class MessageReviewView(QWidget):
 
     def assign_date_to_selected(self) -> int:
         qdate = self.date_edit.date()
-        changed = self.model.assign_date(
-            self.selected_rows(),
-            date(qdate.year(), qdate.month(), qdate.day()),
-        )
+        achieved_date = date(qdate.year(), qdate.month(), qdate.day())
+        rows = [row for row in self.selected_rows() if 0 <= row < len(self.model)]
+        changed = 0
+        if self._reanalyze_callback is not None:
+            for row in rows:
+                item = self.model[row]
+                if item.status != STATUS_DATE_NEEDED:
+                    continue
+                item.message_date = achieved_date
+                self.reanalysis_requested.emit(item.source_id)
+                try:
+                    parsed = self._reanalyze_callback(item)
+                except Exception as exc:  # pragma: no cover - defensive UI path
+                    self.model.mark_error(row, tr("Reanalysis failed: {error}").format(error=str(exc)))
+                else:
+                    self.model.update_parsed(row, parsed)
+                    self.model[row].message_date = achieved_date
+                changed += 1
+        else:
+            changed = self.model.assign_date(rows, achieved_date)
         self.refresh()
         return changed
 
@@ -305,7 +332,12 @@ class MessageReviewView(QWidget):
 
     def save_approved(self) -> Any:
         approved = self.model.approved_items()
-        if not approved:
+        counts = self.model.summary_counts()
+        can_finalize_without_records = not any(
+            int(counts.get(key, 0) or 0)
+            for key in ("candidates", "date_needed", "errors")
+        )
+        if not approved and not can_finalize_without_records:
             self.refresh()
             return None
         if self._save_callback is None:
@@ -389,7 +421,15 @@ class MessageReviewView(QWidget):
         )
         self.assign_date_button.setEnabled(any(item.status == STATUS_DATE_NEEDED for item in selected))
         self.approve_all_button.setEnabled(any(item.can_approve() for item in self.model.items))
-        self.save_button.setEnabled(bool(self.model.approved_items()) and self._save_callback is not None)
+        counts = self.model.summary_counts()
+        can_finalize_without_records = not any(
+            int(counts.get(key, 0) or 0)
+            for key in ("candidates", "date_needed", "errors")
+        )
+        self.save_button.setEnabled(
+            self._save_callback is not None
+            and (bool(self.model.approved_items()) or can_finalize_without_records)
+        )
 
 
 def _text_card(title: str, editor: QPlainTextEdit) -> CardPanel:
@@ -417,7 +457,7 @@ class ExtractedResultEditDialog(QDialog):
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        self.buttons.accepted.connect(self.accept)
+        self.buttons.accepted.connect(self._accept_if_valid)
         self.buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
@@ -430,6 +470,17 @@ class ExtractedResultEditDialog(QDialog):
 
     def edited_values(self) -> dict[str, str]:
         return self.form.edited_values()
+
+    def _accept_if_valid(self) -> None:
+        errors = self.form.validate()
+        if errors:
+            QMessageBox.warning(
+                self,
+                tr("Check entered values"),
+                "\n".join(errors),
+            )
+            return
+        self.accept()
 
 
 def _subject_text(item: MessageReviewItem) -> str:

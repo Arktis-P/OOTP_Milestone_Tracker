@@ -1300,6 +1300,9 @@ class ManualMilestoneDialog(QDialog):
             forms,
             intro=tr("Review and correct only the fields needed for this record."),
             parent=self,
+            aggregator=self.aggregator,
+            settings=self.settings,
+            milestones=self.milestones,
         )
 
     @staticmethod

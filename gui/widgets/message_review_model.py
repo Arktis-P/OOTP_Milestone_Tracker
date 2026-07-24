@@ -104,6 +104,8 @@ class MessageReviewItem:
     def _initial_status(self) -> str:
         if self.error:
             return STATUS_ERROR
+        if self.parsed.exclusion_reason == "message_date_required":
+            return STATUS_DATE_NEEDED
         if self.created_record_ids:
             return STATUS_APPLIED
         if self.parsed.excluded:

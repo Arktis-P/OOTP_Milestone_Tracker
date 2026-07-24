@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import QApplication
 from core.i18n import tr
 from core.milestone.manual_entry import ManualInjuryFormData
 from core.stats.aggregator import Aggregator
+from gui.widgets.guided_milestone_form import GuidedRecordEditor
 from gui.widgets.manual_milestone_dialog import ManualMilestoneDialog, _TAB_INJURY
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -109,5 +110,32 @@ def test_manual_dialog_exposes_shared_guided_form(dialog) -> None:
         labels = [guided.table.item(row, 0).text() for row in range(guided.table.rowCount())]
         assert ("Injury" in labels) or ("부상" in labels)
         assert "injury_label" not in labels
+    finally:
+        guided.deleteLater()
+
+
+def test_guided_form_for_extracted_renders_real_typed_editor_with_context(dialog) -> None:
+    """The reusable message-extraction entry point must render the same
+    typed GuidedRecordEditor as manual single-record entry (with real
+    aggregator/settings/milestones context), not just a translated table."""
+    form = ManualInjuryFormData(
+        player_name="Aaron Judge",
+        achieved_date=date(2026, 5, 10),
+        injury_label="Hamstring",
+        duration="3 days",
+        team="Seattle Mariners",
+        season=2026,
+        description="Hamstring for 3 days",
+        notes="source:message1433",
+    )
+
+    guided = dialog.create_guided_form_for_extracted([form])
+    try:
+        assert isinstance(guided.editor, GuidedRecordEditor)
+        page = guided.editor._active_page
+        assert page.injury_label_edit.text() == "Hamstring"
+        # Source provenance (notes) is shown separately and protected from edits.
+        assert page.notes_edit.isReadOnly()
+        assert "source:message1433" in guided.source_id_label.text()
     finally:
         guided.deleteLater()

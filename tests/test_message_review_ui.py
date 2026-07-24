@@ -169,7 +169,8 @@ def test_view_shows_required_summary_list_original_and_extracted_details(qapp) -
 def test_view_reanalysis_and_date_waiting_workflow(qapp) -> None:
     def reanalyze(item: MessageReviewItem) -> ParsedMessage:
         assert item.source_id == "message2"
-        return _parsed("Reanalyzed", forms=[_form()], source_id="message2")
+        assert item.message_date == date(2026, 9, 10)
+        return _parsed("Reanalyzed", forms=[_form(item.message_date)], source_id="message2")
 
     view = MessageReviewView(
         [MessageReviewItem(_parsed("Missing date", forms=[_form(None)], source_id="message2"))],
