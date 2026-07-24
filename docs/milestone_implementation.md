@@ -53,6 +53,10 @@
 `notes`의 `source:` 표식을 기준으로 멱등 처리한다. README의 「1차 제외」 fixture는
 분류 결과와 제외 사유만 반환하고 기록 폼을 만들지 않는다.
 
+전체 시즌 재검사는 [`season_validation_replay.md`](season_validation_replay.md)의
+격리 DB 워크플로를 사용한다. 운영 DB와 설정을 변경하지 않고 대상 시즌
+박스스코어·뉴스를 다시 입력하며, 처리·제외·오류 건수를 JSON 보고서로 남긴다.
+
 OOTP 인게임 명칭: Gold Glove → **Great Glove**, Silver Slugger → **Platinum Stick**
 (CSV key는 `award_gold_glove` / `award_silver_slugger` 유지).
 

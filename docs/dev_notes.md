@@ -26,6 +26,8 @@
 - Great Glove → `award_gold_glove`, Platinum Stick → `award_silver_slugger` 매핑 유지
 - `scripts/verify_message_automation.py` — fixture 전체 분류와 README 「1차 제외」 검증
 - `tests/test_message_automation_fixtures.py` — 전체 fixture 인식, 필드 규칙, 저장 경로, 멱등성 검증
+- `scripts/replay_season_validation.py` — 운영 DB와 분리된 시즌별 DB로 박스스코어·뉴스 전체 재검사
+- 실행·초기화·날짜 맵 규칙: [`season_validation_replay.md`](season_validation_replay.md)
 
 ## 2026-06-14 — 한글 매핑 안전장치·레이팅 필터·빌드·AppData
 
