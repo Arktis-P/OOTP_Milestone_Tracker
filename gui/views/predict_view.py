@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QShowEvent
+from PyQt6.QtGui import QShowEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -30,7 +30,6 @@ from core.roster.korean_names import (
     load_roster_player_names,
 )
 from core.stats.aggregator import Aggregator
-from gui.theme import RED_BG, RED_TEXT
 from gui.widgets.card_panel import CardPanel, section_label
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.grade_styles import apply_grade_style
@@ -64,6 +63,8 @@ class PredictView(QWidget):
 
         self.banner = ErrorBanner(self)
         self.refresh_button = QPushButton(tr("🔄 Regenerate List"))
+        self.refresh_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.refresh_button.setAccessibleName(tr("Regenerate prediction list"))
         self.refresh_button.setToolTip(
             tr(
                 "Rebuilds the career milestone tracking list from scratch.\n"
@@ -73,8 +74,12 @@ class PredictView(QWidget):
         self.refresh_button.clicked.connect(lambda: self.refresh(force_reseed=True))
 
         self.player_filter = QComboBox()
+        self.player_filter.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.player_filter.setAccessibleName(tr("Player filter"))
         self.player_filter.addItem(tr("All Players"), None)
         self.grade_filter = QComboBox()
+        self.grade_filter.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.grade_filter.setAccessibleName(tr("Grade filter"))
         self.grade_filter.addItem(tr("All Grades"), "")
         for grade in ("common", "uncommon", "rare", "epic", "legendary"):
             self.grade_filter.addItem(grade, grade)
@@ -82,6 +87,8 @@ class PredictView(QWidget):
         self.grade_filter.currentIndexChanged.connect(self.refresh)
 
         self.near_only_checkbox = QCheckBox(tr("🔥 Near Only"))
+        self.near_only_checkbox.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.near_only_checkbox.setAccessibleName(tr("Show near milestones only"))
         self.near_only_checkbox.toggled.connect(self.refresh)
 
         title = QLabel(tr("Achievement Predictions (Career)"))
@@ -113,6 +120,13 @@ class PredictView(QWidget):
             ]
         )
         self.table.setToolTip(tr("Double-click a prediction to open player details."))
+        self.table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.table.setAccessibleName(tr("Career prediction table"))
+        self.table.setAccessibleDescription(
+            tr(
+                "Each row shows the record scope, current value, target, remaining value, progress, and status."
+            )
+        )
         self.table.cellDoubleClicked.connect(self._open_player_details)
         self._progress_delegate = MilestoneProgressDelegate(self.table)
         self.table.setItemDelegateForColumn(_PROGRESS_COL, self._progress_delegate)
@@ -211,11 +225,15 @@ class PredictView(QWidget):
                 player_id=item.player_id,
                 roster_names=roster_names,
             )
-            progress_label = tr("{remaining:,.0f} remaining").format(
-                remaining=item.remaining
-            )
             progress_tooltip = tr("{current:,.0f} / {target:,.0f}  ·  {pct:.1f}%").format(
                 current=item.current_value, target=item.threshold, pct=item.progress_pct
+            )
+            progress_label = tr(
+                "{current:,.0f} / {target:,.0f} · {remaining:,.0f} remaining"
+            ).format(
+                current=item.current_value,
+                target=item.threshold,
+                remaining=item.remaining,
             )
             values = [
                 item.player_name,

@@ -26,6 +26,7 @@ ACCENT_HOVER = "#1a86d9"
 ACCENT_PRESSED = "#006cbe"
 ACCENT_SUBTLE = "#264f78"
 ACCENT_TEXT = "#75beff"
+FOCUS_RING = ACCENT_TEXT
 
 # Semantic
 RED_BG = "#3b1219"
@@ -112,6 +113,42 @@ def meta_panel_style() -> str:
 
 def apply_app_theme(app: QApplication) -> None:
     app.setStyle("Fusion")
+    app.setPalette(_base_palette())
+
+    font = QFont()
+    for family in ("Segoe UI", "Malgun Gothic", "sans-serif"):
+        font.setFamily(family)
+        if font.exactMatch() or family != "sans-serif":
+            break
+    font.setPointSize(9)
+    app.setFont(font)
+    apply_high_contrast_overrides(app, False)
+
+
+def apply_high_contrast_overrides(app: QApplication, enabled: bool) -> None:
+    """Apply the normal theme or a layout-compatible high-contrast variant."""
+    if enabled:
+        palette = _base_palette()
+        palette.setColor(QPalette.ColorRole.Window, QColor("#000000"))
+        palette.setColor(QPalette.ColorRole.WindowText, QColor("#ffffff"))
+        palette.setColor(QPalette.ColorRole.Base, QColor("#000000"))
+        palette.setColor(QPalette.ColorRole.AlternateBase, QColor("#101010"))
+        palette.setColor(QPalette.ColorRole.Text, QColor("#ffffff"))
+        palette.setColor(QPalette.ColorRole.Button, QColor("#101010"))
+        palette.setColor(QPalette.ColorRole.ButtonText, QColor("#ffffff"))
+        palette.setColor(QPalette.ColorRole.Highlight, QColor("#ffff00"))
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#000000"))
+        palette.setColor(QPalette.ColorRole.Link, QColor("#00ffff"))
+        palette.setColor(QPalette.ColorRole.PlaceholderText, QColor("#d0d0d0"))
+        app.setPalette(palette)
+        app.setStyleSheet(_STYLESHEET + "\n" + _HIGH_CONTRAST_STYLESHEET)
+        return
+
+    app.setPalette(_base_palette())
+    app.setStyleSheet(_STYLESHEET)
+
+
+def _base_palette() -> QPalette:
     palette = QPalette()
     palette.setColor(QPalette.ColorRole.Window, QColor(BG_WINDOW))
     palette.setColor(QPalette.ColorRole.WindowText, QColor(TEXT_PRIMARY))
@@ -124,16 +161,7 @@ def apply_app_theme(app: QApplication) -> None:
     palette.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
     palette.setColor(QPalette.ColorRole.Link, QColor(ACCENT_TEXT))
     palette.setColor(QPalette.ColorRole.PlaceholderText, QColor(TEXT_MUTED))
-    app.setPalette(palette)
-
-    font = QFont()
-    for family in ("Segoe UI", "Malgun Gothic", "sans-serif"):
-        font.setFamily(family)
-        if font.exactMatch() or family != "sans-serif":
-            break
-    font.setPointSize(9)
-    app.setFont(font)
-    app.setStyleSheet(_STYLESHEET)
+    return palette
 
 
 _STYLESHEET = f"""
@@ -174,6 +202,36 @@ QLabel#pageTitle {{
     color: {TEXT_PRIMARY};
     font-size: 15px;
     font-weight: 700;
+}}
+
+QLabel#sectionTitle {{
+    color: {TEXT_PRIMARY};
+    font-size: 11px;
+    font-weight: 600;
+    min-height: 24px;
+}}
+
+QLabel#playerName, QLabel#primaryStat {{
+    color: {TEXT_PRIMARY};
+    font-weight: 700;
+}}
+
+QLabel#secondaryStat, QLabel#statusText {{
+    color: {TEXT_SECONDARY};
+    font-weight: 500;
+}}
+
+QLabel#fieldLabel, QLabel#helperText {{
+    color: {TEXT_MUTED};
+}}
+
+QLabel#warningText {{
+    color: {AMBER_TEXT};
+    background-color: {AMBER_BG};
+    border: 1px solid {AMBER_BORDER};
+    border-left: 4px solid {AMBER_TEXT};
+    border-radius: 8px;
+    padding: 5px 8px;
 }}
 
 QLabel#mutedLabel {{
@@ -289,6 +347,10 @@ QPushButton:disabled {{
     background-color: {BG_PANEL};
     border-color: {BORDER_SUBTLE};
 }}
+QPushButton:focus {{
+    border: 2px solid {FOCUS_RING};
+    font-weight: 600;
+}}
 QPushButton#primaryButton {{
     background-color: {ACCENT};
     color: #ffffff;
@@ -334,8 +396,14 @@ QLineEdit, QSpinBox, QComboBox, QTextEdit, QPlainTextEdit {{
     padding: 5px 8px;
     selection-background-color: {ACCENT};
 }}
-QLineEdit:focus, QSpinBox:focus, QComboBox:focus, QTextEdit:focus {{
-    border-color: {ACCENT};
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus, QTextEdit:focus, QPlainTextEdit:focus {{
+    border: 2px solid {FOCUS_RING};
+}}
+QLineEdit:disabled, QSpinBox:disabled, QComboBox:disabled,
+QTextEdit:disabled, QPlainTextEdit:disabled {{
+    color: {TEXT_MUTED};
+    background-color: {BG_PANEL};
+    border-color: {BORDER_SUBTLE};
 }}
 QComboBox::drop-down {{
     border: none;
@@ -373,6 +441,9 @@ QTableWidget, QTableView {{
     border-radius: 8px;
     selection-background-color: {ACCENT_SUBTLE};
     selection-color: {ACCENT_TEXT};
+}}
+QTableWidget:focus, QTableView:focus, QListWidget:focus, QTabBar:focus {{
+    border: 2px solid {FOCUS_RING};
 }}
 QHeaderView::section {{
     background-color: {BG_SIDEBAR};
@@ -460,6 +531,14 @@ QCheckBox::indicator:checked, QRadioButton::indicator:checked {{
     background-color: {ACCENT};
     border-color: {ACCENT_HOVER};
 }}
+QCheckBox:focus, QRadioButton:focus {{
+    color: {TEXT_PRIMARY};
+    font-weight: 600;
+}}
+QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {{
+    background-color: {BG_PANEL};
+    border-color: {BORDER_SUBTLE};
+}}
 QRadioButton::indicator {{
     border-radius: 8px;
 }}
@@ -539,4 +618,19 @@ QPushButton#navBtnIdle:hover {{
     background-color: {BG_HOVER};
     color: {TEXT_PRIMARY};
 }}
+"""
+
+_HIGH_CONTRAST_STYLESHEET = """
+QPushButton:focus, QLineEdit:focus, QSpinBox:focus, QComboBox:focus,
+QTextEdit:focus, QPlainTextEdit:focus, QListWidget:focus,
+QTableWidget:focus, QTableView:focus, QTabBar:focus {
+    border: 3px solid #ffff00;
+}
+QTableWidget::item:selected, QTableView::item:selected,
+QListWidget::item:selected {
+    color: #000000;
+    background-color: #ffff00;
+    border-left: 6px solid #ffff00;
+    font-weight: 700;
+}
 """

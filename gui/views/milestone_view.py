@@ -314,6 +314,10 @@ class MilestoneView(QWidget):
         self.reset_filters_button = QPushButton(tr("Reset Filters"))
         self.reset_filters_button.setObjectName("linkButton")
         self.reset_filters_button.clicked.connect(self.reset_filters)
+        self.filter_summary_label = QLabel("")
+        self.filter_summary_label.setObjectName("mutedLabel")
+        self.filter_summary_label.setWordWrap(True)
+        self.filter_summary_label.setStyleSheet(hint_style(TEXT_SECONDARY))
 
         self.season_spin = QSpinBox()
         self.season_spin.setRange(1900, 2100)
@@ -443,6 +447,7 @@ class MilestoneView(QWidget):
         filter_card = CardPanel()
         filter_card.content_layout.addLayout(filter_row)
         filter_card.content_layout.addLayout(type_filter_row)
+        filter_card.content_layout.addWidget(self.filter_summary_label)
         filter_card.content_layout.addLayout(action_row)
         filter_card.content_layout.addWidget(hint)
 
@@ -622,6 +627,9 @@ class MilestoneView(QWidget):
         super().closeEvent(event)
 
     def refresh(self) -> None:
+        preferred_record_id = self._highlight_id or self._selected_record_id_from_table()
+        if preferred_record_id is None:
+            preferred_record_id = self._selected_record_id
         checker = MilestoneChecker(
             self.aggregator,
             self.milestones,
@@ -659,6 +667,7 @@ class MilestoneView(QWidget):
             self._records.append(record)
 
         total_count = len(checker.get_recorded_milestones())
+        self._update_filter_summary(len(self._records), total_count)
         self.table_panel.table.setVisible(bool(self._records))
         self.empty_state.setVisible(not self._records)
         if not self._records:
@@ -756,10 +765,63 @@ class MilestoneView(QWidget):
 
                 self.table_panel.table.setItem(row_idx, col_idx, item)
         self.table_panel.table.setSortingEnabled(True)
-        if self._highlight_id is not None:
-            select_record_row(self.table_panel.table, self._highlight_id)
+        if preferred_record_id is not None:
+            select_record_row(self.table_panel.table, preferred_record_id)
+            if self._highlight_id is not None:
+                self._highlight_id = None
+        if not self._records:
             self._highlight_id = None
+            self._update_meta_panel()
         self._update_selection_actions()
+
+    def _filters_active(self) -> bool:
+        return any(
+            (
+                (self.subject_combo.currentData() or "all") != "all",
+                bool(self.team_filter.currentData()),
+                bool(self.scope_combo.currentData()),
+                self.season_spin.value() > 0,
+                bool(self.table_panel.filter_bar.search_input.text().strip()),
+                bool(self.event_type_combo.currentData()),
+                bool(self.grade_combo.currentData()),
+                bool(self.source_combo.currentData()),
+            )
+        )
+
+    def _active_filter_labels(self) -> list[str]:
+        labels: list[str] = []
+        if (self.subject_combo.currentData() or "all") != "all":
+            labels.append(tr("Subject: {value}").format(value=self.subject_combo.currentText()))
+        if self.team_filter.currentData():
+            labels.append(tr("Team: {value}").format(value=self.team_filter.currentText()))
+        if self.scope_combo.currentData():
+            labels.append(tr("Scope: {value}").format(value=self.scope_combo.currentText()))
+        if self.season_spin.value() > 0:
+            labels.append(tr("Season: {value}").format(value=self.season_spin.value()))
+        search = self.table_panel.filter_bar.search_input.text().strip()
+        if search:
+            labels.append(tr("Search: {value}").format(value=search))
+        if self.event_type_combo.currentData():
+            labels.append(tr("Event Type: {value}").format(value=self.event_type_combo.currentText()))
+        if self.grade_combo.currentData():
+            labels.append(tr("Grade: {value}").format(value=self.grade_combo.currentText()))
+        if self.source_combo.currentData():
+            labels.append(tr("Source: {value}").format(value=self.source_combo.currentText()))
+        return labels
+
+    def _update_filter_summary(self, shown_count: int, total_count: int) -> None:
+        active_labels = self._active_filter_labels()
+        self.reset_filters_button.setEnabled(bool(active_labels))
+        if not total_count:
+            self.filter_summary_label.setText(tr("No milestone records available."))
+            return
+        base = tr("Showing {shown} of {total} records").format(
+            shown=shown_count, total=total_count
+        )
+        if active_labels:
+            self.filter_summary_label.setText(base + " - " + " / ".join(active_labels))
+        else:
+            self.filter_summary_label.setText(base)
 
     def reset_filters(self) -> None:
         """Clear every history filter in one action."""

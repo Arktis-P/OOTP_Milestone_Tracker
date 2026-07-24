@@ -139,6 +139,9 @@ class StatsView(QWidget):
         self.player_search.setToolTip(
             tr("Filter list by name or ID. Does not re-query DB on each input.")
         )
+        self.player_filter_summary = QLabel("")
+        self.player_filter_summary.setObjectName("mutedLabel")
+        self.player_filter_summary.setStyleSheet(hint_style(TEXT_SECONDARY))
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(250)
@@ -194,6 +197,7 @@ class StatsView(QWidget):
         filter_row.addWidget(section_label(tr("Position")))
         filter_row.addWidget(self.position_combo)
         filter_row.addWidget(self.player_search, stretch=1)
+        filter_row.addWidget(self.player_filter_summary)
 
         toolbar_card = CardPanel()
         toolbar_card.content_layout.addLayout(import_row)
@@ -241,7 +245,8 @@ class StatsView(QWidget):
         self._refresh_player_stats()
 
     def _on_search_text_changed(self, _text: str) -> None:
-        self._search_timer.start()
+        self._search_timer.stop()
+        self._apply_player_filter()
 
     def _on_career_toggled(self, checked: bool) -> None:
         self._career_mode = checked
@@ -357,6 +362,7 @@ class StatsView(QWidget):
         needle = self.player_search.text().strip().lower()
         position_group = str(self.position_combo.currentData() or "")
         previous_id = self._selected_player_id()
+        matched_count = 0
         self.player_list.blockSignals(True)
         self.player_list.clear()
         for player in self._players:
@@ -372,24 +378,42 @@ class StatsView(QWidget):
             item = QListWidgetItem(format_player_list_label(player))
             item.setData(Qt.ItemDataRole.UserRole, int(player["player_id"]))
             self.player_list.addItem(item)
+            matched_count += 1
+        selection_restored = False
         if previous_id is not None:
             for row in range(self.player_list.count()):
                 item = self.player_list.item(row)
                 if item and int(item.data(Qt.ItemDataRole.UserRole)) == previous_id:
                     self.player_list.setCurrentRow(row)
+                    selection_restored = True
                     break
-        elif self.player_list.count():
+        if not selection_restored and self.player_list.count():
             self.player_list.setCurrentRow(0)
         self.player_list.blockSignals(False)
+        self._update_player_filter_summary(matched_count)
         if self.player_list.currentRow() >= 0:
             self._refresh_player_stats()
         else:
             self.player_header.setText(tr("Please select a player."))
-            self.info_label.setText("")
+            if self._players:
+                self.info_label.setText(
+                    tr("No players match this search or position filter. Clear the filter to recover the list.")
+                )
+            else:
+                self.info_label.setText("")
             self.batting_table.setRowCount(0)
             self.pitching_table.setRowCount(0)
             self.player_detail_summary.clear()
             self.milestone_timeline.load_player(None)
+
+    def _update_player_filter_summary(self, matched_count: int) -> None:
+        total_count = len(self._players)
+        if not total_count:
+            self.player_filter_summary.setText("")
+            return
+        self.player_filter_summary.setText(
+            tr("{shown}/{total} players").format(shown=matched_count, total=total_count)
+        )
 
     def _on_list_selection(self, row: int) -> None:
         if row >= 0:
