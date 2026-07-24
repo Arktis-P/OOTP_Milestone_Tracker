@@ -57,6 +57,7 @@ class ImportResultSummary:
 
     outcome: str
     headline: str
+    workflow_id: str = ""
     totals: dict[str, int] = field(default_factory=dict)
     unresolved: dict[str, int] = field(default_factory=dict)
     actions: tuple[tuple[str, str], ...] = ()
@@ -204,7 +205,7 @@ class WorkflowStatusPanel(CardPanel):
 class ImportResultSummaryWidget(CardPanel):
     """Persistent completion/partial-success/error result summary."""
 
-    action_requested = pyqtSignal(str)
+    action_requested = pyqtSignal(str, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(tr("Result Summary"), parent=parent)
@@ -259,7 +260,9 @@ class ImportResultSummaryWidget(CardPanel):
                 route_key = label
             button = QPushButton(label)
             button.setObjectName("importResultActionButton")
-            button.clicked.connect(lambda _checked=False, route=route_key: self.action_requested.emit(route))
+            button.clicked.connect(
+                lambda _checked=False, route=route_key, workflow=summary.workflow_id: self.action_requested.emit(workflow, route)
+            )
             self.actions_row.insertWidget(self.actions_row.count() - 1, button)
 
 

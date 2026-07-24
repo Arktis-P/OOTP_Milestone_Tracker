@@ -18,6 +18,7 @@ from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from core.i18n import tr
+from core.import_workflow import WORKFLOW_SEASON_FINALIZE
 from gui.widgets.import_workflow_status import (
     ImportResultSummary,
     ImportResultSummaryWidget,
@@ -27,6 +28,7 @@ from gui.widgets.import_workflow_status import (
 CARD_LATEST_GAMES = "latest_boxscores"
 CARD_NEWS_MESSAGES = "news_messages"
 CARD_BASELINE_HISTORY = "baseline_history"
+CARD_SEASON_FINALIZE = WORKFLOW_SEASON_FINALIZE
 
 
 def _confirm_result_presentation(
@@ -118,6 +120,27 @@ def _baseline_history_labels(state: Any) -> tuple[dict[str, str], dict[str, tupl
     return labels, targets
 
 
+def _season_finalize_labels(state: Any) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
+    confirm_action, confirm_open, confirm_route = _confirm_result_presentation(
+        state, error_key="errors", review_key="review_needed", saved_key="created"
+    )
+    labels = {
+        "source_check": tr("Check exports"),
+        "analyze_classify": tr("Analyze season"),
+        "review_results": tr("Review final awards"),
+        "save": tr("Record final awards"),
+        "confirm_result": confirm_action,
+    }
+    targets = {
+        "source_check": (tr("Source"), "source"),
+        "analyze_classify": (tr("Preview"), "preview"),
+        "review_results": (tr("Review"), "review"),
+        "save": (tr("Records"), "records"),
+        "confirm_result": (confirm_open, confirm_route),
+    }
+    return labels, targets
+
+
 LabelBuilder = Callable[[Any], tuple[dict[str, str], dict[str, tuple[str, str]]]]
 
 
@@ -125,7 +148,7 @@ class ImportCenterView(QWidget):
     """Single page for recurring, message, and baseline/history imports."""
 
     workflow_action_requested = pyqtSignal(str, str)
-    result_action_requested = pyqtSignal(str)
+    result_action_requested = pyqtSignal(str, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -163,6 +186,7 @@ class ImportCenterView(QWidget):
             CARD_LATEST_GAMES: _latest_games_labels,
             CARD_NEWS_MESSAGES: _news_messages_labels,
             CARD_BASELINE_HISTORY: _baseline_history_labels,
+            CARD_SEASON_FINALIZE: _season_finalize_labels,
         }
 
         self.latest_games_card = self._build_card(
@@ -183,11 +207,18 @@ class ImportCenterView(QWidget):
             tr("Import or compare player_batting_stats.txt and player_pitching_stats.txt for initial setup and offseason refresh."),
             tr("Source: player_batting_stats.txt and player_pitching_stats.txt."),
         )
+        self.season_finalize_card = self._build_card(
+            CARD_SEASON_FINALIZE,
+            tr("Season finalization"),
+            tr("Review season-end AVG/OBP/SLG/OPS/ERA awards from exported stats and record final results."),
+            tr("Source: current batting and pitching stat exports for the selected season."),
+        )
 
         self._cards: dict[str, ImportWorkflowStatePanel] = {
             CARD_LATEST_GAMES: self.latest_games_card,
             CARD_NEWS_MESSAGES: self.message_card,
             CARD_BASELINE_HISTORY: self.baseline_card,
+            CARD_SEASON_FINALIZE: self.season_finalize_card,
         }
 
         for card in self._cards.values():
@@ -196,7 +227,12 @@ class ImportCenterView(QWidget):
             layout.addWidget(card)
 
         self.result_summary = ImportResultSummaryWidget()
-        self.result_summary.action_requested.connect(self.result_action_requested.emit)
+        self._result_workflow_id = CARD_LATEST_GAMES
+        self.result_summary.action_requested.connect(
+            lambda workflow, action: self.result_action_requested.emit(
+                workflow or self._result_workflow_id, action
+            )
+        )
         self.result_summary.set_summary(None)
         layout.addWidget(self.result_summary)
         layout.addStretch()
@@ -234,43 +270,87 @@ class ImportCenterView(QWidget):
     def set_result_summary(self, summary: ImportResultSummary | None) -> None:
         self.result_summary.set_summary(summary)
 
-    def set_completed_summary(self, totals: dict[str, int], unresolved: dict[str, int] | None = None) -> None:
+    def set_completed_summary(
+        self,
+        totals: dict[str, int],
+        unresolved: dict[str, int] | None = None,
+        *,
+        workflow_id: str = CARD_LATEST_GAMES,
+    ) -> None:
+        self._result_workflow_id = workflow_id
         self.set_result_summary(
             ImportResultSummary(
                 outcome="complete",
                 headline=tr("Record import completed."),
+                workflow_id=workflow_id,
                 totals=totals,
                 unresolved=unresolved or {},
-                actions=(
-                    ("view_records", tr("View records")),
-                    ("review_issues", tr("Review issues")),
-                    ("check_errors", tr("Check errors")),
-                ),
+                actions=(("view_records", tr("View records")),),
             )
         )
 
-    def set_partial_success_summary(self, totals: dict[str, int], unresolved: dict[str, int]) -> None:
+    def set_partial_success_summary(
+        self,
+        totals: dict[str, int],
+        unresolved: dict[str, int],
+        *,
+        workflow_id: str = CARD_LATEST_GAMES,
+    ) -> None:
+        self._result_workflow_id = workflow_id
         self.set_result_summary(
             ImportResultSummary(
                 outcome="partial_success",
                 headline=tr("Record import partially completed. Some items need review."),
+                workflow_id=workflow_id,
                 totals=totals,
                 unresolved=unresolved,
-                actions=(
-                    ("view_records", tr("View records")),
-                    ("review_issues", tr("Review issues")),
-                    ("check_errors", tr("Check errors")),
+                actions=tuple(
+                    [
+                        ("view_records", tr("View records")),
+                        ("review_issues", tr("Review issues")),
+                    ]
+                    + (
+                        [("view_errors", tr("Check errors"))]
+                        if int(unresolved.get("errors", 0) or 0) > 0
+                        else []
+                    )
                 ),
             )
         )
 
-    def set_error_summary(self, message: str, totals: dict[str, int] | None = None) -> None:
+    def set_error_summary(
+        self,
+        message: str,
+        totals: dict[str, int] | None = None,
+        *,
+        workflow_id: str = CARD_LATEST_GAMES,
+    ) -> None:
+        self._result_workflow_id = workflow_id
         self.set_result_summary(
             ImportResultSummary(
                 outcome="error",
                 headline=tr("Record import stopped: {message}").format(message=message),
+                workflow_id=workflow_id,
                 totals=totals or {},
                 unresolved={tr("errors"): 1},
-                actions=(("check_errors", tr("Check errors")),),
+                actions=(("view_errors", tr("Check errors")),),
+            )
+        )
+
+    def set_cancelled_summary(
+        self,
+        totals: dict[str, int] | None = None,
+        *,
+        workflow_id: str = CARD_LATEST_GAMES,
+    ) -> None:
+        self._result_workflow_id = workflow_id
+        self.set_result_summary(
+            ImportResultSummary(
+                outcome="cancelled",
+                headline=tr("Record import was cancelled."),
+                workflow_id=workflow_id,
+                totals=totals or {},
+                unresolved={},
+                actions=(),
             )
         )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import webbrowser
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -55,7 +56,7 @@ from core.stats.team_filter import expand_tracked_teams
 from core.streak.export import export_streak_csvs as write_streak_csv_bundle
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.import_errors_dialog import ImportErrorsDialog
-from gui.widgets.import_result import build_import_message, show_import_result_banner
+from gui.widgets.import_result import show_import_result_banner
 from gui.widgets.table_widgets import TablePanel
 from gui.widgets.edit_milestone_record_dialog import EditMilestoneRecordDialog
 from gui.widgets.manual_milestone_dialog import ManualMilestoneDialog
@@ -111,6 +112,35 @@ def build_snapshot_incomplete_message(
     return "\n".join(lines)
 
 EVENT_TYPE_LABELS = dict(EVENT_TYPE_OPTIONS)
+
+SEASON_FINALIZE_SOURCE = "season_final"
+SEASON_FINALIZE_OUTCOME_COMPLETED = "completed"
+SEASON_FINALIZE_OUTCOME_PARTIAL_SUCCESS = "partial_success"
+SEASON_FINALIZE_OUTCOME_FAILED = "failed"
+SEASON_FINALIZE_OUTCOME_CANCELLED = "cancelled"
+
+
+@dataclass(frozen=True)
+class SeasonFinalizeResult:
+    outcome: str
+    season: int
+    processed: int = 0
+    created: int = 0
+    duplicates: int = 0
+    excluded: int = 0
+    errors: int = 0
+    unresolved: dict[str, int] = field(default_factory=dict)
+    message: str = ""
+    source: str = SEASON_FINALIZE_SOURCE
+
+    def as_workflow_totals(self) -> dict[str, int]:
+        return {
+            "processed": self.processed,
+            "created": self.created,
+            "duplicates": self.duplicates,
+            "excluded": self.excluded,
+            "errors": self.errors,
+        }
 
 # Fixed positions of the compact Type/Source columns in _table_columns().
 TYPE_COLUMN_INDEX = 4
@@ -261,7 +291,8 @@ def _table_columns() -> list[str]:
 
 class MilestoneView(QWidget):
     records_changed = pyqtSignal()
-    import_finished = pyqtSignal(str)
+    import_finished = pyqtSignal(object)
+    season_finalize_finished = pyqtSignal(object)
     player_detail_requested = pyqtSignal(int)
 
     def __init__(
@@ -602,9 +633,7 @@ class MilestoneView(QWidget):
             parent=self,
         )
         self._import_worker.progress.connect(self._on_import_progress)
-        self._import_worker.completed.connect(self._on_import_finished)
-        self._import_worker.cancelled.connect(self._on_import_cancelled)
-        self._import_worker.error.connect(self._on_import_error)
+        self._import_worker.workflow_finished.connect(self._on_import_finished)
         self._import_worker.finished.connect(
             lambda worker=self._import_worker: self._finish_import_worker(worker)
         )
@@ -640,17 +669,32 @@ class MilestoneView(QWidget):
         self.progress_bar.setVisible(False)
         self.progress_label.setVisible(False)
 
-        self.import_finished.emit(build_import_message(payload))
+        self.import_finished.emit(payload)
         self.refresh()
 
-        show_import_result_banner(
-            self.banner,
-            payload,
-            on_view_milestones=lambda: MilestoneAchievedDialog(payload.milestones, self).exec(),
-            on_view_errors=lambda: ImportErrorsDialog(
-                payload.batch.errors, self
-            ).exec(),
-        )
+        if payload.outcome == SEASON_FINALIZE_OUTCOME_CANCELLED:
+            self.banner.show_info(payload.message)
+        elif payload.outcome == SEASON_FINALIZE_OUTCOME_FAILED:
+            self.banner.show_error(
+                payload.message,
+                [
+                    (
+                        tr("View Errors ({count})").format(count=payload.errors),
+                        lambda: ImportErrorsDialog(payload.batch.errors, self).exec(),
+                    )
+                ]
+                if payload.batch.errors
+                else None,
+            )
+        else:
+            show_import_result_banner(
+                self.banner,
+                payload,
+                on_view_milestones=lambda: MilestoneAchievedDialog(payload.milestones, self).exec(),
+                on_view_errors=lambda: ImportErrorsDialog(
+                    payload.batch.errors, self
+                ).exec(),
+            )
 
     def _on_import_error(self, message: str) -> None:
         self.import_button.setEnabled(True)
@@ -1100,7 +1144,23 @@ class MilestoneView(QWidget):
         box.exec()
         return box.clickedButton() is continue_button
 
-    def _record_season_ratio_milestones(self) -> None:
+    def _season_finalize_record_count(self, season: int) -> int:
+        row = self.aggregator.conn.execute(
+            """
+            SELECT COUNT(*) FROM milestone_records
+            WHERE source = ? AND season = ?
+            """,
+            (SEASON_FINALIZE_SOURCE, season),
+        ).fetchone()
+        return int(row[0] if row is not None else 0)
+
+    def _emit_season_finalize_result(
+        self, result: SeasonFinalizeResult
+    ) -> SeasonFinalizeResult:
+        self.season_finalize_finished.emit(result)
+        return result
+
+    def _record_season_ratio_milestones(self) -> SeasonFinalizeResult:
         season = self.season_spin.value() or self.settings.current_season
         if season <= 0:
             QMessageBox.information(
@@ -1108,10 +1168,24 @@ class MilestoneView(QWidget):
                 tr("Select Season"),
                 tr("Please select a season year in the season filter and try again."),
             )
-            return
+            return self._emit_season_finalize_result(
+                SeasonFinalizeResult(
+                    outcome=SEASON_FINALIZE_OUTCOME_FAILED,
+                    season=season,
+                    errors=1,
+                    unresolved={"errors": 1},
+                    message=tr("A valid season is required."),
+                )
+            )
         batting_path, pitching_path = self._season_export_paths()
         if not self._confirm_season_ratio_export(season, batting_path, pitching_path):
-            return
+            return self._emit_season_finalize_result(
+                SeasonFinalizeResult(
+                    outcome=SEASON_FINALIZE_OUTCOME_CANCELLED,
+                    season=season,
+                    message=tr("Season finalization was cancelled."),
+                )
+            )
         try:
             importer = InitialImporter(self.aggregator)
             snapshot = importer.read_season_snapshot(
@@ -1121,25 +1195,43 @@ class MilestoneView(QWidget):
             )
         except ExportSnapshotError as exc:
             QMessageBox.warning(self, tr("Export File Problem"), str(exc))
-            return
+            return self._emit_season_finalize_result(
+                SeasonFinalizeResult(
+                    outcome=SEASON_FINALIZE_OUTCOME_FAILED,
+                    season=season,
+                    errors=1,
+                    unresolved={"errors": 1},
+                    message=str(exc),
+                )
+            )
         validation = importer.validate_season_snapshot(snapshot)
         if validation.status == "no_current_season":
-            QMessageBox.warning(
-                self,
-                tr("No Season Data"),
-                tr(
-                    "The export files do not contain current {season} season rows. "
-                    "Export both batting and pitching player stats from OOTP, then retry."
-                ).format(season=season),
+            message = tr(
+                "The export files do not contain current {season} season rows. "
+                "Export both batting and pitching player stats from OOTP, then retry."
+            ).format(season=season)
+            QMessageBox.warning(self, tr("No Season Data"), message)
+            return self._emit_season_finalize_result(
+                SeasonFinalizeResult(
+                    outcome=SEASON_FINALIZE_OUTCOME_FAILED,
+                    season=season,
+                    errors=1,
+                    unresolved={"errors": 1},
+                    message=message,
+                )
             )
-            return
         if validation.status == "incomplete":
-            QMessageBox.warning(
-                self,
-                tr("Export File Problem"),
-                build_snapshot_incomplete_message(validation, season=season),
+            message = build_snapshot_incomplete_message(validation, season=season)
+            QMessageBox.warning(self, tr("Export File Problem"), message)
+            return self._emit_season_finalize_result(
+                SeasonFinalizeResult(
+                    outcome=SEASON_FINALIZE_OUTCOME_FAILED,
+                    season=season,
+                    errors=1,
+                    unresolved={"errors": len(getattr(validation, "issues", ())) or 1},
+                    message=message,
+                )
             )
-            return
 
         default_date = f"{season}-12-31"
         date_str, ok = QInputDialog.getText(
@@ -1149,17 +1241,28 @@ class MilestoneView(QWidget):
             text=default_date,
         )
         if not ok:
-            return
+            return self._emit_season_finalize_result(
+                SeasonFinalizeResult(
+                    outcome=SEASON_FINALIZE_OUTCOME_CANCELLED,
+                    season=season,
+                    message=tr("Season finalization was cancelled."),
+                )
+            )
         date_str = date_str.strip()
         try:
             datetime.strptime(date_str, "%Y-%m-%d")
         except ValueError:
-            QMessageBox.warning(
-                self,
-                tr("Invalid Date"),
-                tr("Please enter the date in YYYY-MM-DD format."),
+            message = tr("Please enter the date in YYYY-MM-DD format.")
+            QMessageBox.warning(self, tr("Invalid Date"), message)
+            return self._emit_season_finalize_result(
+                SeasonFinalizeResult(
+                    outcome=SEASON_FINALIZE_OUTCOME_FAILED,
+                    season=season,
+                    errors=1,
+                    unresolved={"errors": 1},
+                    message=message,
+                )
             )
-            return
 
         checker = MilestoneChecker(
             self.aggregator,
@@ -1169,12 +1272,46 @@ class MilestoneView(QWidget):
             tracked_teams=self.settings.tracked_teams,
             custom_teams=self.settings.custom_mlb_teams,
         )
-        achievements = checker.check_season_ratios(
-            season,
-            achieved_date=date_str,
-            totals_override=snapshot.as_totals_override(),
+        before_count = self._season_finalize_record_count(season)
+        try:
+            achievements = checker.check_season_ratios(
+                season,
+                achieved_date=date_str,
+                totals_override=snapshot.as_totals_override(),
+            )
+            recorded = int(checker.record_achievements(achievements) or 0)
+        except Exception as exc:
+            created = max(0, self._season_finalize_record_count(season) - before_count)
+            processed = len(locals().get("achievements", ()))
+            result = SeasonFinalizeResult(
+                outcome=(
+                    SEASON_FINALIZE_OUTCOME_PARTIAL_SUCCESS
+                    if created > 0
+                    else SEASON_FINALIZE_OUTCOME_FAILED
+                ),
+                season=season,
+                processed=processed,
+                created=created,
+                duplicates=max(0, processed - created),
+                errors=1,
+                unresolved={"errors": 1},
+                message=str(exc),
+            )
+            QMessageBox.warning(self, tr("Season Finalization Failed"), str(exc))
+            if created:
+                self.refresh()
+                self.records_changed.emit()
+            return self._emit_season_finalize_result(result)
+
+        processed = len(achievements)
+        result = SeasonFinalizeResult(
+            outcome=SEASON_FINALIZE_OUTCOME_COMPLETED,
+            season=season,
+            processed=processed,
+            created=recorded,
+            duplicates=max(0, processed - recorded),
+            message=tr("{season} season finalization completed.").format(season=season),
         )
-        recorded = checker.record_achievements(achievements)
         self.banner.show_info(
             tr("{season} season — {count} ratio milestone(s) recorded").format(
                 season=season, count=recorded
@@ -1187,6 +1324,7 @@ class MilestoneView(QWidget):
         )
         self.refresh()
         self.records_changed.emit()
+        return self._emit_season_finalize_result(result)
 
     def _selected_record_id_from_table(self) -> int | None:
         rows = self.table_panel.table.selectionModel().selectedRows()

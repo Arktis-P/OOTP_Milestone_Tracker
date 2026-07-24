@@ -6,8 +6,10 @@ import pytest
 from PyQt6.QtWidgets import QApplication
 
 from core.i18n import tr
+from core.stats.models import BatchImportResult
 from gui.app import MainWindow
 from gui.sidebar_nav import SidebarNav
+from gui.workers.import_worker import ImportFinishedPayload
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -43,7 +45,7 @@ class _DummyImportCenter:
     def __init__(self):
         self.completed_calls = []
 
-    def set_completed_summary(self, totals, unresolved=None):
+    def set_completed_summary(self, totals, unresolved=None, *, workflow_id="latest_boxscores"):
         self.completed_calls.append((totals, unresolved or {}))
 
 
@@ -59,15 +61,21 @@ class _DummyMain:
     def emit(self, kind):
         self.refreshed.append(kind)
 
+    def _persist_boxscore_error_report(self, _payload):
+        return ""
+
 
 def test_boxscore_finish_updates_import_center_summary_and_refresh_signal(qapp) -> None:
     dummy = _DummyMain()
+    payload = ImportFinishedPayload.from_batch(
+        BatchImportResult(imported=3, total_scanned=3)
+    )
 
-    MainWindow._on_boxscore_import_finished(dummy, "3 games added · 1 milestone")
+    MainWindow._on_boxscore_import_finished(dummy, payload)
 
     totals, unresolved = dummy._import_center_view.completed_calls[-1]
-    assert totals["detail"] == "3 games added · 1 milestone"
-    assert totals["workflow"] == tr("latest games")
+    assert totals["processed"] == 3
+    assert totals["created"] == 3
     assert unresolved == {}
     assert dummy.refreshed == ["boxscore"]
 

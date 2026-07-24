@@ -6,11 +6,16 @@ from types import SimpleNamespace
 import pytest
 from PyQt6.QtWidgets import QApplication
 
+from core.import_workflow import OUTCOME_CANCELLED, OUTCOME_PARTIAL_SUCCESS
+from core.stats.models import BatchImportResult, ImportResult
+from gui.views.dashboard_view import DashboardView
+from gui.views.stats_view import StatsView
 from gui.widgets.import_workflow_status import (
     IMPORT_WORKFLOW_STEPS,
     ImportWorkflowStatePanel,
     stage_action_enabled,
 )
+from gui.workers.import_worker import ImportFinishedPayload
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -147,3 +152,89 @@ def test_action_requested_not_emitted_for_disabled_button_click(panel, qapp) -> 
     panel._buttons["save"].click()
 
     assert captured == []
+
+
+class _FakeControl:
+    def __init__(self) -> None:
+        self.enabled = True
+        self.visible = True
+
+    def setEnabled(self, enabled: bool) -> None:
+        self.enabled = enabled
+
+    def setVisible(self, visible: bool) -> None:
+        self.visible = visible
+
+
+class _FakeEmitter:
+    def __init__(self) -> None:
+        self.emitted: list[object] = []
+
+    def emit(self, payload: object) -> None:
+        self.emitted.append(payload)
+
+
+class _FakeBanner:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, object]] = []
+
+    def show_info(self, message: str, actions: object = None) -> None:
+        self.calls.append(("info", message, actions))
+
+    def show_warning(self, message: str, actions: object = None) -> None:
+        self.calls.append(("warning", message, actions))
+
+    def show_error(self, message: str, actions: object = None) -> None:
+        self.calls.append(("error", message, actions))
+
+    def show_success(self, message: str, actions: object = None) -> None:
+        self.calls.append(("success", message, actions))
+
+
+def _view_stub(**extra):
+    base = {
+        "import_button": _FakeControl(),
+        "cancel_import_button": _FakeControl(),
+        "progress_card": _FakeControl(),
+        "progress_bar": _FakeControl(),
+        "progress_label": _FakeControl(),
+        "banner": _FakeBanner(),
+        "import_finished": _FakeEmitter(),
+        "update_status_summary": lambda: None,
+        "refresh": lambda: None,
+        "_reload_seasons": lambda: None,
+        "reload_players": lambda: None,
+    }
+    base.update(extra)
+    return SimpleNamespace(**base)
+
+
+def test_dashboard_import_finished_emits_structured_payload_not_message(qapp) -> None:
+    payload = ImportFinishedPayload.from_batch(
+        BatchImportResult(
+            imported=1,
+            total_scanned=2,
+            errors=[ImportResult(game_id=1001, error="bad html")],
+        )
+    )
+    view = _view_stub()
+
+    DashboardView._on_import_finished(view, payload)
+
+    assert view.import_finished.emitted == [payload]
+    assert payload.outcome == OUTCOME_PARTIAL_SUCCESS
+    assert view.banner.calls[0][0] == "warning"
+
+
+def test_stats_import_finished_emits_structured_cancelled_payload(qapp) -> None:
+    payload = ImportFinishedPayload.from_batch(
+        BatchImportResult(imported=2, total_scanned=4),
+        outcome=OUTCOME_CANCELLED,
+        message="cancelled by user",
+    )
+    view = _view_stub()
+
+    StatsView._on_import_finished(view, payload)
+
+    assert view.import_finished.emitted == [payload]
+    assert view.banner.calls == [("info", "cancelled by user", None)]

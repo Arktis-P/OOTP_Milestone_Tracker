@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 from core.config import AppSettings
 from core.config.settings_manager import SettingsManager
 from core.i18n import tr
+from core.import_workflow import OUTCOME_CANCELLED, OUTCOME_FAILED
 from core.db.meta import get_init_season_coverage
 from core.milestone.definitions import MilestoneDefinitions
 from core.stats.player_detail import load_player_detail
@@ -50,11 +51,12 @@ from gui.widgets.player_milestone_timeline import PlayerMilestoneTimeline
 from gui.widgets.table_widgets import SortableTable
 from gui.theme import TEXT_SECONDARY, header_panel_style, hint_style
 from gui.widgets.card_panel import CardPanel, section_label
+from gui.widgets.import_errors_dialog import ImportErrorsDialog
 from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
 
 
 class StatsView(QWidget):
-    import_finished = pyqtSignal(str)
+    import_finished = pyqtSignal(object)
 
     BATTING_COLUMNS = [
         "G", "AB", "H", "2B", "3B", "HR", "RBI", "R", "BB", "K", "SB", "AVG", "OBP", "SLG", "OPS"
@@ -734,9 +736,7 @@ class StatsView(QWidget):
             parent=self,
         )
         self._import_worker.progress.connect(self._on_import_progress)
-        self._import_worker.completed.connect(self._on_import_finished)
-        self._import_worker.cancelled.connect(self._on_import_cancelled)
-        self._import_worker.error.connect(self._on_import_error)
+        self._import_worker.workflow_finished.connect(self._on_import_finished)
         self._import_worker.finished.connect(
             lambda worker=self._import_worker: self._finish_import_worker(worker)
         )
@@ -775,13 +775,7 @@ class StatsView(QWidget):
         self.reload_players()
 
         result = payload.batch
-        parts = [tr("{count} games added").format(count=result.imported)]
-        if result.skipped_non_mlb:
-            parts.append(tr("{count} non-MLB skipped").format(count=result.skipped_non_mlb))
-        if result.skipped_spring_training:
-            parts.append(
-                tr("{count} spring training skipped").format(count=result.skipped_spring_training)
-            )
+        parts = [payload.message]
         if payload.milestones_recorded:
             team_count = sum(
                 1
@@ -799,11 +793,25 @@ class StatsView(QWidget):
             )
             parts.append(tr("{count} milestones achieved").format(count=label))
         message = " · ".join(parts)
-        self.import_finished.emit(message)
+        self.import_finished.emit(payload)
 
-        if result.errors:
+        if payload.outcome == OUTCOME_CANCELLED:
+            self.banner.show_info(message)
+        elif payload.outcome == OUTCOME_FAILED:
+            self.banner.show_error(
+                message,
+                [
+                    (
+                        tr("View Errors ({count})").format(count=payload.errors),
+                        lambda: ImportErrorsDialog(result.errors, self).exec(),
+                    )
+                ]
+                if result.errors
+                else None,
+            )
+        elif result.errors:
             self.banner.show_warning(
-                tr("Some errors: {count} — ").format(count=len(result.errors))
+                payload.message + " - "
                 + (result.errors[0].error if result.errors else "")
             )
         elif result.imported == 0 and not payload.milestones:

@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 
 from core.app_state import get_dashboard_import_states, get_readiness_items
 from core.config import AppSettings, SettingsManager
+from core.import_workflow import OUTCOME_CANCELLED, OUTCOME_FAILED
 from core.i18n import format_relative_datetime, format_full_datetime, tr
 from core.milestone.definitions import MilestoneDefinitions
 from core.milestone.prediction_store import CachedPrediction, PredictionStore
@@ -38,7 +39,7 @@ from gui.widgets.empty_state import EmptyStateWidget
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.grade_styles import dashboard_milestone_color
 from gui.widgets.import_errors_dialog import ImportErrorsDialog
-from gui.widgets.import_result import build_import_message, show_import_result_banner
+from gui.widgets.import_result import show_import_result_banner
 from gui.widgets.import_workflow_status import WorkflowStatusPanel, WorkflowStep
 from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.widgets.readiness_checklist import ReadinessChecklistCard
@@ -68,8 +69,8 @@ def _count_new_files(directory: str, since_epoch: float | None, pattern: str = "
         return -1
 
 
-def _count_message_files(active_save_path: str) -> int:
-    """Count messages/messageN.txt files under the active save's known layouts.
+def _count_message_files(active_save_path: str, conn: object | None = None) -> int:
+    """Count only new, changed, or unresolved message files.
 
     Returns -1 if no message folder could be located at all (as opposed to 0,
     a message folder that is simply empty right now).
@@ -87,12 +88,36 @@ def _count_message_files(active_save_path: str) -> int:
     for directory in candidates:
         if directory.is_dir():
             found = True
-            total += sum(1 for _ in directory.glob("message*.txt"))
+            for path in directory.glob("message*.txt"):
+                if conn is None:
+                    total += 1
+                    continue
+                try:
+                    from core.milestone.message_automation.processed import (
+                        fingerprint_message_file,
+                        get_message_rescan_status,
+                    )
+
+                    status = get_message_rescan_status(
+                        conn, fingerprint_message_file(path)
+                    )
+                except (OSError, ValueError):
+                    total += 1
+                    continue
+                if status in {
+                    "new",
+                    "changed_review_needed",
+                    "candidate",
+                    "approved",
+                    "date_needed",
+                    "error",
+                }:
+                    total += 1
     return total if found else -1
 
 
 class DashboardView(QWidget):
-    import_finished = pyqtSignal(str)
+    import_finished = pyqtSignal(object)
     navigate_to_milestone = pyqtSignal(dict)
     navigate_to_predict = pyqtSignal(int, str)
     navigate_to_initial_import = pyqtSignal()
@@ -570,7 +595,10 @@ class DashboardView(QWidget):
 
     def _news_messages_state(self, item, base_status: str) -> tuple[str, str, str, str, str]:
         save_path = getattr(self.settings, "active_save_path", "") or ""
-        total = _count_message_files(save_path)
+        total = _count_message_files(
+            save_path,
+            None if self.aggregator.is_closed else self.aggregator.conn,
+        )
         unresolved = item.workflow.unresolved or {}
         if unresolved.get("date_missing"):
             return (
@@ -633,7 +661,11 @@ class DashboardView(QWidget):
         )
 
     def _season_finalize_state(self, item, base_status: str) -> tuple[str, str, str, str]:
-        if item.workflow.outcome == "completed":
+        finalized_season = int((item.workflow.totals or {}).get("season", 0) or 0)
+        if (
+            item.workflow.outcome == "completed"
+            and finalized_season == int(self.settings.current_season or 0)
+        ):
             return "complete", tr("View results"), tr("Import center"), "results"
         return base_status, tr("Finalize"), tr("Import center"), "import"
 
@@ -868,9 +900,7 @@ class DashboardView(QWidget):
             parent=self,
         )
         self._import_worker.progress.connect(self._on_import_progress)
-        self._import_worker.completed.connect(self._on_import_finished)
-        self._import_worker.cancelled.connect(self._on_import_cancelled)
-        self._import_worker.error.connect(self._on_import_error)
+        self._import_worker.workflow_finished.connect(self._on_import_finished)
         self._import_worker.finished.connect(
             lambda worker=self._import_worker: self._finish_import_worker(worker)
         )
@@ -907,16 +937,42 @@ class DashboardView(QWidget):
         self.progress_bar.setVisible(False)
         self.progress_label.setVisible(False)
 
-        self.import_finished.emit(build_import_message(payload))
+        self.import_finished.emit(payload)
         self.update_status_summary()
         self.refresh()
 
-        show_import_result_banner(
-            self.banner,
-            payload,
-            on_view_milestones=lambda: MilestoneAchievedDialog(payload.milestones, self).exec(),
-            on_view_errors=lambda: ImportErrorsDialog(payload.batch.errors, self).exec(),
-        )
+        if payload.outcome == OUTCOME_CANCELLED:
+            self.banner.show_info(payload.message)
+        elif payload.outcome == OUTCOME_FAILED:
+            self.banner.show_error(
+                payload.message,
+                [(tr("View Errors ({count})").format(count=payload.errors), lambda: ImportErrorsDialog(payload.batch.errors, self).exec())]
+                if payload.batch.errors
+                else None,
+            )
+        elif payload.batch.errors:
+            actions = []
+            if payload.milestones:
+                actions.append(
+                    (
+                        tr("View New Milestones"),
+                        lambda: MilestoneAchievedDialog(payload.milestones, self).exec(),
+                    )
+                )
+            actions.append(
+                (
+                    tr("View Errors ({count})").format(count=payload.errors),
+                    lambda: ImportErrorsDialog(payload.batch.errors, self).exec(),
+                )
+            )
+            self.banner.show_warning(payload.message, actions)
+        else:
+            show_import_result_banner(
+                self.banner,
+                payload,
+                on_view_milestones=lambda: MilestoneAchievedDialog(payload.milestones, self).exec(),
+                on_view_errors=lambda: ImportErrorsDialog(payload.batch.errors, self).exec(),
+            )
 
     def _on_import_error(self, message: str) -> None:
         self.import_button.setEnabled(True)
