@@ -19,6 +19,12 @@ from core.milestone.manual_entry import (
 )
 
 from .parser import ParsedMessage
+from .processed import (
+    MessageApplyResult,
+    MessageSourceFingerprint,
+    fingerprint_message_text,
+    upsert_processed_message,
+)
 
 _PLAYER_REF_RE = re.compile(r"([^,]+?)\s*\(#(\d+)\)")
 
@@ -30,23 +36,72 @@ def record_parsed_message(checker: MilestoneChecker, parsed: ParsedMessage) -> l
     message -- check `parsed.excluded` / `parsed.exclusion_reason` first if
     the caller wants to report why nothing was recorded).
     """
-    if parsed.excluded:
-        return []
+    return record_parsed_message_result(checker, parsed).created_record_ids
 
-    ids: list[int] = []
+
+def record_parsed_message_result(
+    checker: MilestoneChecker,
+    parsed: ParsedMessage,
+    *,
+    fingerprint: MessageSourceFingerprint | None = None,
+) -> MessageApplyResult:
+    """Persist one parsed message and return per-message created/duplicate ids."""
+
+    source_id = parsed.source_id or ""
+    if fingerprint is None:
+        fingerprint = fingerprint_message_text("", source_id=source_id)
+    if parsed.excluded:
+        upsert_processed_message(
+            checker.aggregator.conn,
+            fingerprint=fingerprint,
+            status="excluded",
+            category=parsed.category,
+            exclusion_reason=parsed.exclusion_reason,
+        )
+        return MessageApplyResult(source_id=source_id)
+
+    created_ids: list[int] = []
+    duplicate_ids: list[int] = []
+    errors: list[str] = []
     for form in parsed.forms:
-        _seed_form_players(checker.aggregator.conn, form, parsed.player_names)
-        if _form_already_recorded(checker.aggregator.conn, form):
+        try:
+            _seed_form_players(checker.aggregator.conn, form, parsed.player_names)
+        except Exception as exc:  # pragma: no cover - defensive reporting path
+            errors.append(str(exc))
             continue
-        if isinstance(form, ManualTransferFormData):
-            ids.extend(checker.record_manual_transfer(form, source="message_auto"))
-        elif isinstance(form, ManualInjuryFormData):
-            ids.append(checker.record_manual_injury(form, source="message_auto"))
-        elif isinstance(form, ManualMilestoneFormData):
-            ids.append(checker.record_manual_milestone(form, source="message_auto"))
-        else:
-            raise TypeError(f"Unsupported form type: {type(form)!r}")
-    return ids
+        existing = _form_existing_record_ids(checker.aggregator.conn, form)
+        if existing:
+            duplicate_ids.extend(existing)
+            continue
+        try:
+            if isinstance(form, ManualTransferFormData):
+                created_ids.extend(checker.record_manual_transfer(form, source="message_auto"))
+            elif isinstance(form, ManualInjuryFormData):
+                created_ids.append(checker.record_manual_injury(form, source="message_auto"))
+            elif isinstance(form, ManualMilestoneFormData):
+                created_ids.append(checker.record_manual_milestone(form, source="message_auto"))
+            else:
+                raise TypeError(f"Unsupported form type: {type(form)!r}")
+        except Exception as exc:  # pragma: no cover - defensive reporting path
+            errors.append(str(exc))
+    result = MessageApplyResult(
+        source_id=source_id,
+        created_record_ids=created_ids,
+        duplicate_record_ids=duplicate_ids,
+        errors=errors,
+    )
+    upsert_processed_message(
+        checker.aggregator.conn,
+        fingerprint=fingerprint,
+        status=result.status,
+        category=parsed.category,
+        exclusion_reason=parsed.exclusion_reason,
+        created_record_ids=result.created_record_ids,
+        duplicate_record_ids=result.duplicate_record_ids,
+        errors=result.errors,
+        mark_applied=bool(result.created_record_ids or result.duplicate_record_ids),
+    )
+    return result
 
 
 def apply_parsed_messages(
@@ -66,7 +121,7 @@ def apply_parsed_messages(
     conn = checker.aggregator.conn
     created_ids: list[int] = []
     for parsed in messages:
-        created_ids.extend(record_parsed_message(checker, parsed))
+        created_ids.extend(record_parsed_message_result(checker, parsed).created_record_ids)
     rows: list[dict[str, Any]] = []
     for record_id in created_ids:
         row = conn.execute(
@@ -116,54 +171,54 @@ def _player_refs(text: str) -> list[tuple[str, int]]:
     ]
 
 
-def _form_already_recorded(conn: Any, form: object) -> bool:
+def _form_existing_record_ids(conn: Any, form: object) -> list[int]:
     notes = str(getattr(form, "notes", "") or "")
     if not notes:
-        return False
+        return []
     if isinstance(form, ManualTransferFormData):
         key = f"manual_transfer_{form.event_type}"
-        row = conn.execute(
+        rows = conn.execute(
             """
-            SELECT 1 FROM milestone_records
+            SELECT id FROM milestone_records
             WHERE milestone_key = ? AND season IS ? AND notes = ?
-            LIMIT 1
             """,
             (key, form.season, notes),
-        ).fetchone()
-        return row is not None
+        ).fetchall()
+        return [int(row["id"] if hasattr(row, "keys") else row[0]) for row in rows]
     if isinstance(form, ManualInjuryFormData):
         refs = _player_refs(form.player_name)
         player_id = refs[0][1] if refs else None
-        row = conn.execute(
+        rows = conn.execute(
             """
-            SELECT 1 FROM milestone_records
+            SELECT id FROM milestone_records
             WHERE milestone_key = 'manual_injury' AND player_id IS ?
               AND season IS ? AND notes = ?
-            LIMIT 1
             """,
             (player_id, form.season, notes),
-        ).fetchone()
-        return row is not None
+        ).fetchall()
+        return [int(row["id"] if hasattr(row, "keys") else row[0]) for row in rows]
     if isinstance(form, ManualMilestoneFormData):
         if form.target == "team":
-            row = conn.execute(
+            rows = conn.execute(
                 """
-                SELECT 1 FROM milestone_records
+                SELECT id FROM milestone_records
                 WHERE milestone_key = ? AND team IS ? AND season IS ?
                   AND notes = ?
-                LIMIT 1
                 """,
                 (form.milestone_key, form.team, form.season, notes),
-            ).fetchone()
+            ).fetchall()
         else:
-            row = conn.execute(
+            rows = conn.execute(
                 """
-                SELECT 1 FROM milestone_records
+                SELECT id FROM milestone_records
                 WHERE milestone_key = ? AND player_id IS ? AND season IS ?
                   AND notes = ?
-                LIMIT 1
                 """,
                 (form.milestone_key, form.player_id, form.season, notes),
-            ).fetchone()
-        return row is not None
-    return False
+            ).fetchall()
+        return [int(row["id"] if hasattr(row, "keys") else row[0]) for row in rows]
+    return []
+
+
+def _form_already_recorded(conn: Any, form: object) -> bool:
+    return bool(_form_existing_record_ids(conn, form))

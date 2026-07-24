@@ -18,7 +18,17 @@ Public API::
 from __future__ import annotations
 
 from .parser import ParsedMessage, parse_message
-from .recorder import apply_parsed_messages, record_parsed_message
+from .processed import (
+    MessageApplyResult,
+    ProcessedMessage,
+    get_message_rescan_status,
+    get_processed_message,
+)
+from .recorder import (
+    apply_parsed_messages,
+    record_parsed_message,
+    record_parsed_message_result,
+)
 from .service import (
     MessageImportResult,
     import_message_file,
@@ -29,10 +39,15 @@ from .service import (
 __all__ = [
     "ParsedMessage",
     "MessageImportResult",
+    "MessageApplyResult",
+    "ProcessedMessage",
     "apply_parsed_messages",
+    "get_message_rescan_status",
+    "get_processed_message",
     "import_message_file",
     "import_message_files",
     "import_message_text",
     "parse_message",
     "record_parsed_message",
+    "record_parsed_message_result",
 ]

@@ -10,7 +10,12 @@ from pathlib import Path
 from core.milestone.checker import MilestoneChecker
 
 from .parser import ParsedMessage, parse_message
-from .recorder import record_parsed_message
+from .processed import (
+    MessageApplyResult,
+    fingerprint_message_file,
+    fingerprint_message_text,
+)
+from .recorder import record_parsed_message_result
 
 
 @dataclass(frozen=True)
@@ -18,10 +23,21 @@ class MessageImportResult:
     source_id: str
     parsed: ParsedMessage
     record_ids: list[int]
+    duplicate_record_ids: list[int] | None = None
+    errors: list[str] | None = None
 
     @property
     def recorded_count(self) -> int:
         return len(self.record_ids)
+
+    @property
+    def apply_result(self) -> MessageApplyResult:
+        return MessageApplyResult(
+            source_id=self.source_id,
+            created_record_ids=list(self.record_ids),
+            duplicate_record_ids=list(self.duplicate_record_ids or []),
+            errors=list(self.errors or []),
+        )
 
 
 def import_message_text(
@@ -46,8 +62,15 @@ def import_message_text(
         season_hint=season_hint,
         source_id=source_id,
     )
-    ids = record_parsed_message(checker, parsed)
-    return MessageImportResult(parsed.source_id or "", parsed, ids)
+    fingerprint = fingerprint_message_text(text, source_id=parsed.source_id or source_id)
+    result = record_parsed_message_result(checker, parsed, fingerprint=fingerprint)
+    return MessageImportResult(
+        parsed.source_id or "",
+        parsed,
+        result.created_record_ids,
+        result.duplicate_record_ids,
+        result.errors,
+    )
 
 
 def import_message_file(
@@ -61,13 +84,29 @@ def import_message_file(
     """Read one UTF-8 OOTP ``messageN.txt`` file and import it."""
 
     message_path = Path(path)
-    return import_message_text(
-        checker,
-        message_path.read_text(encoding="utf-8", errors="replace"),
+    text = message_path.read_text(encoding="utf-8", errors="replace")
+    parsed = parse_message(
+        text,
+        tracked_teams=(
+            list(checker.tracked_teams)
+            if tracked_teams is None
+            else tracked_teams
+        ),
         message_date=message_date,
         season_hint=season_hint,
         source_id=message_path.stem,
-        tracked_teams=tracked_teams,
+    )
+    result = record_parsed_message_result(
+        checker,
+        parsed,
+        fingerprint=fingerprint_message_file(message_path),
+    )
+    return MessageImportResult(
+        parsed.source_id or "",
+        parsed,
+        result.created_record_ids,
+        result.duplicate_record_ids,
+        result.errors,
     )
 
 
