@@ -27,20 +27,28 @@ from gui.theme import (
 def _nav_sections() -> list[tuple[str | None, list[tuple[int, str, str]]]]:
     return [
         (
-            tr("Record Inspector"),
+            tr("Records"),
             [
                 (0, "📊", tr("Dashboard")),
                 (1, "🏆", tr("Achievement Records")),
                 (2, "👤", tr("Player Stats")),
                 (3, "🔮", tr("Achievement Predictions")),
+                (4, "🔥", tr("Streak Records")),
             ],
         ),
         (
-            tr("Tools & Settings"),
+            tr("Data Management"),
             [
-                (4, "📂", tr("Import Existing Records")),
-                (5, "✍️", tr("Rating Editor")),
-                (6, "⚙️", tr("Settings")),
+                (5, "📂", tr("Record Import Center")),
+                (6, "✍️", tr("Manual Records")),
+                (7, "🧰", tr("Rating Editor")),
+            ],
+        ),
+        (
+            tr("Settings"),
+            [
+                (8, "⚙️", tr("Settings")),
+                (9, "🛠️", tr("Advanced Tools")),
             ],
         ),
     ]
@@ -51,7 +59,8 @@ class SidebarNav(QWidget):
 
     page_changed = pyqtSignal(int)
 
-    SETUP_PAGE_INDEX = 6
+    SETUP_PAGE_INDEX = 8
+    ADVANCED_TOOLS_PAGE_INDEX = 9
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)

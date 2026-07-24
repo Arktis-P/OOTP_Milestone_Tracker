@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QIcon
@@ -28,13 +29,16 @@ from core.milestone.definitions import load_milestones
 from core.stats.aggregator import Aggregator
 from gui.sidebar_nav import SidebarNav
 from gui.theme import apply_app_theme
+from gui.views.advanced_tools_view import AdvancedToolsView
 from gui.views.dashboard_view import DashboardView
+from gui.views.import_center_view import ImportCenterView
 from gui.views.initial_import_view import InitialImportView
 from gui.views.milestone_view import MilestoneView
 from gui.views.predict_view import PredictView
 from gui.views.roster_view import RosterView
 from gui.views.setup_view import SetupView
 from gui.views.stats_view import StatsView
+from gui.views.streak_view import StreakView
 from gui.ui_compact import MAIN_WINDOW_SIZE, SETUP_WINDOW_SIZE, compact_widget
 
 
@@ -63,8 +67,13 @@ class MainWindow(QMainWindow):
         self._milestone_view: MilestoneView | None = None
         self._stats_view: StatsView | None = None
         self._predict_view: PredictView | None = None
+        self._streak_view: StreakView | None = None
+        self._import_center_view: ImportCenterView | None = None
         self._initial_import_view: InitialImportView | None = None
+        self._manual_records_page: QWidget | None = None
+        self._rating_editor_view: RosterView | None = None
         self._setup_tab: SetupView | None = None
+        self._advanced_tools_view: AdvancedToolsView | None = None
         self._setup_tab_index: int = SidebarNav.SETUP_PAGE_INDEX
 
         self._sidebar = SidebarNav()
@@ -134,6 +143,9 @@ class MainWindow(QMainWindow):
         self._dashboard_view.navigate_to_initial_import.connect(
             self._navigate_to_initial_import
         )
+        self._dashboard_view.navigate_to_import_center.connect(
+            self._navigate_to_import_center
+        )
         self._dashboard_view.navigate_to_settings.connect(self._navigate_to_settings)
         self._stack.addWidget(self._dashboard_view)
 
@@ -166,13 +178,27 @@ class MainWindow(QMainWindow):
         )
         self._stack.addWidget(self._predict_view)
 
+        self._streak_view = StreakView(self._aggregator, self.settings.current_season)
+        self._stack.addWidget(self._streak_view)
+
+        self._import_center_view = ImportCenterView()
+        self._import_center_view.workflow_action_requested.connect(
+            self._on_import_center_action
+        )
+        self._import_center_view.result_action_requested.connect(
+            self._on_import_center_result_action
+        )
+        self._stack.addWidget(self._import_center_view)
+
         self._initial_import_view = InitialImportView(
             self._aggregator, self.settings, self.settings_manager
         )
         self._initial_import_view.import_finished.connect(self._on_init_import_finished)
-        self._stack.addWidget(self._initial_import_view)
+        self._manual_records_page = self._build_manual_records_page()
+        self._stack.addWidget(self._manual_records_page)
 
-        self._stack.addWidget(RosterView(self.settings))
+        self._rating_editor_view = RosterView(self.settings)
+        self._stack.addWidget(self._rating_editor_view)
 
         setup_tab = SetupView(self.settings_manager, self.settings, embedded=True)
         setup_tab.setup_completed.connect(self._on_setup_tab_saved)
@@ -185,6 +211,19 @@ class MainWindow(QMainWindow):
         setup_tab.confirm_button.setObjectName("primaryButton")
         self._setup_tab = setup_tab
         self._stack.addWidget(setup_tab)
+
+        self._advanced_tools_view = AdvancedToolsView(
+            self.settings_manager, self.settings
+        )
+        self._advanced_tools_view.save_database_reset_prepare.connect(
+            self._prepare_save_database_reset
+        )
+        self._advanced_tools_view.save_database_reset.connect(self._on_save_database_reset)
+        self._advanced_tools_view.boxscore_reimported.connect(self._on_boxscore_reimported)
+        self._stack.addWidget(self._advanced_tools_view)
+
+        self._stack.addWidget(self._initial_import_view)
+        self._initial_import_view.hide()
 
         self._connect_tab_signals()
         for index in range(self._stack.count()):
@@ -230,6 +269,10 @@ class MainWindow(QMainWindow):
             self._stats_view.on_data_refreshed(kind)
         if self._predict_view and kind in ("boxscore", "init", "milestone", "all"):
             self._predict_view.on_data_refreshed(kind)
+        if self._streak_view and kind in ("boxscore", "milestone", "all"):
+            self._streak_view._load()
+        if self._advanced_tools_view and kind in ("boxscore", "init", "milestone", "all"):
+            self._advanced_tools_view.refresh_database_summary()
         if kind in ("boxscore", "init", "all"):
             self._check_overlap_warning()
 
@@ -257,9 +300,150 @@ class MainWindow(QMainWindow):
         if self._initial_import_view:
             self._set_current_page(self._initial_import_view)
 
+    def _navigate_to_import_center(self) -> None:
+        if self._import_center_view:
+            self._set_current_page(self._import_center_view)
+
     def _navigate_to_settings(self) -> None:
         if self._setup_tab:
             self._set_current_page(self._setup_tab)
+
+    def _build_manual_records_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+        title = QLabel(tr("Manual Records"))
+        title.setObjectName("pageTitle")
+        description = QLabel(
+            tr("Add milestone, award, team move, or injury records with guided forms.")
+        )
+        description.setWordWrap(True)
+        description.setObjectName("mutedLabel")
+        open_button = QPushButton(tr("Open manual record entry"))
+        open_button.setObjectName("primaryButton")
+        open_button.clicked.connect(self._open_manual_records_dialog)
+        layout.addWidget(title)
+        layout.addWidget(description)
+        layout.addWidget(open_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        layout.addStretch()
+        return page
+
+    def _open_manual_records_dialog(self) -> None:
+        from gui.widgets.manual_milestone_dialog import ManualMilestoneDialog
+
+        dialog = ManualMilestoneDialog(
+            self._aggregator,
+            self._milestones,
+            self.settings,
+            parent=self,
+        )
+        if dialog.exec():
+            self.data_refreshed.emit("milestone")
+
+    def _on_import_center_action(self, workflow_id: str, action_id: str) -> None:
+        if workflow_id == "latest_games" and self._milestone_view:
+            self._set_current_page(self._milestone_view)
+            if action_id:
+                self._milestone_view.start_import()
+            return
+        if workflow_id == "baseline_history" and self._initial_import_view:
+            self._set_current_page(self._initial_import_view)
+            return
+        if workflow_id == "news_messages":
+            self._open_message_review_from_save()
+
+    def _on_import_center_result_action(self, _action: str) -> None:
+        if self._milestone_view:
+            self._set_current_page(self._milestone_view)
+
+    def _message_files(self) -> list[Path]:
+        if not self.settings.active_save_path:
+            return []
+        save_root = Path(self.settings.active_save_path)
+        candidates = [
+            save_root / "news" / "html" / "messages",
+            save_root / "messages",
+            save_root / "news" / "messages",
+        ]
+        files: list[Path] = []
+        for directory in candidates:
+            if directory.is_dir():
+                files.extend(sorted(directory.glob("message*.txt")))
+        return files
+
+    def _open_message_review_from_save(self) -> None:
+        from core.milestone.message_automation.parser import parse_message
+        from gui.views.message_review_view import MessageReviewView
+        from gui.widgets.message_review_model import MessageReviewItem
+
+        items: list[MessageReviewItem] = []
+        for path in self._message_files():
+            raw = path.read_text(encoding="utf-8", errors="replace")
+            try:
+                parsed = parse_message(
+                    raw,
+                    tracked_teams=self.settings.tracked_teams,
+                    season_hint=self.settings.current_season,
+                    source_id=path.stem,
+                )
+                items.append(MessageReviewItem(parsed, raw_text=raw))
+            except Exception as exc:
+                from core.milestone.message_automation.parser import ParsedMessage
+
+                parsed = ParsedMessage(
+                    category="error",
+                    title=path.stem,
+                    excluded=True,
+                    exclusion_reason=str(exc),
+                    forms=[],
+                    source_id=path.stem,
+                    player_names={},
+                )
+                items.append(MessageReviewItem(parsed, raw_text=raw, error=str(exc)))
+        view = MessageReviewView(
+            items,
+            save_callback=self._save_approved_messages,
+            parent=self,
+        )
+        view.save_completed.connect(self._on_message_review_saved)
+        self._stack.addWidget(view)
+        self._set_current_page(view)
+        if self._import_center_view:
+            self._import_center_view.set_partial_success_summary(
+                {"messages": len(items), "record_candidates": sum(item.generated_count for item in items)},
+                {
+                    "date_needed": sum(1 for item in items if item.status == "date_needed"),
+                    "excluded": sum(1 for item in items if item.status == "excluded"),
+                    "errors": sum(1 for item in items if item.status == "error"),
+                },
+            )
+
+    def _save_approved_messages(self, parsed_messages: list[object]) -> list[int]:
+        from core.milestone.checker import MilestoneChecker
+        from core.milestone.message_automation.recorder import record_parsed_message
+
+        checker = MilestoneChecker(
+            self._aggregator,
+            self._milestones,
+            season_games_total=self.settings.season_games_total,
+            ratio_qualifiers=self.settings.get_ratio_qualifiers(),
+            tracked_teams=self.settings.tracked_teams,
+            custom_teams=self.settings.custom_mlb_teams,
+        )
+        ids: list[int] = []
+        for parsed in parsed_messages:
+            ids.extend(record_parsed_message(checker, parsed))
+        self.data_refreshed.emit("milestone")
+        return ids
+
+    def _on_message_review_saved(self, result: object) -> None:
+        ids = list(result or []) if isinstance(result, list) else []
+        if self._import_center_view:
+            self._import_center_view.set_completed_summary(
+                {"saved_records": len(ids)},
+                {},
+            )
 
     def _reload_aggregator(self) -> None:
         target = resolve_data_path(self.settings.db_path)
@@ -306,11 +490,15 @@ class MainWindow(QMainWindow):
             self._stats_view,
             self._predict_view,
             self._initial_import_view,
+            self._streak_view,
+            self._advanced_tools_view,
         ):
             if view is None:
                 continue
             if hasattr(view, "settings"):
                 view.settings = self.settings
+            if hasattr(view, "set_settings"):
+                view.set_settings(self.settings)
             if hasattr(view, "importer"):
                 view.importer = InitialImporter(self._aggregator)
 
@@ -339,6 +527,7 @@ class MainWindow(QMainWindow):
             self._milestone_view,
             self._stats_view,
             self._predict_view,
+            self._streak_view,
         ):
             if view is not None:
                 view.milestones = self._milestones
@@ -349,6 +538,11 @@ class MainWindow(QMainWindow):
         self._stack.setCurrentIndex(index)
         if self._setup_tab is not None and index == self._setup_tab_index:
             self._setup_tab.refresh_bundle_updates_status()
+        if (
+            self._advanced_tools_view is not None
+            and index == SidebarNav.ADVANCED_TOOLS_PAGE_INDEX
+        ):
+            self._advanced_tools_view.refresh_database_summary()
 
     def _refresh_settings_tab_badge(self) -> None:
         from core.config.bundle_updates import pending_update_count
@@ -362,12 +556,28 @@ class MainWindow(QMainWindow):
         else:
             self._sidebar.set_setup_badge_visible(False)
 
-    def _on_boxscore_import_finished(self, _message: str) -> None:
+    def _on_boxscore_import_finished(self, message: str) -> None:
         self._update_status_message()
+        if self._import_center_view is not None:
+            self._import_center_view.set_completed_summary(
+                {
+                    tr("workflow"): tr("latest games"),
+                    tr("detail"): message,
+                },
+                {},
+            )
         self.data_refreshed.emit("boxscore")
 
     def _on_init_import_finished(self) -> None:
         self._update_status_message()
+        if self._import_center_view is not None:
+            self._import_center_view.set_completed_summary(
+                {
+                    tr("workflow"): tr("career and historical records"),
+                    tr("status"): tr("completed"),
+                },
+                {tr("next action"): tr("review records or import latest games")},
+            )
         self.data_refreshed.emit("init")
 
     def _check_overlap_warning(self) -> None:
