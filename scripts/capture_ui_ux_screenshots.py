@@ -21,7 +21,7 @@ from typing import Callable
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-AFTER_DIR = PROJECT_ROOT / "docs" / "ux" / "screenshots" / "after"
+FINAL_DIR = PROJECT_ROOT / "docs" / "ux" / "screenshots" / "final"
 REPORT_PATH = PROJECT_ROOT / "docs" / "ux" / "UI_UX_VERIFICATION.md"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -40,7 +40,7 @@ class CaptureResult:
 
 
 def _output_dir(language: str) -> Path:
-    return AFTER_DIR / "en" if language == "en" else AFTER_DIR
+    return FINAL_DIR / "en" if language == "en" else FINAL_DIR
 
 
 def _init_sample_db(db_path: Path) -> None:
@@ -257,9 +257,10 @@ def _write_report(results: list[CaptureResult], mainwindow_note: str) -> None:
             "## Verification notes",
             "",
             "- The script validates each PNG by checking the captured pixmap dimensions and saved file size.",
-            "- Korean captures in `docs/ux/screenshots/after/` are layout, clipping, and control-availability evidence. In the offscreen environment, Korean glyphs may render as tofu boxes because the required font is unavailable; this is an environment limitation, not a UI text-source change.",
+            "- Captures in `docs/ux/screenshots/final/` prove that each screen instantiated, rendered at the requested pixel size, exposed its expected widgets, and raised no exception.",
+            "- These offscreen captures do not prove that text is unclipped or controls are usable at Windows 125% DPI.",
             "- Translation completeness is covered by the automated localization tests; the screenshot pass does not replace those tests.",
-            "- English captures in `docs/ux/screenshots/after/en/` provide the same layout evidence. This runner reports an empty Qt font database, so glyph readability in both languages still requires a normal Windows desktop check.",
+            "- English captures in `docs/ux/screenshots/final/en/` provide the same structural evidence. This runner reports an empty Qt font database, so glyph readability in both languages still requires a normal Windows desktop check.",
             "- Screens marked `failed` indicate the current branch could not instantiate that view in the offscreen environment; the exception is preserved in the table.",
         ]
     )
