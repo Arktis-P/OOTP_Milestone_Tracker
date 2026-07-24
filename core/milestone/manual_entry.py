@@ -42,6 +42,7 @@ class ManualTransferFormData:
     season: int | None
     description: str
     notes: str
+    fa_is_retention: bool | None = None
 
 
 @dataclass
@@ -403,10 +404,15 @@ def build_transfer_records(
 
     if event_type == "fa_contract":
         has_counterpart = bool(counterpart)
+        is_retention = (
+            form.fa_is_retention
+            if form.fa_is_retention is not None
+            else not has_counterpart
+        )
         for player_id in joining_ids:
             label = (
                 "FA 계약 잔류"
-                if not has_counterpart
+                if is_retention
                 else "FA 계약 합류"
             )
             records.append(
@@ -421,7 +427,7 @@ def build_transfer_records(
         for player_id in leaving_ids:
             label = (
                 "FA 계약 잔류"
-                if not has_counterpart
+                if is_retention
                 else "FA 계약 이탈"
             )
             records.append(
