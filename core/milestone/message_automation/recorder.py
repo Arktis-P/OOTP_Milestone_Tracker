@@ -39,11 +39,11 @@ def record_parsed_message(checker: MilestoneChecker, parsed: ParsedMessage) -> l
         if _form_already_recorded(checker.aggregator.conn, form):
             continue
         if isinstance(form, ManualTransferFormData):
-            ids.extend(checker.record_manual_transfer(form))
+            ids.extend(checker.record_manual_transfer(form, source="message_auto"))
         elif isinstance(form, ManualInjuryFormData):
-            ids.append(checker.record_manual_injury(form))
+            ids.append(checker.record_manual_injury(form, source="message_auto"))
         elif isinstance(form, ManualMilestoneFormData):
-            ids.append(checker.record_manual_milestone(form))
+            ids.append(checker.record_manual_milestone(form, source="message_auto"))
         else:
             raise TypeError(f"Unsupported form type: {type(form)!r}")
     return ids
