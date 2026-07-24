@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
 from PyQt6.QtGui import QColor
 from PyQt6.QtGui import QShowEvent
@@ -20,12 +23,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.app_state import get_readiness_items
+from core.app_state import get_dashboard_import_states, get_readiness_items
 from core.config import AppSettings, SettingsManager
 from core.i18n import format_relative_datetime, format_full_datetime, tr
 from core.milestone.definitions import MilestoneDefinitions
 from core.milestone.prediction_store import CachedPrediction, PredictionStore
 from core.stats.aggregator import Aggregator
+from core.stats.initial_import import InitialImporter
 from core.stats.player_display import best_display_name
 from core.streak.read_model import ActiveStreak, list_active_streaks
 from gui.theme import RED_TEXT, TEXT_SECONDARY, hint_style
@@ -42,6 +46,51 @@ from gui.widgets.streak_center_dialog import StreakCenterDialog
 from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
 
 
+def _count_new_files(directory: str, since_epoch: float | None, pattern: str = "*.html") -> int:
+    """Count files matching ``pattern`` newer than ``since_epoch``.
+
+    Returns -1 if the folder does not exist or cannot be read, so callers can
+    tell "checked, nothing new" (0) apart from "could not check" (-1). This is
+    a live filesystem check (not persisted state) so it reflects files that
+    appeared after the last recorded import run.
+    """
+    if not directory or not os.path.isdir(directory):
+        return -1
+    try:
+        count = 0
+        for entry in Path(directory).glob(pattern):
+            if not entry.is_file():
+                continue
+            if since_epoch is None or entry.stat().st_mtime > since_epoch:
+                count += 1
+        return count
+    except OSError:
+        return -1
+
+
+def _count_message_files(active_save_path: str) -> int:
+    """Count messages/messageN.txt files under the active save's known layouts.
+
+    Returns -1 if no message folder could be located at all (as opposed to 0,
+    a message folder that is simply empty right now).
+    """
+    if not active_save_path:
+        return -1
+    save_root = Path(active_save_path)
+    candidates = [
+        save_root / "news" / "html" / "messages",
+        save_root / "messages",
+        save_root / "news" / "messages",
+    ]
+    total = 0
+    found = False
+    for directory in candidates:
+        if directory.is_dir():
+            found = True
+            total += sum(1 for _ in directory.glob("message*.txt"))
+    return total if found else -1
+
+
 class DashboardView(QWidget):
     import_finished = pyqtSignal(str)
     navigate_to_milestone = pyqtSignal(dict)
@@ -49,6 +98,7 @@ class DashboardView(QWidget):
     navigate_to_initial_import = pyqtSignal()
     navigate_to_import_center = pyqtSignal()
     navigate_to_settings = pyqtSignal()
+    navigate_to_review_filter = pyqtSignal(str)
 
     def __init__(
         self,
@@ -286,84 +336,328 @@ class DashboardView(QWidget):
         self.workflow_panel.set_steps(self._build_workflow_steps())
 
     def _build_workflow_steps(self) -> list[WorkflowStep]:
-        last_import = format_relative_datetime(self.settings.import_state.get("last_import_at", ""))
-        boxscore_ready = bool(self.settings.boxscore_dir)
-        baseline_ready = bool(self.settings.initial_stats_dir)
-        league_ready = bool(self.settings.active_save)
+        persisted = {
+            item.key: item
+            for item in get_dashboard_import_states(self.settings, self.aggregator)
+        }
+        latest = persisted["latest_boxscores"]
+        news = persisted["news_messages"]
+        baseline = persisted["baseline_history"]
+        season = persisted["season_finalize"]
+
+        def workflow_status(item) -> str:
+            state = item.workflow
+            if state.outcome == "completed":
+                return "complete"
+            if state.outcome in ("partial_success", "failed"):
+                return "warning"
+            if state.is_running:
+                return "running"
+            return "needed" if item.actionable else "warning"
+
+        def last_run(item) -> str:
+            timestamp = item.workflow.completed_at or item.workflow.started_at or ""
+            return format_relative_datetime(timestamp)
+
+        league_status, league_reason, league_route = self._league_tracking_state()
+        (
+            baseline_status,
+            baseline_last_run,
+            baseline_reason,
+            baseline_action,
+            baseline_target,
+            baseline_route,
+        ) = self._baseline_history_state(baseline, last_run(baseline))
+        (
+            boxscore_status,
+            boxscore_reason,
+            boxscore_action,
+            boxscore_target,
+            boxscore_route,
+            boxscore_pending,
+        ) = self._latest_boxscores_state(latest, workflow_status(latest))
+        (
+            news_status,
+            news_reason,
+            news_action,
+            news_target,
+            news_route,
+        ) = self._news_messages_state(news, workflow_status(news))
+        (
+            unresolved_status,
+            unresolved_reason,
+            unresolved_route,
+        ) = self._unresolved_items_state(persisted, boxscore_pending)
+        (
+            season_status,
+            season_action,
+            season_target,
+            season_route,
+        ) = self._season_finalize_state(season, workflow_status(season))
+
+        self._step_routes = {
+            "league_tracking": league_route,
+            "baseline_records": baseline_route,
+            "latest_boxscores": boxscore_route,
+            "news_messages": news_route,
+            "record_exceptions": unresolved_route,
+            "season_finalize": season_route,
+        }
+
         return [
             WorkflowStep(
                 "league_tracking",
                 tr("Check tracked league and teams"),
-                "complete" if league_ready else "needed",
+                league_status,
                 last_run=tr("Current settings"),
-                reason=tr("A league is selected.") if league_ready else tr("Select a league before importing records."),
+                reason=league_reason,
                 action_label=tr("Open settings"),
                 target_label=tr("Settings"),
             ),
             WorkflowStep(
                 "baseline_records",
                 tr("Confirm career baseline is current"),
-                "complete" if baseline_ready else "warning",
-                last_run=tr("Current season {season}").format(season=self.settings.current_season),
-                reason=tr("Baseline files are configured.") if baseline_ready else tr("Import career and historical stats before relying on predictions."),
-                action_label=tr("Import baseline"),
-                target_label=tr("Import center"),
+                baseline_status,
+                last_run=baseline_last_run,
+                reason=baseline_reason,
+                action_label=baseline_action,
+                target_label=baseline_target,
             ),
             WorkflowStep(
                 "latest_boxscores",
                 tr("Import latest boxscores"),
-                "needed" if boxscore_ready else "warning",
-                last_run=last_import,
-                reason=tr("Boxscore folder is ready.") if boxscore_ready else tr("Configure the boxscore folder first."),
-                action_label=tr("Import boxscores"),
-                target_label=tr("Import center"),
+                boxscore_status,
+                last_run=last_run(latest),
+                reason=boxscore_reason,
+                action_label=boxscore_action,
+                target_label=boxscore_target,
             ),
             WorkflowStep(
                 "news_messages",
                 tr("Scan and review news messages"),
-                "needed",
-                last_run=tr("Not run yet"),
-                reason=tr("Message extraction should be previewed before saving records."),
-                action_label=tr("Open review"),
-                target_label=tr("Import center"),
+                news_status,
+                last_run=last_run(news),
+                reason=news_reason,
+                action_label=news_action,
+                target_label=news_target,
             ),
             WorkflowStep(
                 "record_exceptions",
                 tr("Review ties, exclusions, missing dates, and errors"),
-                "needed",
-                last_run=last_import,
-                reason=tr("Confirm unresolved import items before considering the data complete."),
+                unresolved_status,
+                last_run=max((last_run(item) for item in persisted.values()), default=""),
+                reason=unresolved_reason,
                 action_label=tr("Review records"),
                 target_label=tr("Achievement records"),
             ),
             WorkflowStep(
                 "season_finalize",
                 tr("Finalize season-end records"),
-                "needed",
-                last_run=tr("Season {season}").format(season=self.settings.current_season),
-                reason=tr("Run final checks after the season ends."),
-                action_label=tr("Finalize"),
-                target_label=tr("Import center"),
+                season_status,
+                last_run=last_run(season),
+                reason=season.detail,
+                action_label=season_action,
+                target_label=season_target,
             ),
         ]
 
+    def _league_tracking_state(self) -> tuple[str, str, str]:
+        league_ready = bool(self.settings.active_save)
+        teams_ready = bool(self.settings.tracked_teams)
+        save_path = getattr(self.settings, "active_save_path", "") or ""
+        path_ok = bool(save_path) and os.path.isdir(save_path)
+        if not league_ready:
+            return "needed", tr("Select a league before importing records."), "settings"
+        if not teams_ready:
+            return "warning", tr("Select tracked teams to narrow milestone tracking."), "settings"
+        if save_path and not path_ok:
+            return "warning", tr("The saved league path is no longer accessible."), "settings"
+        return "complete", tr("A league is selected."), "settings"
+
+    def _baseline_history_state(
+        self, item, persisted_last_run: str
+    ) -> tuple[str, str, str, str, str, str]:
+        if self.aggregator.is_closed:
+            return (
+                "needed",
+                persisted_last_run,
+                tr("Open a league database, then import career and historical stats."),
+                tr("Import baseline"),
+                tr("Import center"),
+                "import",
+            )
+        summary = InitialImporter(self.aggregator).get_init_summary()
+        loaded = bool(summary["batting_players"] or summary["pitching_players"])
+        coverage = int(summary.get("season_coverage") or 0)
+        if not loaded:
+            return (
+                "needed",
+                persisted_last_run,
+                tr("Import career and historical stats before relying on predictions."),
+                tr("Import baseline"),
+                tr("Import center"),
+                "import",
+            )
+        last_run = summary.get("last_refreshed_at") or summary.get("batting_imported_at") or persisted_last_run
+        if coverage and coverage < self.settings.current_season:
+            return (
+                "warning",
+                format_relative_datetime(last_run) if last_run else persisted_last_run,
+                tr("Baseline data predates the current season; refresh recommended."),
+                tr("Refresh baseline"),
+                tr("Import center"),
+                "import",
+            )
+        return (
+            "complete",
+            format_relative_datetime(last_run) if last_run else persisted_last_run,
+            tr("Through {season} season · {batting:,} batters / {pitching:,} pitchers").format(
+                season=coverage, batting=summary["batting_players"], pitching=summary["pitching_players"],
+            ),
+            tr("View coverage"),
+            tr("Import center"),
+            "results",
+        )
+
+    def _latest_boxscores_state(self, item, base_status: str) -> tuple[str, str, str, str, str, int]:
+        boxscore_dir = self.settings.boxscore_dir
+        if not boxscore_dir:
+            return "warning", tr("Configure the boxscore folder first."), tr("Open settings"), tr("Settings"), "settings", -1
+        get_last_import = getattr(
+            self.settings_manager, "get_last_boxscore_import_at", None
+        )
+        since_epoch = (
+            get_last_import(self.settings, boxscore_dir)
+            if callable(get_last_import)
+            else None
+        )
+        pending = _count_new_files(boxscore_dir, since_epoch)
+        if pending < 0:
+            return (
+                "warning",
+                tr("The configured boxscore folder could not be read."),
+                tr("Open settings"),
+                tr("Settings"),
+                "settings",
+                pending,
+            )
+        if pending > 0:
+            return (
+                "needed",
+                tr("{count} new boxscore file(s) are ready to import.").format(count=pending),
+                tr("Import boxscores"),
+                tr("Import center"),
+                "import",
+                pending,
+            )
+        if base_status == "warning":
+            return (
+                "warning",
+                item.detail,
+                tr("Check errors"),
+                tr("Errors"),
+                "filter:latest_boxscores",
+                pending,
+            )
+        return (
+            "complete" if base_status == "complete" else base_status,
+            item.detail,
+            tr("View results"),
+            tr("Achievement records"),
+            "results",
+            pending,
+        )
+
+    def _news_messages_state(self, item, base_status: str) -> tuple[str, str, str, str, str]:
+        save_path = getattr(self.settings, "active_save_path", "") or ""
+        total = _count_message_files(save_path)
+        unresolved = item.workflow.unresolved or {}
+        if unresolved.get("date_missing"):
+            return (
+                "warning",
+                tr("{count} message(s) are missing a date.").format(count=unresolved["date_missing"]),
+                tr("Open date-missing filter"),
+                tr("Missing dates"),
+                "filter:date_missing",
+            )
+        if unresolved.get("errors"):
+            return (
+                "warning",
+                tr("{count} message(s) could not be parsed.").format(count=unresolved["errors"]),
+                tr("Check errors"),
+                tr("Errors"),
+                "filter:message_errors",
+            )
+        if total < 0:
+            return (
+                "needed" if not save_path else base_status,
+                tr("Select a league to locate message files.") if not save_path else tr("No message folder was found for this league."),
+                tr("Open review"),
+                tr("Import center"),
+                "review",
+            )
+        if total == 0:
+            return (
+                "complete",
+                tr("There are currently no news messages to review."),
+                tr("Open review"),
+                tr("Import center"),
+                "results",
+            )
+        if base_status == "complete":
+            return "complete", item.detail, tr("View results"), tr("Import center"), "results"
+        return (
+            "needed",
+            tr("{count} message file(s) are ready to review.").format(count=total),
+            tr("Open review"),
+            tr("Import center"),
+            "review",
+        )
+
+    def _unresolved_items_state(self, persisted: dict, boxscore_pending: int) -> tuple[str, str, str]:
+        issues: dict[str, int] = {}
+        for key, item in persisted.items():
+            for reason, count in (item.workflow.unresolved or {}).items():
+                if count:
+                    issues[f"{key}:{reason}"] = issues.get(f"{key}:{reason}", 0) + int(count)
+        if boxscore_pending < 0:
+            issues["latest_boxscores:folder"] = issues.get("latest_boxscores:folder", 0) + 1
+        total = sum(issues.values())
+        if total == 0:
+            return "complete", tr("No unresolved import items."), "results"
+        primary_key = max(issues, key=issues.get)
+        return (
+            "warning",
+            tr("{count} unresolved import items need review.").format(count=total),
+            f"filter:{primary_key.split(':', 1)[0]}",
+        )
+
+    def _season_finalize_state(self, item, base_status: str) -> tuple[str, str, str, str]:
+        if item.workflow.outcome == "completed":
+            return "complete", tr("View results"), tr("Import center"), "results"
+        return base_status, tr("Finalize"), tr("Import center"), "import"
+
     def _on_workflow_action(self, key: str) -> None:
-        if key == "league_tracking":
-            self.navigate_to_settings.emit()
-        elif key == "latest_boxscores":
-            self.start_import()
-        elif key == "record_exceptions":
-            self.navigate_to_milestone.emit({})
-        else:
-            self.navigate_to_import_center.emit()
+        self._dispatch_workflow_route(key)
 
     def _on_workflow_target(self, key: str) -> None:
-        if key == "league_tracking":
+        self._dispatch_workflow_route(key)
+
+    def _dispatch_workflow_route(self, key: str) -> None:
+        route = getattr(self, "_step_routes", {}).get(key, "")
+        if route == "settings":
             self.navigate_to_settings.emit()
-        elif key == "record_exceptions":
+            return
+        if route == "import" and key == "latest_boxscores":
+            self.start_import()
+            return
+        if route == "results":
             self.navigate_to_milestone.emit({})
-        else:
-            self.navigate_to_import_center.emit()
+            return
+        if route.startswith("filter:"):
+            self.navigate_to_review_filter.emit(route.split(":", 1)[1])
+            return
+        self.navigate_to_import_center.emit()
 
     def _on_readiness_action(self, key: str) -> None:
         if key in ("league", "teams"):

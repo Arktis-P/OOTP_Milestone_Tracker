@@ -63,12 +63,13 @@ def test_dashboard_workflow_actions_preserve_navigation_signals(dashboard) -> No
     dashboard.navigate_to_import_center.connect(lambda: captured.append("import_center"))
     dashboard.navigate_to_milestone.connect(lambda _payload: captured.append("milestone"))
     dashboard.navigate_to_settings.connect(lambda: captured.append("settings"))
+    dashboard.navigate_to_review_filter.connect(lambda _key: captured.append("filter"))
 
     dashboard._on_workflow_action("baseline_records")
     dashboard._on_workflow_action("record_exceptions")
     dashboard._on_workflow_action("league_tracking")
 
-    assert captured == ["import_center", "milestone", "settings"]
+    assert captured == ["import_center", "filter", "settings"]
 
 
 def test_dashboard_workflow_panel_survives_narrow_width(dashboard) -> None:
@@ -84,7 +85,7 @@ def test_import_center_has_three_import_cards_and_shared_five_step_model(qapp) -
     try:
         cards = [view.latest_games_card, view.message_card, view.baseline_card]
 
-        assert [card.key for card in cards] == ["latest_games", "news_messages", "baseline_history"]
+        assert [card.key for card in cards] == ["latest_boxscores", "news_messages", "baseline_history"]
         assert all(card.status_panel.row_count() == len(IMPORT_WORKFLOW_STEPS) for card in cards)
     finally:
         view.deleteLater()
@@ -125,8 +126,8 @@ def test_import_center_workflow_actions_emit_card_and_step(qapp) -> None:
     captured: list[tuple[str, str]] = []
     try:
         view.workflow_action_requested.connect(lambda card, step: captured.append((card, step)))
-        view.latest_games_card.action_requested.emit("latest_games", "source_check")
+        view.latest_games_card.action_requested.emit("latest_boxscores", "source_check")
 
-        assert captured == [("latest_games", "source_check")]
+        assert captured == [("latest_boxscores", "source_check")]
     finally:
         view.deleteLater()

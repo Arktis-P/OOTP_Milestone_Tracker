@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Iterable
+from typing import Any, Iterable
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -46,13 +47,19 @@ class WorkflowStep:
 
 @dataclass(frozen=True)
 class ImportResultSummary:
-    """Import result summary that remains visible inside the import page."""
+    """Import result summary that remains visible inside the import page.
+
+    ``actions`` is a tuple of ``(route_key, label)`` pairs. ``route_key`` is a
+    stable identifier (e.g. ``"view_records"``, ``"check_errors"``) a future
+    caller can switch on to route to a specific screen/filter; ``label`` is
+    the translated button text.
+    """
 
     outcome: str
     headline: str
     totals: dict[str, int] = field(default_factory=dict)
     unresolved: dict[str, int] = field(default_factory=dict)
-    actions: tuple[str, ...] = ()
+    actions: tuple[tuple[str, str], ...] = ()
 
 
 def status_label(status: str) -> str:
@@ -245,9 +252,14 @@ class ImportResultSummaryWidget(CardPanel):
             )
         self.detail_label.setText("\n".join(parts) if parts else tr("No detail counts available."))
         for action in summary.actions:
-            button = QPushButton(action)
+            if isinstance(action, tuple):
+                route_key, label = action
+            else:
+                label = str(action)
+                route_key = label
+            button = QPushButton(label)
             button.setObjectName("importResultActionButton")
-            button.clicked.connect(lambda _checked=False, name=action: self.action_requested.emit(name))
+            button.clicked.connect(lambda _checked=False, route=route_key: self.action_requested.emit(route))
             self.actions_row.insertWidget(self.actions_row.count() - 1, button)
 
 
@@ -278,18 +290,23 @@ class ImportWorkflowCard(CardPanel):
         hint.setWordWrap(True)
         self.content_layout.addWidget(hint)
 
-        self.status_panel = WorkflowStatusPanel(
+        self.status_panel = ImportWorkflowStatePanel(
+            key,
             tr("Workflow"),
-            tr("Each import keeps the same five stages so partial success and errors are traceable."),
-            self.default_steps(),
+            description=tr(
+                "Each import keeps the same five stages so partial success and errors are traceable."
+            ),
         )
         self.status_panel.action_requested.connect(
-            lambda step_key: self.action_requested.emit(self.key, step_key)
+            lambda _workflow_id, step_key: self.action_requested.emit(self.key, step_key)
         )
         self.status_panel.target_requested.connect(
-            lambda step_key: self.action_requested.emit(self.key, f"open:{step_key}")
+            lambda _workflow_id, route: self.action_requested.emit(self.key, route)
         )
         self.content_layout.addWidget(self.status_panel)
+
+    def set_state(self, state: Any) -> None:
+        self.status_panel.set_state(state)
 
     def default_steps(self) -> list[WorkflowStep]:
         return [
@@ -300,3 +317,315 @@ class ImportWorkflowCard(CardPanel):
             WorkflowStep("confirm_result", tr("Confirm result and unresolved items"), "needed", reason=tr("Keep completion, partial success, and errors visible on this page."), action_label=tr("Confirm"), target_label=tr("Issues")),
         ]
 
+
+_UNSET = object()
+
+
+def _state_field(source: Any, name: str, default: Any = None) -> Any:
+    """Read ``name`` from a mapping/dataclass/object state, robustly.
+
+    Accepts anything that carries the shared import-workflow state contract
+    (``core.import_workflow.ImportWorkflowState`` or a plain dict/SimpleNamespace)
+    without importing core, so this widget stays UI-only and testable alone.
+    """
+    if source is None:
+        return default
+    if isinstance(source, Mapping):
+        return source.get(name, default)
+    return getattr(source, name, default)
+
+
+def stage_action_label(step: str) -> str:
+    labels = {
+        "source_check": tr("Check"),
+        "analyze_classify": tr("Analyze"),
+        "review_results": tr("Review"),
+        "save": tr("Save"),
+        "confirm_result": tr("Confirm"),
+    }
+    return labels.get(step, step)
+
+
+def stage_display_name(step: str) -> str:
+    labels = {
+        "source_check": tr("Check source"),
+        "analyze_classify": tr("Analyze & classify"),
+        "review_results": tr("Review results"),
+        "save": tr("Save changes"),
+        "confirm_result": tr("Confirm result"),
+    }
+    return labels.get(step, step)
+
+
+def outcome_display_name(outcome: str | None) -> str:
+    labels = {
+        "completed": tr("Completed"),
+        "partial_success": tr("Partial success"),
+        "failed": tr("Failed"),
+        "cancelled": tr("Cancelled"),
+    }
+    if outcome is None:
+        return tr("In progress")
+    return labels.get(outcome, outcome)
+
+
+def outcome_status_key(outcome: str | None) -> str:
+    mapping = {
+        "completed": "complete",
+        "partial_success": "warning",
+        "failed": "warning",
+        "cancelled": "needed",
+    }
+    if outcome is None:
+        return "running"
+    return mapping.get(outcome, "needed")
+
+
+def stage_action_enabled(step: str, current_step: str, outcome: str | None) -> bool:
+    """Gate a stage action button by prerequisite stage and terminal outcome.
+
+    A step is only actionable once the workflow has reached it (its index is
+    at or before the current step's index), which is what stops "analyze"
+    from firing before "source check" and "save" from firing before
+    "review results" have been reached. Once the workflow has a terminal
+    outcome, only ``confirm_result`` (viewing/acknowledging the result)
+    remains enabled.
+    """
+    try:
+        step_index = IMPORT_WORKFLOW_STEPS.index(step)
+    except ValueError:
+        return False
+    try:
+        current_index = IMPORT_WORKFLOW_STEPS.index(current_step)
+    except ValueError:
+        current_index = 0
+    if step_index > current_index:
+        return False
+    if outcome is not None and step != "confirm_result":
+        return False
+    return True
+
+
+class ImportWorkflowStatePanel(CardPanel):
+    """Reusable panel that renders the shared import-workflow state contract.
+
+    Binds to a single ``workflow_id`` and displays ``current_step``,
+    ``outcome``, ``totals`` (plus ``unresolved``/``message`` when present),
+    fed via :meth:`set_state`/:meth:`update_state` from any mapping,
+    dataclass, or object exposing those fields (e.g.
+    ``core.import_workflow.ImportWorkflowState``). Stage buttons emit the
+    stable :attr:`action_requested` signal instead of calling into core
+    directly, so callers own how each action id is routed.
+
+    ``step_labels``/``step_targets`` let a caller give each of the five
+    stage buttons and the single "open" link workflow-specific text (e.g.
+    "Run import" for the boxscore workflow vs. "Save approved items" for
+    news messages) instead of the generic Check/Analyze/Review/Save/Confirm
+    labels, so different import workflows do not present identical buttons.
+    Pass updated maps to :meth:`apply_state` (e.g. when the terminal outcome
+    changes what "confirm result" should say/open) to refresh immediately.
+    """
+
+    action_requested = pyqtSignal(str, str)
+    target_requested = pyqtSignal(str, str)
+
+    def __init__(
+        self,
+        workflow_id: str,
+        title: str = "",
+        parent: QWidget | None = None,
+        *,
+        description: str = "",
+        source_hint: str = "",
+        step_labels: Mapping[str, str] | None = None,
+        step_targets: Mapping[str, tuple[str, str]] | None = None,
+    ) -> None:
+        super().__init__(title or tr("Workflow status"), parent=parent)
+        self.setObjectName(f"importWorkflowStatePanel_{workflow_id}")
+        self.workflow_id = workflow_id
+        self.key = workflow_id
+        self.status_panel = self
+        self._step_labels: dict[str, str] = dict(step_labels or {})
+        self._step_targets: dict[str, tuple[str, str]] = dict(step_targets or {})
+        self._open_route = ""
+
+        self._state: dict[str, Any] = {
+            "workflow_id": workflow_id,
+            "current_step": IMPORT_WORKFLOW_STEPS[0],
+            "outcome": None,
+            "totals": {},
+            "unresolved": {},
+            "message": "",
+        }
+
+        if description:
+            desc_label = QLabel(description)
+            desc_label.setWordWrap(True)
+            self.add_widget(desc_label)
+        if source_hint:
+            hint_label = QLabel(source_hint)
+            hint_label.setObjectName("importSourceHint")
+            hint_label.setStyleSheet(hint_style(TEXT_SECONDARY))
+            hint_label.setWordWrap(True)
+            self.add_widget(hint_label)
+
+        header_row = QHBoxLayout()
+        self.stage_badge = QLabel()
+        self.stage_badge.setObjectName("workflowStateStageBadge")
+        self.outcome_badge = QLabel()
+        self.outcome_badge.setObjectName("workflowStateOutcomeBadge")
+        self.open_button = QPushButton(tr("Open"))
+        self.open_button.setObjectName("workflowStateOpenButton")
+        self.open_button.clicked.connect(self._on_open_clicked)
+        header_row.addWidget(self.stage_badge)
+        header_row.addWidget(self.outcome_badge)
+        header_row.addStretch()
+        header_row.addWidget(self.open_button)
+        self.add_layout(header_row)
+
+        self.totals_label = QLabel()
+        self.totals_label.setObjectName("workflowStateTotals")
+        self.totals_label.setWordWrap(True)
+        self.totals_label.setStyleSheet(hint_style(TEXT_SECONDARY))
+        self.add_widget(self.totals_label)
+
+        self.unresolved_label = QLabel()
+        self.unresolved_label.setObjectName("workflowStateUnresolved")
+        self.unresolved_label.setWordWrap(True)
+        self.unresolved_label.setStyleSheet(hint_style(TEXT_SECONDARY))
+        self.add_widget(self.unresolved_label)
+
+        self.message_label = QLabel()
+        self.message_label.setObjectName("workflowStateMessage")
+        self.message_label.setWordWrap(True)
+        self.add_widget(self.message_label)
+
+        buttons_row = QHBoxLayout()
+        self._buttons: dict[str, QPushButton] = {}
+        for step in IMPORT_WORKFLOW_STEPS:
+            button = QPushButton(stage_action_label(step))
+            button.setObjectName(f"workflowStateAction_{step}")
+            button.clicked.connect(lambda _checked=False, step_key=step: self._on_action_clicked(step_key))
+            self._buttons[step] = button
+            buttons_row.addWidget(button)
+        buttons_row.addStretch()
+        self.add_layout(buttons_row)
+
+        self._apply_state()
+
+    def _on_action_clicked(self, step_key: str) -> None:
+        self.action_requested.emit(self.workflow_id, step_key)
+
+    def _on_open_clicked(self) -> None:
+        current_step = self._state["current_step"]
+        suffix = f":{self._open_route}" if self._open_route else ""
+        self.target_requested.emit(self.workflow_id, f"open:{current_step}{suffix}")
+
+    def set_step_labels(self, step_labels: Mapping[str, str] | None) -> None:
+        """Replace per-step action button text (falls back to generic labels)."""
+        self._step_labels = dict(step_labels or {})
+        self._apply_state()
+
+    def set_step_targets(self, step_targets: Mapping[str, tuple[str, str]] | None) -> None:
+        """Replace per-step (open label, route) pairs for the single open link."""
+        self._step_targets = dict(step_targets or {})
+        self._apply_state()
+
+    def apply_state(
+        self,
+        state: Any,
+        *,
+        step_labels: Mapping[str, str] | None = None,
+        step_targets: Mapping[str, tuple[str, str]] | None = None,
+    ) -> None:
+        """Refresh state and (optionally) per-step copy/routing in one call.
+
+        Useful when the "confirm result" step's label/destination depends on
+        the new outcome (e.g. "Check errors" vs "View records").
+        """
+        if step_labels is not None:
+            self._step_labels = dict(step_labels)
+        if step_targets is not None:
+            self._step_targets = dict(step_targets)
+        self.set_state(state)
+
+    def set_state(self, state: Any) -> None:
+        """Replace the panel's state wholesale from a mapping/dataclass/object.
+
+        Missing fields fall back to safe defaults so partial state objects
+        (e.g. a freshly constructed workflow with no totals yet) still render.
+        """
+        workflow_id = _state_field(state, "workflow_id", self.workflow_id) or self.workflow_id
+        current_step = _state_field(state, "current_step", IMPORT_WORKFLOW_STEPS[0]) or IMPORT_WORKFLOW_STEPS[0]
+        self._state = {
+            "workflow_id": workflow_id,
+            "current_step": current_step,
+            "outcome": _state_field(state, "outcome", None),
+            "totals": dict(_state_field(state, "totals", {}) or {}),
+            "unresolved": dict(_state_field(state, "unresolved", {}) or {}),
+            "message": _state_field(state, "message", "") or "",
+        }
+        self.workflow_id = workflow_id
+        self.key = workflow_id
+        self._apply_state()
+
+    def update_state(self, state: Any = None, **fields: Any) -> None:
+        """Merge partial field updates into the current state.
+
+        Accepts an optional mapping/dataclass/object for bulk fields plus
+        keyword overrides, e.g. ``panel.update_state(current_step="save")``.
+        """
+        merged = dict(self._state)
+        for key in ("workflow_id", "current_step", "outcome", "totals", "unresolved", "message"):
+            value = _state_field(state, key, _UNSET)
+            if value is not _UNSET:
+                merged[key] = value
+        merged.update(fields)
+        self.set_state(merged)
+
+    @property
+    def state(self) -> dict[str, Any]:
+        return dict(self._state)
+
+    def _apply_state(self) -> None:
+        current_step = self._state["current_step"]
+        outcome = self._state["outcome"]
+        totals = self._state["totals"]
+        unresolved = self._state["unresolved"]
+        message = self._state["message"]
+
+        self.stage_badge.setText(tr("Stage: {stage}").format(stage=stage_display_name(current_step)))
+        self.stage_badge.setStyleSheet(status_style("complete" if outcome is not None else "running"))
+
+        self.outcome_badge.setText(outcome_display_name(outcome))
+        self.outcome_badge.setStyleSheet(status_style(outcome_status_key(outcome)))
+
+        if totals:
+            self.totals_label.setText(
+                tr("Totals: {items}").format(items=" · ".join(f"{key} {value}" for key, value in totals.items()))
+            )
+        else:
+            self.totals_label.setText(tr("No totals recorded yet."))
+
+        if unresolved:
+            self.unresolved_label.setText(
+                tr("Unresolved: {items}").format(items=" · ".join(f"{key} {value}" for key, value in unresolved.items()))
+            )
+            self.unresolved_label.setVisible(True)
+        else:
+            self.unresolved_label.setText("")
+            self.unresolved_label.setVisible(False)
+
+        self.message_label.setText(message)
+        self.message_label.setVisible(bool(message))
+
+        for step, button in self._buttons.items():
+            button.setText(self._step_labels.get(step, stage_action_label(step)))
+            button.setEnabled(stage_action_enabled(step, current_step, outcome))
+
+        target_label, route = self._step_targets.get(current_step, (tr("Open"), ""))
+        self.open_button.setText(target_label)
+        self._open_route = route
+
+    def row_count(self) -> int:
+        return len(self._buttons)
