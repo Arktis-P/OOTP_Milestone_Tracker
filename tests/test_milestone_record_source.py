@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import json
 from datetime import date
 from pathlib import Path
 
@@ -98,6 +99,66 @@ def test_existing_records_are_backfilled_by_best_available_signal(tmp_path: Path
         "season_key": "season_final",
         "game_key": "boxscore_auto",
     }
+
+
+def test_legacy_message_record_is_migrated_idempotently(tmp_path: Path) -> None:
+    db_path = tmp_path / "legacy-message.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE players (
+            player_id INTEGER PRIMARY KEY,
+            full_name TEXT NOT NULL,
+            short_name TEXT
+        );
+        CREATE TABLE milestone_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            player_id INTEGER NOT NULL,
+            milestone_key TEXT NOT NULL,
+            milestone_label TEXT NOT NULL,
+            scope TEXT NOT NULL,
+            season INTEGER,
+            game_id INTEGER,
+            achieved_date TEXT NOT NULL,
+            achieved_value REAL NOT NULL,
+            notes TEXT,
+            is_manual INTEGER NOT NULL DEFAULT 0
+        );
+        INSERT INTO players (player_id, full_name, short_name)
+        VALUES (1, 'Player One', 'P. One');
+        INSERT INTO milestone_records (
+            player_id, milestone_key, milestone_label, scope, season,
+            game_id, achieved_date, achieved_value, notes, is_manual
+        ) VALUES
+            (1, 'message_key', 'Message', 'career', 2026, NULL,
+             '2026-05-01', 1, 'source:message1433', 1),
+            (1, 'manual_key', 'Manual', 'career', 2026, NULL,
+             '2026-05-02', 1, 'entered by user', 1);
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    init_database(db_path)
+    init_database(db_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = dict(
+            conn.execute(
+                "SELECT milestone_key, source FROM milestone_records"
+            ).fetchall()
+        )
+        report_raw = conn.execute(
+            "SELECT value FROM db_meta WHERE key = 'milestone_source_migration_report'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    assert rows == {"message_key": "message_auto", "manual_key": "manual"}
+    report = json.loads(report_raw)
+    assert report["message_auto"] == 1
+    assert report["manual"] == 1
 
 
 def test_boxscore_and_season_final_sources_are_recorded(

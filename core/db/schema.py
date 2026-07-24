@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import json
 from pathlib import Path
 
 from core.db.sqlite_config import configure_sqlite_connection
@@ -429,6 +430,12 @@ def _migrate_milestone_records(conn: sqlite3.Connection) -> None:
             if "source" in old_cols
             else (
                 "CASE "
+                + (
+                    "WHEN notes LIKE '%source:%' THEN 'message_auto' "
+                    if "notes" in old_cols
+                    else ""
+                )
+                +
                 "WHEN COALESCE(is_manual, 0) = 1 THEN 'manual' "
                 "WHEN "
                 + ("game_id" if "game_id" in old_cols else "NULL")
@@ -640,12 +647,26 @@ def _ensure_milestone_records_source(conn: sqlite3.Connection) -> None:
         columns = _table_columns(conn, "milestone_records")
 
     has_is_manual = "is_manual" in columns
-    if has_is_manual:
+    has_notes = "notes" in columns
+    if has_notes:
         conn.execute(
             """
             UPDATE milestone_records
+            SET source = 'message_auto'
+            WHERE COALESCE(notes, '') LIKE '%source:%'
+              AND (source IS NULL OR source = '' OR source IN ('boxscore_auto', 'manual', 'migration'))
+            """
+        )
+    if has_is_manual:
+        notes_guard = (
+            "AND COALESCE(notes, '') NOT LIKE '%source:%'" if has_notes else ""
+        )
+        conn.execute(
+            f"""
+            UPDATE milestone_records
             SET source = 'manual'
             WHERE COALESCE(is_manual, 0) = 1
+              {notes_guard}
               AND (source IS NULL OR source = '' OR source IN ('boxscore_auto', 'migration'))
             """
         )
@@ -658,6 +679,36 @@ def _ensure_milestone_records_source(conn: sqlite3.Connection) -> None:
           AND scope IN ('season', 'season_ratio', 'team_season')
           AND (is_manual IS NULL OR COALESCE(is_manual, 0) = 0)
         """
+    )
+    _store_milestone_source_migration_report(conn)
+
+
+def _store_milestone_source_migration_report(conn: sqlite3.Connection) -> None:
+    """Persist an idempotent source classification summary for support tools."""
+
+    counts = {
+        str(row[0] or "migration"): int(row[1])
+        for row in conn.execute(
+            """
+            SELECT COALESCE(NULLIF(source, ''), 'migration'), COUNT(*)
+            FROM milestone_records
+            GROUP BY COALESCE(NULLIF(source, ''), 'migration')
+            """
+        ).fetchall()
+    }
+    report = {
+        "boxscore_auto": counts.get("boxscore_auto", 0),
+        "message_auto": counts.get("message_auto", 0),
+        "manual": counts.get("manual", 0),
+        "season_final": counts.get("season_final", 0),
+        "migration": counts.get("migration", 0),
+    }
+    conn.execute(
+        """
+        INSERT INTO db_meta (key, value) VALUES ('milestone_source_migration_report', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (json.dumps(report, sort_keys=True),),
     )
     conn.execute(
         """

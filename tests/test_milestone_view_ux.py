@@ -126,7 +126,7 @@ def test_history_table_uses_compact_six_column_layout(milestone_view) -> None:
         tr("Source"),
     ]
     assert table.item(0, 3).text() == "team_game_hits_20"
-    assert table.item(0, 5).text() == "Boxscore automatic"
+    assert table.item(0, 5).text() == tr("Boxscore automatic")
     assert table.item(0, 0).data(Qt.ItemDataRole.UserRole) == 1
 
 

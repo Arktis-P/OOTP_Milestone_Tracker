@@ -25,6 +25,22 @@ from PyQt6.QtWidgets import (
 from core.config import AppSettings, SettingsManager, get_bundle_root, resolve_data_path
 from core.i18n import format_full_datetime, format_relative_datetime, tr
 from core.db.validation import format_overlap_warning, validate_no_overlap
+from core.import_workflow import (
+    OUTCOME_COMPLETED,
+    OUTCOME_FAILED,
+    OUTCOME_PARTIAL_SUCCESS,
+    STEP_ANALYZE_CLASSIFY,
+    STEP_REVIEW_RESULTS,
+    STEP_SAVE,
+    WORKFLOW_BASELINE_HISTORY,
+    WORKFLOW_LATEST_BOXSCORES,
+    WORKFLOW_NEWS_MESSAGES,
+    advance_import_workflow,
+    ensure_import_workflow_schema,
+    finish_import_workflow,
+    load_all_import_workflow_states,
+    start_import_workflow,
+)
 from core.milestone.definitions import load_milestones
 from core.stats.aggregator import Aggregator
 from gui.sidebar_nav import SidebarNav
@@ -59,6 +75,12 @@ class MainWindow(QMainWindow):
         self.resize(*MAIN_WINDOW_SIZE)
 
         self._aggregator = Aggregator(resolve_data_path(self.settings.db_path))
+        ensure_import_workflow_schema(self._aggregator.conn)
+        from core.milestone.message_automation.processed import (
+            ensure_processed_messages_schema,
+        )
+
+        ensure_processed_messages_schema(self._aggregator.conn)
         self._milestones = load_milestones(
             resolve_data_path(self.settings.milestones_path)
         )
@@ -74,6 +96,8 @@ class MainWindow(QMainWindow):
         self._rating_editor_view: RosterView | None = None
         self._setup_tab: SetupView | None = None
         self._advanced_tools_view: AdvancedToolsView | None = None
+        self._message_review_view: QWidget | None = None
+        self._message_fingerprints: dict[str, object] = {}
         self._setup_tab_index: int = SidebarNav.SETUP_PAGE_INDEX
 
         self._sidebar = SidebarNav()
@@ -147,6 +171,9 @@ class MainWindow(QMainWindow):
             self._navigate_to_import_center
         )
         self._dashboard_view.navigate_to_settings.connect(self._navigate_to_settings)
+        self._dashboard_view.navigate_to_review_filter.connect(
+            self._navigate_to_review_filter
+        )
         self._stack.addWidget(self._dashboard_view)
 
         self._milestone_view = MilestoneView(
@@ -188,6 +215,7 @@ class MainWindow(QMainWindow):
         self._import_center_view.result_action_requested.connect(
             self._on_import_center_result_action
         )
+        self._refresh_import_workflow_views()
         self._stack.addWidget(self._import_center_view)
 
         self._initial_import_view = InitialImportView(
@@ -275,6 +303,7 @@ class MainWindow(QMainWindow):
             self._advanced_tools_view.refresh_database_summary()
         if kind in ("boxscore", "init", "all"):
             self._check_overlap_warning()
+        self._refresh_import_workflow_views()
 
     def _navigate_to_milestone(self, record: dict) -> None:
         if self._milestone_view:
@@ -307,6 +336,25 @@ class MainWindow(QMainWindow):
     def _navigate_to_settings(self) -> None:
         if self._setup_tab:
             self._set_current_page(self._setup_tab)
+
+    def _navigate_to_review_filter(self, filter_key: str) -> None:
+        if filter_key in ("news_messages", "date_missing", "message_errors"):
+            if self._message_review_view is None:
+                self._open_message_review_from_save()
+            if self._message_review_view is not None:
+                combo = getattr(self._message_review_view, "filter_combo", None)
+                target = {
+                    "date_missing": "date_needed",
+                    "message_errors": "error",
+                }.get(filter_key, "all")
+                if combo is not None:
+                    index = combo.findData(target)
+                    if index >= 0:
+                        combo.setCurrentIndex(index)
+                self._set_current_page(self._message_review_view)
+            return
+        if self._milestone_view:
+            self._set_current_page(self._milestone_view)
 
     def _build_manual_records_page(self) -> QWidget:
         page = QWidget()
@@ -342,20 +390,153 @@ class MainWindow(QMainWindow):
             self.data_refreshed.emit("milestone")
 
     def _on_import_center_action(self, workflow_id: str, action_id: str) -> None:
-        if workflow_id == "latest_games" and self._milestone_view:
-            self._set_current_page(self._milestone_view)
-            if action_id:
+        workflow_id = (
+            WORKFLOW_LATEST_BOXSCORES
+            if workflow_id == "latest_games"
+            else workflow_id
+        )
+        if action_id.startswith("open:"):
+            self._route_workflow_open(workflow_id, action_id)
+            return
+        if action_id == "source_check":
+            self._check_workflow_source(workflow_id)
+            return
+        if workflow_id == WORKFLOW_LATEST_BOXSCORES:
+            if action_id == STEP_ANALYZE_CLASSIFY and self._milestone_view:
+                advance_import_workflow(
+                    self._aggregator.conn,
+                    workflow_id,
+                    current_step=STEP_SAVE,
+                    message=tr("Importing new and changed boxscores."),
+                )
+                self._refresh_import_workflow_views()
+                self._set_current_page(self._milestone_view)
                 self._milestone_view.start_import()
+            elif self._milestone_view:
+                self._set_current_page(self._milestone_view)
             return
-        if workflow_id == "baseline_history" and self._initial_import_view:
-            self._set_current_page(self._initial_import_view)
+        if workflow_id == WORKFLOW_BASELINE_HISTORY:
+            if action_id == STEP_ANALYZE_CLASSIFY:
+                advance_import_workflow(
+                    self._aggregator.conn,
+                    workflow_id,
+                    current_step=STEP_REVIEW_RESULTS,
+                    message=tr("Review the comparison before importing baseline records."),
+                )
+                self._refresh_import_workflow_views()
+            if self._initial_import_view:
+                self._set_current_page(self._initial_import_view)
             return
-        if workflow_id == "news_messages":
-            self._open_message_review_from_save()
+        if workflow_id == WORKFLOW_NEWS_MESSAGES:
+            if action_id in (STEP_ANALYZE_CLASSIFY, STEP_REVIEW_RESULTS):
+                self._open_message_review_from_save()
+            elif action_id == STEP_SAVE and self._message_review_view is not None:
+                save = getattr(self._message_review_view, "save_approved", None)
+                if callable(save):
+                    save()
 
-    def _on_import_center_result_action(self, _action: str) -> None:
-        if self._milestone_view:
+    def _on_import_center_result_action(self, action: str) -> None:
+        if action == "view_records" and self._milestone_view:
             self._set_current_page(self._milestone_view)
+        elif action == "review_issues" and self._message_review_view is not None:
+            self._set_current_page(self._message_review_view)
+        elif action == "check_errors" and self._message_review_view is not None:
+            combo = getattr(self._message_review_view, "filter_combo", None)
+            if combo is not None:
+                index = combo.findData("error")
+                if index >= 0:
+                    combo.setCurrentIndex(index)
+            self._set_current_page(self._message_review_view)
+        elif self._import_center_view:
+            self._set_current_page(self._import_center_view)
+
+    def _refresh_import_workflow_views(self) -> None:
+        if self._aggregator.is_closed:
+            return
+        states = load_all_import_workflow_states(self._aggregator.conn)
+        if self._import_center_view is not None:
+            for workflow_id, state in states.items():
+                self._import_center_view.apply_workflow_state(workflow_id, state)
+
+    def _check_workflow_source(self, workflow_id: str) -> None:
+        start_import_workflow(
+            self._aggregator.conn,
+            workflow_id,
+            message=tr("Checking source files."),
+        )
+        if workflow_id == WORKFLOW_LATEST_BOXSCORES:
+            folder = Path(self.settings.boxscore_dir)
+            files = (
+                list(folder.glob("*.html")) + list(folder.glob("*.txt"))
+                if folder.is_dir()
+                else []
+            )
+            if not files:
+                self._fail_workflow_source(workflow_id, tr("No boxscore source files were found."))
+                return
+            totals = {"processed": len(files)}
+        elif workflow_id == WORKFLOW_NEWS_MESSAGES:
+            files = self._message_files()
+            if not files:
+                self._fail_workflow_source(workflow_id, tr("No news message files were found."))
+                return
+            totals = {"processed": len(files)}
+        elif workflow_id == WORKFLOW_BASELINE_HISTORY:
+            folder = Path(self.settings.initial_stats_dir)
+            required = (
+                folder / "player_batting_stats.txt",
+                folder / "player_pitching_stats.txt",
+            )
+            present = sum(path.is_file() for path in required)
+            if present < len(required):
+                self._fail_workflow_source(
+                    workflow_id,
+                    tr("Required batting and pitching baseline files were not found."),
+                )
+                return
+            totals = {"processed": present}
+        else:
+            totals = {}
+        advance_import_workflow(
+            self._aggregator.conn,
+            workflow_id,
+            current_step=STEP_ANALYZE_CLASSIFY,
+            totals=totals,
+            message=tr("Source files are ready for analysis."),
+        )
+        self._refresh_import_workflow_views()
+        self.data_refreshed.emit("all")
+
+    def _fail_workflow_source(self, workflow_id: str, message: str) -> None:
+        finish_import_workflow(
+            self._aggregator.conn,
+            workflow_id,
+            outcome=OUTCOME_FAILED,
+            unresolved={"errors": 1},
+            message=message,
+        )
+        if self._import_center_view is not None:
+            self._import_center_view.set_error_summary(message)
+        self._refresh_import_workflow_views()
+
+    def _route_workflow_open(self, workflow_id: str, action_id: str) -> None:
+        route = action_id.rsplit(":", 1)[-1]
+        if route in ("records", "saved") and self._milestone_view:
+            self._set_current_page(self._milestone_view)
+        elif route in ("errors", "review", "candidates") and self._message_review_view is not None:
+            combo = getattr(self._message_review_view, "filter_combo", None)
+            if combo is not None:
+                key = "error" if route == "errors" else "all"
+                index = combo.findData(key)
+                if index >= 0:
+                    combo.setCurrentIndex(index)
+            self._set_current_page(self._message_review_view)
+        elif workflow_id == WORKFLOW_BASELINE_HISTORY and self._initial_import_view:
+            self._set_current_page(self._initial_import_view)
+        elif workflow_id == WORKFLOW_LATEST_BOXSCORES and self._milestone_view:
+            self._set_current_page(self._milestone_view)
+        elif workflow_id == WORKFLOW_NEWS_MESSAGES:
+            self._open_message_review_from_save()
 
     def _message_files(self) -> list[Path]:
         if not self.settings.active_save_path:
@@ -374,40 +555,103 @@ class MainWindow(QMainWindow):
 
     def _open_message_review_from_save(self) -> None:
         from core.milestone.message_automation.parser import parse_message
+        from core.milestone.message_automation.processed import (
+            fingerprint_message_file,
+            get_message_rescan_status,
+            get_processed_message,
+        )
         from gui.views.message_review_view import MessageReviewView
-        from gui.widgets.message_review_model import MessageReviewItem
+        from gui.widgets.message_review_model import (
+            STATUS_APPLIED,
+            STATUS_EXCLUDED,
+            MessageReviewItem,
+        )
 
         items: list[MessageReviewItem] = []
+        self._message_fingerprints = {}
         for path in self._message_files():
-            raw = path.read_text(encoding="utf-8", errors="replace")
+            raw = ""
             try:
+                raw = path.read_text(encoding="utf-8", errors="replace")
+                fingerprint = fingerprint_message_file(path)
+                self._message_fingerprints[path.stem] = fingerprint
+                rescan_status = get_message_rescan_status(
+                    self._aggregator.conn, fingerprint
+                )
+                processed = get_processed_message(self._aggregator.conn, path.stem)
                 parsed = parse_message(
                     raw,
                     tracked_teams=self.settings.tracked_teams,
                     season_hint=self.settings.current_season,
                     source_id=path.stem,
                 )
-                items.append(MessageReviewItem(parsed, raw_text=raw))
-            except Exception as exc:
+                item = MessageReviewItem(parsed, raw_text=raw)
+                if rescan_status == "already_applied" and processed is not None:
+                    item.status = STATUS_APPLIED
+                    item.created_record_ids = list(processed.created_record_ids)
+                    item.duplicate_record_ids = list(processed.duplicate_record_ids)
+                elif rescan_status == "changed_review_needed":
+                    item.notice = "changed_source"
+                elif rescan_status == "excluded":
+                    item.status = STATUS_EXCLUDED
+                items.append(item)
+            except Exception:
                 from core.milestone.message_automation.parser import ParsedMessage
 
                 parsed = ParsedMessage(
                     category="error",
                     title=path.stem,
                     excluded=True,
-                    exclusion_reason=str(exc),
+                    exclusion_reason="file_read_failed",
                     forms=[],
                     source_id=path.stem,
                     player_names={},
                 )
-                items.append(MessageReviewItem(parsed, raw_text=raw, error=str(exc)))
+                items.append(
+                    MessageReviewItem(
+                        parsed,
+                        raw_text=raw,
+                        error="file_read_failed",
+                    )
+                )
+
+        state = start_import_workflow(
+            self._aggregator.conn,
+            WORKFLOW_NEWS_MESSAGES,
+            message=tr("Analyzing and classifying news messages."),
+        )
+        counts = {
+            "processed": len(items),
+            "created": 0,
+            "duplicates": sum(1 for item in items if item.status == STATUS_APPLIED),
+            "excluded": sum(1 for item in items if item.status == STATUS_EXCLUDED),
+            "date_missing": sum(1 for item in items if item.status == "date_needed"),
+            "errors": sum(1 for item in items if item.status == "error"),
+        }
+        unresolved = {
+            "date_missing": counts["date_missing"],
+            "errors": counts["errors"],
+            "review_needed": sum(
+                1 for item in items if item.status in ("candidate", "date_needed")
+            ),
+        }
+        advance_import_workflow(
+            self._aggregator.conn,
+            state.workflow_id,
+            current_step=STEP_REVIEW_RESULTS,
+            totals=counts,
+            unresolved=unresolved,
+            message=tr("Review candidates and approve only records that should be saved."),
+        )
         view = MessageReviewView(
             items,
             save_callback=self._save_approved_messages,
+            reanalyze_callback=self._reanalyze_message_item,
             parent=self,
         )
         view.save_completed.connect(self._on_message_review_saved)
         self._stack.addWidget(view)
+        self._message_review_view = view
         self._set_current_page(view)
         if self._import_center_view:
             self._import_center_view.set_partial_success_summary(
@@ -418,10 +662,24 @@ class MainWindow(QMainWindow):
                     "errors": sum(1 for item in items if item.status == "error"),
                 },
             )
+        self._refresh_import_workflow_views()
 
-    def _save_approved_messages(self, parsed_messages: list[object]) -> list[int]:
+    def _reanalyze_message_item(self, item: object) -> object:
+        from core.milestone.message_automation.parser import parse_message
+
+        return parse_message(
+            str(getattr(item, "raw_text", "")),
+            tracked_teams=self.settings.tracked_teams,
+            message_date=getattr(item, "message_date", None),
+            season_hint=self.settings.current_season,
+            source_id=str(getattr(item, "source_id", "")),
+        )
+
+    def _save_approved_messages(self, parsed_messages: list[object]) -> list[object]:
         from core.milestone.checker import MilestoneChecker
-        from core.milestone.message_automation.recorder import record_parsed_message
+        from core.milestone.message_automation.recorder import (
+            record_parsed_message_result,
+        )
 
         checker = MilestoneChecker(
             self._aggregator,
@@ -431,19 +689,60 @@ class MainWindow(QMainWindow):
             tracked_teams=self.settings.tracked_teams,
             custom_teams=self.settings.custom_mlb_teams,
         )
-        ids: list[int] = []
+        advance_import_workflow(
+            self._aggregator.conn,
+            WORKFLOW_NEWS_MESSAGES,
+            current_step=STEP_SAVE,
+            message=tr("Saving approved message records."),
+        )
+        results: list[object] = []
         for parsed in parsed_messages:
-            ids.extend(record_parsed_message(checker, parsed))
+            fingerprint = self._message_fingerprints.get(
+                str(getattr(parsed, "source_id", ""))
+            )
+            results.append(
+                record_parsed_message_result(
+                    checker,
+                    parsed,
+                    fingerprint=fingerprint,
+                )
+            )
         self.data_refreshed.emit("milestone")
-        return ids
+        return results
 
     def _on_message_review_saved(self, result: object) -> None:
-        ids = list(result or []) if isinstance(result, list) else []
+        rows = list(result or []) if isinstance(result, list) else []
+        created = sum(
+            len(getattr(row, "created_record_ids", []) or []) for row in rows
+        )
+        duplicates = sum(
+            len(getattr(row, "duplicate_record_ids", []) or []) for row in rows
+        )
+        errors = sum(len(getattr(row, "errors", []) or []) for row in rows)
+        outcome = (
+            OUTCOME_FAILED
+            if errors and not (created or duplicates)
+            else OUTCOME_PARTIAL_SUCCESS
+            if errors
+            else OUTCOME_COMPLETED
+        )
+        finish_import_workflow(
+            self._aggregator.conn,
+            WORKFLOW_NEWS_MESSAGES,
+            outcome=outcome,
+            totals={"created": created, "duplicates": duplicates, "errors": errors},
+            unresolved={"errors": errors},
+            message=tr("Message review save finished."),
+        )
         if self._import_center_view:
-            self._import_center_view.set_completed_summary(
-                {"saved_records": len(ids)},
-                {},
-            )
+            totals = {"saved_records": created, "duplicates": duplicates}
+            if outcome == OUTCOME_COMPLETED:
+                self._import_center_view.set_completed_summary(totals, {})
+            else:
+                self._import_center_view.set_partial_success_summary(
+                    totals, {"errors": errors}
+                )
+        self._refresh_import_workflow_views()
 
     def _reload_aggregator(self) -> None:
         target = resolve_data_path(self.settings.db_path)
@@ -558,6 +857,14 @@ class MainWindow(QMainWindow):
 
     def _on_boxscore_import_finished(self, message: str) -> None:
         self._update_status_message()
+        aggregator = getattr(self, "_aggregator", None)
+        if aggregator is not None and not aggregator.is_closed:
+            finish_import_workflow(
+                aggregator.conn,
+                WORKFLOW_LATEST_BOXSCORES,
+                outcome=OUTCOME_COMPLETED,
+                message=message,
+            )
         if self._import_center_view is not None:
             self._import_center_view.set_completed_summary(
                 {
@@ -570,6 +877,14 @@ class MainWindow(QMainWindow):
 
     def _on_init_import_finished(self) -> None:
         self._update_status_message()
+        aggregator = getattr(self, "_aggregator", None)
+        if aggregator is not None and not aggregator.is_closed:
+            finish_import_workflow(
+                aggregator.conn,
+                WORKFLOW_BASELINE_HISTORY,
+                outcome=OUTCOME_COMPLETED,
+                message=tr("Career and historical records were imported."),
+            )
         if self._import_center_view is not None:
             self._import_center_view.set_completed_summary(
                 {
