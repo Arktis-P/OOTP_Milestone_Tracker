@@ -287,7 +287,7 @@ def _capture_mainwindow_set(app, tmp_dir: Path, *, language: str, full_set: bool
         page_map = [
             ("dashboard", "dashboard.png", 0, (1650, 900), "dashboard workflow panel and next actions"),
             ("milestone_basic", "milestone_basic.png", 1, (1650, 900), "basic filters, readable record table"),
-            ("import_center", "import_center.png", 5, (1650, 900), "three import cards and five-step flow"),
+            ("import_center", "import_center.png", 5, (1650, 900), "four import cards and five-step flow"),
             ("manual_record_basic", "manual_record_basic.png", 6, (1650, 900), "manual one-record default entry page"),
             ("streak_page", "streak_page.png", 4, (1650, 900), "active/recent streak page with filters"),
             ("settings", "settings.png", 8, (1650, 900), "normal settings separated from advanced tools"),
@@ -337,7 +337,7 @@ def _capture_mainwindow_set(app, tmp_dir: Path, *, language: str, full_set: bool
 
 def _capture_message_review(app, *, language: str, full_set: bool) -> list[CaptureResult]:
     from core.i18n import set_language
-    from gui.views.message_review_view import MessageReviewView
+    from gui.views.message_review_view import ExtractedResultEditDialog, MessageReviewView
 
     set_language(language)
     results: list[CaptureResult] = []
@@ -354,6 +354,43 @@ def _capture_message_review(app, *, language: str, full_set: bool) -> list[Captu
         else "English message review layout and clipping"
     )
     _capture(results, app, name, "message_review.png", (1650, 900), checks, message_review, language=language)
+    if full_set:
+        _capture(
+            results,
+            app,
+            "message_extracted_editor",
+            "message_extracted_editor.png",
+            (1000, 680),
+            "typed shared editor, calendar date, read-only source provenance",
+            lambda: ExtractedResultEditDialog(_sample_message_item()),
+            language=language,
+        )
+
+        from core.config import AppSettings
+        from core.milestone.definitions import load_milestones
+        from core.stats.aggregator import Aggregator
+        from gui.widgets.single_record_dialogs import SingleMilestoneEntryDialog
+
+        with tempfile.TemporaryDirectory(prefix="ootp-guided-editor-") as raw_tmp:
+            aggregator = Aggregator(Path(raw_tmp) / "records.db")
+            settings = AppSettings(
+                current_season=2026,
+                milestones_path=str(PROJECT_ROOT / "data" / "milestones.csv"),
+            )
+            milestones = load_milestones(PROJECT_ROOT / "data" / "milestones.csv")
+            _capture(
+                results,
+                app,
+                "manual_shared_editor",
+                "manual_shared_editor.png",
+                (1000, 680),
+                "manual entry using the same typed GuidedRecordEditor",
+                lambda: SingleMilestoneEntryDialog(
+                    "award", aggregator, milestones, settings
+                ),
+                language=language,
+            )
+            aggregator.close()
     return results
 
 

@@ -1,53 +1,59 @@
 # UI/UX Final Verification
 
-## 자동 검증 결과
+## Automated verification
 
-- 기준 커밋: `437219d`
-- 최종화 작업 브랜치: `codex/ui-ux-audit-improvements`
-- 전체 pytest: `542 passed, 2 skipped`
-- 신규 핵심 테스트:
-  - `tests/test_import_workflow_state.py`
-  - `tests/test_processed_messages.py`
-  - `tests/test_finalization_app_workflows.py`
-  - `tests/test_import_workflow_ui.py`
-  - `tests/test_dynamic_ui_localization.py`
-  - `tests/test_milestone_record_source.py`
-- offscreen 화면 캡처: `16 / 16`
-- 캡처 위치: `docs/ux/screenshots/final/`
+- Branch: `codex/ui-ux-audit-improvements`
+- Full pytest: `576 passed, 2 skipped`
+- Focused W1-W7 verification: `56 passed`
+- Scaled Windows offscreen capture: `18 / 18`
+- Capture script: `scripts/capture_ui_ux_screenshots.py`
+- Capture evidence: `docs/ux/screenshots/final/`
 
-자동 캡처가 증명하는 범위는 화면 생성, 지정 픽셀 크기 렌더링, 주요 위젯 존재, 예외 없음이다. 실제 Windows 125%에서의 글자 잘림·겹침·포커스 이동은 증명하지 않는다.
+| Work | Code | Automated tests | CI | Windows desktop | Decision |
+|---|---:|---:|---:|---:|---|
+| W1 persistence | complete | pass | pending push | N/A | pass |
+| W2 boxscore outcomes | complete | pass | pending push | capture pass | pass |
+| W3 date recovery | complete | pass | pending push | capture pass | pass |
+| W4 season finalization | complete | pass | pending push | capture pass | pass |
+| W5 message consistency | complete | pass | pending push | capture pass | pass |
+| W6 result routing | complete | pass | pending push | capture pass | pass |
+| W7 shared editor | complete | pass | pending push | capture pass | pass |
+| W8 verification | complete locally | pass | pending push | actual 125% pending | conditional |
 
-## 기능 검증 결과
+## GitHub Actions
 
-- 작업별 가져오기 상태가 DB에 독립적으로 저장되고 새 연결에서 복원됨
-- source 확인 전 저장 단계가 활성화되지 않으며 종료 상태는 결과 확인만 허용
-- 메시지 저장 후 동일 source/hash 재스캔 시 `이미 반영됨` 판정
-- 원본 hash 또는 mtime 변경 시 `변경됨·재검토 필요` 판정
-- 메시지별 생성·중복·오류 ID가 해당 행에만 연결됨
-- 한국어·영어에서 category, reason, status, source, field 표시명이 자연어로 변환됨
-- `source:<message-id>` 기존 기록은 `message_auto`, 일반 수동 기록은 `manual`로 반복 안전하게 마이그레이션됨
+- Product commit SHA: `PENDING_PUSH`
+- Workflow run: `PENDING_PUSH`
+- Linux: `PENDING_PUSH`
+- Windows: `PENDING_PUSH`
 
-## Windows 125% 최종 확인 절차
+The workflow runs the complete test suite on Linux. Windows runs the state, message, outcome, routing, shared-editor, localization, responsive-layout tests and the scaled screenshot script, then uploads the captures.
 
-1. Windows 디스플레이 배율을 125%로 설정한다.
-2. 1366×768 창에서 대시보드, 달성 기록, 가져오기 센터, 메시지 검토를 연다.
-3. 최소 창에서 기본 필터, 표, 주요 행동 버튼과 세로 스크롤에 접근 가능한지 확인한다.
-4. 메시지 검토에서 전체·후보·승인·날짜 필요·제외·이미 반영·오류 필터를 차례로 연다.
-5. 수동 단건 입력과 메시지 추출 수정 폼에서 날짜, 선수/팀, 필수값 오류가 이해 가능한지 확인한다.
-6. 한국어와 영어 각각에서 글자 잘림, 겹침, 비정상 빈 공간, 탭 포커스 이동을 확인한다.
-7. 결과를 아래 체크리스트에 기록한다.
+## Windows 125% evidence
 
-## 사용자 체크리스트
+The current Windows host reports:
 
-- [ ] 1650×900 / 100% / 한국어
-- [ ] 1366×768 / 125% / 한국어
-- [ ] 최소 창 / 125% / 한국어
-- [ ] 1366×768 / 125% / 영어
-- [ ] 주요 버튼과 필터 접근 가능
-- [ ] 글자 잘림·겹침 없음
-- [ ] 키보드 포커스 이동 정상
-- [ ] 필요한 페이지에서 세로 스크롤 가능
+- Resolution: 1920×1200
+- System DPI: 96 (100%)
+- Automated Qt scale: `QT_SCALE_FACTOR=1.25`
+- Automated captures: 18/18 generated successfully in Korean and English
 
-## CI
+Offscreen scaling proves widget construction, target dimensions, scroll availability, and exception-free rendering. It does not prove native desktop clipping, focus traversal, or monitor-DPI behavior. Therefore actual Windows 125% validation remains a user inspection gate, as required by the directive.
 
-`.github/workflows/ui-ux-regression.yml`이 Linux 전체 pytest와 Windows offscreen 핵심 UI·마이그레이션·현지화 검사를 정의한다. 아직 원격 push 전이므로 GitHub Actions 실행 결과와 실행 SHA는 미확인이다.
+### One-pass desktop checklist
+
+- [ ] 1650×900 / 100% / Korean
+- [ ] 1366×768 / 125% / Korean
+- [ ] minimum window / 125% / Korean
+- [ ] 1366×768 / 125% / English
+- [ ] dashboard and four Import Center workflows
+- [ ] completed / partial / failed / cancelled result presentations
+- [ ] message all/date-needed/error filters and date reanalysis
+- [ ] extracted-message and manual shared editors
+- [ ] season-final preview/save and `season_final` source filter
+- [ ] workflow-specific persisted error destination
+- [ ] no clipped/overlapping controls; keyboard focus remains usable
+
+## Current decision
+
+Implementation and automated verification are complete. Final directive completion remains conditional only on successful GitHub Actions after push and the explicitly required native Windows 125% desktop inspection.
