@@ -35,6 +35,7 @@ from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.grade_styles import dashboard_milestone_color
 from gui.widgets.import_errors_dialog import ImportErrorsDialog
 from gui.widgets.import_result import build_import_message, show_import_result_banner
+from gui.widgets.import_workflow_status import WorkflowStatusPanel, WorkflowStep
 from gui.widgets.milestone_dialog import MilestoneAchievedDialog
 from gui.widgets.readiness_checklist import ReadinessChecklistCard
 from gui.widgets.streak_center_dialog import StreakCenterDialog
@@ -46,6 +47,7 @@ class DashboardView(QWidget):
     navigate_to_milestone = pyqtSignal(dict)
     navigate_to_predict = pyqtSignal(int, str)
     navigate_to_initial_import = pyqtSignal()
+    navigate_to_import_center = pyqtSignal()
     navigate_to_settings = pyqtSignal()
 
     def __init__(
@@ -108,6 +110,13 @@ class DashboardView(QWidget):
 
         self.readiness_card = ReadinessChecklistCard()
         self.readiness_card.action_requested.connect(self._on_readiness_action)
+        self.workflow_panel = WorkflowStatusPanel(
+            tr("Import Workflow Status"),
+            tr("Use this panel to decide the next safe action before records are changed."),
+            self._build_workflow_steps(),
+        )
+        self.workflow_panel.action_requested.connect(self._on_workflow_action)
+        self.workflow_panel.target_requested.connect(self._on_workflow_target)
 
         self.progress_label = QLabel("")
         self.progress_label.setVisible(False)
@@ -184,6 +193,7 @@ class DashboardView(QWidget):
         layout.addWidget(self.banner)
         layout.addWidget(control_card)
         layout.addWidget(self.readiness_card)
+        layout.addWidget(self.workflow_panel)
         layout.addWidget(self.progress_card)
         layout.addWidget(streak_card, stretch=1)
         layout.addWidget(splitter, stretch=1)
@@ -273,6 +283,87 @@ class DashboardView(QWidget):
             self.readiness_card.set_items(
                 get_readiness_items(self.settings, self.aggregator)
             )
+        self.workflow_panel.set_steps(self._build_workflow_steps())
+
+    def _build_workflow_steps(self) -> list[WorkflowStep]:
+        last_import = format_relative_datetime(self.settings.import_state.get("last_import_at", ""))
+        boxscore_ready = bool(self.settings.boxscore_dir)
+        baseline_ready = bool(self.settings.initial_stats_dir)
+        league_ready = bool(self.settings.active_save)
+        return [
+            WorkflowStep(
+                "league_tracking",
+                tr("Check tracked league and teams"),
+                "complete" if league_ready else "needed",
+                last_run=tr("Current settings"),
+                reason=tr("A league is selected.") if league_ready else tr("Select a league before importing records."),
+                action_label=tr("Open settings"),
+                target_label=tr("Settings"),
+            ),
+            WorkflowStep(
+                "baseline_records",
+                tr("Confirm career baseline is current"),
+                "complete" if baseline_ready else "warning",
+                last_run=tr("Current season {season}").format(season=self.settings.current_season),
+                reason=tr("Baseline files are configured.") if baseline_ready else tr("Import career and historical stats before relying on predictions."),
+                action_label=tr("Import baseline"),
+                target_label=tr("Import center"),
+            ),
+            WorkflowStep(
+                "latest_boxscores",
+                tr("Import latest boxscores"),
+                "needed" if boxscore_ready else "warning",
+                last_run=last_import,
+                reason=tr("Boxscore folder is ready.") if boxscore_ready else tr("Configure the boxscore folder first."),
+                action_label=tr("Import boxscores"),
+                target_label=tr("Import center"),
+            ),
+            WorkflowStep(
+                "news_messages",
+                tr("Scan and review news messages"),
+                "needed",
+                last_run=tr("Not run yet"),
+                reason=tr("Message extraction should be previewed before saving records."),
+                action_label=tr("Open review"),
+                target_label=tr("Import center"),
+            ),
+            WorkflowStep(
+                "record_exceptions",
+                tr("Review ties, exclusions, missing dates, and errors"),
+                "needed",
+                last_run=last_import,
+                reason=tr("Confirm unresolved import items before considering the data complete."),
+                action_label=tr("Review records"),
+                target_label=tr("Achievement records"),
+            ),
+            WorkflowStep(
+                "season_finalize",
+                tr("Finalize season-end records"),
+                "needed",
+                last_run=tr("Season {season}").format(season=self.settings.current_season),
+                reason=tr("Run final checks after the season ends."),
+                action_label=tr("Finalize"),
+                target_label=tr("Import center"),
+            ),
+        ]
+
+    def _on_workflow_action(self, key: str) -> None:
+        if key == "league_tracking":
+            self.navigate_to_settings.emit()
+        elif key == "latest_boxscores":
+            self.start_import()
+        elif key == "record_exceptions":
+            self.navigate_to_milestone.emit({})
+        else:
+            self.navigate_to_import_center.emit()
+
+    def _on_workflow_target(self, key: str) -> None:
+        if key == "league_tracking":
+            self.navigate_to_settings.emit()
+        elif key == "record_exceptions":
+            self.navigate_to_milestone.emit({})
+        else:
+            self.navigate_to_import_center.emit()
 
     def _on_readiness_action(self, key: str) -> None:
         if key in ("league", "teams"):
