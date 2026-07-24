@@ -8,6 +8,15 @@ from core.config.settings_manager import AppSettings
 from core.i18n import tr
 from core.stats.aggregator import Aggregator
 from core.stats.initial_import import InitialImporter
+from core.import_workflow import (
+    WORKFLOW_BASELINE_HISTORY,
+    WORKFLOW_LATEST_BOXSCORES,
+    WORKFLOW_NEWS_MESSAGES,
+    WORKFLOW_SEASON_FINALIZE,
+    ImportWorkflowState,
+    ensure_import_workflow_schema,
+    load_all_import_workflow_states,
+)
 
 
 @dataclass
@@ -15,6 +24,15 @@ class ReadinessItem:
     key: str
     done: bool
     title: str
+    detail: str
+
+
+@dataclass
+class DashboardImportState:
+    key: str
+    title: str
+    workflow: ImportWorkflowState
+    actionable: bool
     detail: str
 
 
@@ -83,6 +101,90 @@ def get_readiness_items(settings: AppSettings, aggregator: Aggregator) -> list[R
     )
 
     return items
+
+
+def get_dashboard_import_states(
+    settings: AppSettings, aggregator: Aggregator
+) -> list[DashboardImportState]:
+    """Return persisted workflow state for the dashboard/import center.
+
+    This keeps the older ``settings.import_state['last_import_at']`` value as a
+    legacy display fallback for latest boxscores while no workflow row exists.
+    """
+
+    if aggregator.is_closed:
+        states = {
+            workflow_id: ImportWorkflowState(workflow_id=workflow_id)
+            for workflow_id in (
+                WORKFLOW_LATEST_BOXSCORES,
+                WORKFLOW_NEWS_MESSAGES,
+                WORKFLOW_BASELINE_HISTORY,
+                WORKFLOW_SEASON_FINALIZE,
+            )
+        }
+    else:
+        ensure_import_workflow_schema(aggregator.conn)
+        states = load_all_import_workflow_states(aggregator.conn)
+        legacy_last_import = (settings.import_state or {}).get("last_import_at", "")
+        latest = states[WORKFLOW_LATEST_BOXSCORES]
+        if legacy_last_import and latest.started_at is None:
+            states[WORKFLOW_LATEST_BOXSCORES] = ImportWorkflowState(
+                workflow_id=WORKFLOW_LATEST_BOXSCORES,
+                current_step="confirm_result",
+                outcome="completed",
+                totals=dict(latest.totals),
+                unresolved=dict(latest.unresolved),
+                started_at=legacy_last_import,
+                completed_at=legacy_last_import,
+                message=tr("Legacy boxscore import timestamp restored."),
+            )
+
+    return [
+        DashboardImportState(
+            key=WORKFLOW_LATEST_BOXSCORES,
+            title=tr("Latest boxscores"),
+            workflow=states[WORKFLOW_LATEST_BOXSCORES],
+            actionable=bool(settings.boxscore_dir),
+            detail=_workflow_detail(states[WORKFLOW_LATEST_BOXSCORES]),
+        ),
+        DashboardImportState(
+            key=WORKFLOW_NEWS_MESSAGES,
+            title=tr("News messages"),
+            workflow=states[WORKFLOW_NEWS_MESSAGES],
+            actionable=bool(getattr(settings, "active_save_path", "")),
+            detail=_workflow_detail(states[WORKFLOW_NEWS_MESSAGES]),
+        ),
+        DashboardImportState(
+            key=WORKFLOW_BASELINE_HISTORY,
+            title=tr("Baseline history"),
+            workflow=states[WORKFLOW_BASELINE_HISTORY],
+            actionable=bool(settings.initial_stats_dir),
+            detail=_workflow_detail(states[WORKFLOW_BASELINE_HISTORY]),
+        ),
+        DashboardImportState(
+            key=WORKFLOW_SEASON_FINALIZE,
+            title=tr("Season finalize"),
+            workflow=states[WORKFLOW_SEASON_FINALIZE],
+            actionable=not aggregator.is_closed,
+            detail=_workflow_detail(states[WORKFLOW_SEASON_FINALIZE]),
+        ),
+    ]
+
+
+def _workflow_detail(state: ImportWorkflowState) -> str:
+    if state.message:
+        return state.message
+    if state.outcome == "completed":
+        return tr("Completed")
+    if state.outcome == "partial_success":
+        return tr("Partial success")
+    if state.outcome == "failed":
+        return tr("Failed")
+    if state.outcome == "cancelled":
+        return tr("Cancelled")
+    if state.started_at:
+        return tr("In progress")
+    return tr("Not run yet")
 
 
 def is_app_ready(settings: AppSettings, aggregator: Aggregator) -> bool:
