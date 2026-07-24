@@ -1,47 +1,82 @@
-# UI/UX 최종화 구현 보고서
+# UI/UX 최종화 구현 검수 보고서
 
-## 판정
+> **현재 판정:** 주요 구조 구현 완료, 핵심 잔여 결함 수정 필요  
+> **현재 최상위 지시서:** [`UI_UX_LAST_MILE_ORCHESTRATOR_DIRECTIVE.md`](UI_UX_LAST_MILE_ORCHESTRATOR_DIRECTIVE.md)  
+> 선행 지시서: [`UI_UX_FINALIZATION_ORCHESTRATOR_DIRECTIVE.md`](UI_UX_FINALIZATION_ORCHESTRATOR_DIRECTIVE.md)
 
-`docs/UI_UX_FINALIZATION_ORCHESTRATOR_DIRECTIVE.md`의 기능 연결 결함을 보완했다. 영구 작업 상태, 실제 단계 라우팅, 메시지 기존 반영 감지, 행별 저장 결과, 동적 현지화, 출처 마이그레이션 및 재현 가능한 CI 구성을 구현했다.
+## 기준과 브랜치
 
-실제 Windows 125% 시각 검수와 GitHub Actions 원격 실행은 아직 수행되지 않았으므로 `UI/UX 전면 개선 전체 완료`로 판정하지 않는다.
+- 작업 브랜치: `codex/ui-ux-audit-improvements`
+- 기반 기능: `codex/message-automation-validation`
+- 기존 최종화 기준 커밋: `437219d`
+- 최신 잔여 작업 검수 기준: 현재 브랜치 HEAD
 
-## 완료
+## 전체 판정
 
-- F0: 기준 커밋 `437219d`, 기준 테스트 `517 passed, 2 skipped`, 재현 결함과 작업 소유권을 `docs/ux/finalization/BASELINE.md`에 고정했다.
-- F1: `latest_boxscores`, `news_messages`, `baseline_history`, `season_finalize`의 독립 DB 상태와 5단계 상태 계약, 완료·부분 성공·실패·취소 결과를 추가했다.
-- F1/F2: 가져오기 센터의 단계별 동작과 버튼 활성화를 실제 상태에 연결하고, 대시보드가 DB 실행 이력·초기 기록·신규 파일·메시지·미해결 항목을 계산하도록 변경했다.
-- F3: 뉴스 메시지 재분석 콜백, source ID·파일 해시·mtime 기반 기존 반영/변경 감지, 승인 항목 전용 저장, 메시지별 생성·중복·오류 결과를 구현했다.
-- F4: 메시지 category·제외 사유·검토 상태·출처·추출 필드의 한국어/영어 표시 매핑을 추가하고 내부 코드 노출 회귀 테스트를 추가했다.
-- F6: `notes`의 `source:<message-id>`를 우선해 기존 뉴스 자동 기록을 `message_auto`로 분류하고, 일반 수동 기록은 `manual`로 유지하는 반복 안전 마이그레이션과 요약 메타데이터를 추가했다.
-- F8: Linux 전체 회귀와 Windows offscreen smoke 검사를 실행하는 `.github/workflows/ui-ux-regression.yml`을 추가했다.
+가져오기 상태 모델, 대시보드 상태 계산, 메시지 재분석, 기존 반영 감지, 동적 현지화, 출처 마이그레이션과 CI 정의까지 구현됐다. 따라서 이전처럼 화면 구조나 문서만 변경된 상태는 아니다.
 
-## 부분 완료
+다만 다음 결함 때문에 `UI/UX 전면 개선 완료`로 판정하지 않는다.
 
-- F5: 수동 입력과 메시지 수정이 `GuidedMilestoneForm`과 수동 입력 검증 함수를 공유한다. 다만 메시지 수정 폼의 선수 자동완성·팀 선택 목록은 기존 수동 단건 다이얼로그 수준으로 완전히 통합되지 않았고, 안내형 라벨 기반 편집으로 제공된다.
-- 최신 박스스코어는 기존 importer가 분석과 저장을 한 작업으로 수행하므로 상태 계약에서는 원본 확인 후 실제 importer 실행, 결과 확인으로 연결된다. 뉴스 메시지는 검토와 저장이 분리되어 있다.
-- `messages.dat` 날짜 자동 해석기는 이번 범위에 추가하지 않았다. 날짜가 필요한 메시지는 `날짜 필요` 상태에서 달력 입력으로 보완한다.
+1. 가져오기 작업 상태와 processed message 상태의 실제 commit·재연결 영속성 보장 필요
+2. 박스스코어 completed·partial_success·failed·cancelled 연결 필요
+3. `message_date_required` 메시지를 날짜 입력 후 복구할 수 있도록 수정 필요
+4. 시즌 최종 판정의 실제 실행 경로 필요
+5. 사용자 제외 영속화, 신규·변경·미처리 메시지 계산과 뉴스 완료 판정 보완 필요
+6. workflow별 결과·오류 목적지 분리 필요
+7. 수동 입력과 메시지 수정의 실제 공통 안내형 editor 필요
+8. GitHub Actions 실제 성공 run과 Windows 125% 실검수 필요
 
-## 미구현
+## 구현된 기반
 
-- 실제 Windows 데스크톱의 1366×768 / 125%와 최소 창 / 125%에서 한국어·영어 글꼴, 잘림, 겹침, 키보드 포커스를 수동 확인하지 못했다.
-- 새 GitHub Actions 워크플로는 로컬에 추가했지만 아직 원격 push 전이므로 실행 URL과 Actions SHA가 없다.
+- `import_workflow_state` 기반 작업별 상태 계약
+- `processed_messages` 기반 source ID·hash·mtime 추적
+- 메시지별 생성·중복·오류 결과
+- 메시지 재분석 callback과 상태 필터
+- 메시지 category·reason·status·source·field 표시명 변환
+- 기존 `source:<message-id>`의 `message_auto` 마이그레이션
+- Linux 전체 회귀와 Windows offscreen smoke용 workflow 파일
+- 한국어·영어 최종 캡처와 자동 검증 문서
 
-## 검증
+## 최종 잔여 작업
 
-- 전체 회귀: `542 passed, 2 skipped` (`2026-07-24`, Python 가상환경, `QT_QPA_PLATFORM=offscreen`)
-- 신규 핵심 검증: 작업별 상태 독립 저장·재시작 복원, 단계 순서, 처리 메시지 재스캔, 행별 저장 결과, 출처 반복 마이그레이션, 동적 현지화, 앱 단계 연결
-- 자동 화면 검증: 한국어·영어 16개 화면 모두 생성, 지정 픽셀 크기, 주요 위젯 생성, 예외 없음
-- 자동 캡처는 Windows 125%에서의 텍스트 무잘림이나 조작 가능성을 증명하지 않는다.
-- CI 구성: `.github/workflows/ui-ux-regression.yml`; 원격 실행은 push 후 확인 필요
+오케스트레이터는 이 보고서를 다시 구현 계획으로 해석하지 않는다. 다음 문서를 열고 W1~W8을 하위 작업자에게 분배한다.
 
-## 모델 배분
+- `docs/UI_UX_LAST_MILE_ORCHESTRATOR_DIRECTIVE.md`
 
-- GPT-5.6 Sol: 기준선, 작업 분해, 파일 소유권, 교차 통합, 마이그레이션, CI, 전체 검증 및 보고
-- GPT-5.5: 영구 작업 상태, processed message 저장소, 행별 적용 결과, 가져오기 상태 UI, 메시지 검토·공통 폼·현지화
-- Sonnet 5: 가져오기 GUI 및 현지화 범위를 두 차례씩 큰 범위와 축소 범위로 배정했으나 실행 제한 시간 내 변경을 남기지 못했다. 해당 작업은 지시서의 재배정 규칙에 따라 GPT-5.5가 수행했다.
+해당 문서는 다음을 직접 지정한다.
 
-## 사용자 확인 필요
+- 수정할 함수와 파일
+- 영속성·신호·상태 계산의 구현 방법
+- 날짜 누락 복구 절차
+- 시즌 최종 판정 연결 방식
+- 작업별 결과 라우팅
+- 공통 안내형 폼 구조
+- 작업 선행 관계와 파일 소유권
+- 필수 단위·통합 테스트
+- 실제 사용자 시나리오
+- CI·Windows 125% 최종 검수
 
-- 실제 Windows 디스플레이 배율을 125%로 설정하고 `docs/ux/finalization/FINAL_VERIFICATION.md`의 순서대로 주요 화면의 글자 잘림·겹침·포커스·스크롤을 확인한다.
-- 브랜치를 push한 뒤 `UI UX regression` GitHub Actions의 Linux 전체 회귀와 Windows UI smoke 결과를 확인한다.
+## 현재 검증 근거
+
+- 기존 보고 로컬 전체 테스트: `542 passed, 2 skipped`
+- 기존 offscreen 캡처: 한국어·영어 16개 화면 생성
+- 자동 캡처 증명 범위: 화면 생성, 지정 크기 렌더링, 주요 위젯 생성, 예외 없음
+- GitHub Actions 실제 성공 run: 미확인
+- 실제 Windows 125% 검증: 미완료
+
+## 완료 판정 규칙
+
+`UI_UX_LAST_MILE_ORCHESTRATOR_DIRECTIVE.md`의 W1~W8과 14절 완료 조건을 모두 충족해야 최종 완료로 변경한다.
+
+특히 다음 중 하나라도 남으면 완료가 아니다.
+
+- 외부 commit에 의존하는 영속성 테스트
+- 실패·취소를 완료로 저장
+- 날짜 누락 메시지 복구 불가
+- 시즌 최종 판정의 단순 페이지 이동
+- 사용자 제외 메시지의 재등장
+- 전체 파일 수를 미처리 메시지 수로 표시
+- workflow와 무관한 오류 화면 이동
+- 번역된 2열 문자열 표만으로 공통 폼 완료 주장
+- 실제 성공 CI run 없음
+- offscreen 캡처만으로 Windows 125% 완료 주장
