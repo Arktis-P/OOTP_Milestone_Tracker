@@ -763,6 +763,7 @@ class Aggregator:
         *,
         since_mtime: float | None = None,  # kept for backward compat; superseded by processed_boxscores
         mlb_only: bool = True,
+        source_snapshot: Iterable[BoxscoreFileSnapshot] | None = None,
         progress_callback: Any | None = None,
         should_cancel: Callable[[], bool] | None = None,
         commit: bool = True,
@@ -774,7 +775,11 @@ class Aggregator:
             )
 
         t_start = time.monotonic()
-        files = self._snapshot_boxscore_files(directory)
+        files = (
+            list(source_snapshot)
+            if source_snapshot is not None
+            else self._snapshot_boxscore_files(directory)
+        )
         logger.debug(
             "boxscore_import_start season=%s files=%s directory=%s mlb_only=%s",
             season,
