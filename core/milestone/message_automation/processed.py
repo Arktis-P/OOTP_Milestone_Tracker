@@ -188,6 +188,7 @@ def upsert_processed_message(
     duplicate_record_ids: list[int] | None = None,
     errors: list[str] | None = None,
     mark_applied: bool = False,
+    commit: bool = True,
 ) -> ProcessedMessage:
     ensure_processed_messages_schema(conn)
     conn.execute(
@@ -232,6 +233,8 @@ def upsert_processed_message(
             1 if mark_applied else 0,
         ),
     )
+    if commit:
+        conn.commit()
     processed = get_processed_message(conn, fingerprint.source_id)
     assert processed is not None
     return processed

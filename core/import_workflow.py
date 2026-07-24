@@ -182,7 +182,12 @@ def load_all_import_workflow_states(conn: Any) -> dict[str, ImportWorkflowState]
     }
 
 
-def save_import_workflow_state(conn: Any, state: ImportWorkflowState) -> ImportWorkflowState:
+def save_import_workflow_state(
+    conn: Any,
+    state: ImportWorkflowState,
+    *,
+    commit: bool = True,
+) -> ImportWorkflowState:
     workflow_id = normalize_workflow_id(state.workflow_id)
     current_step = normalize_step(state.current_step)
     outcome = normalize_outcome(state.outcome)
@@ -218,6 +223,8 @@ def save_import_workflow_state(conn: Any, state: ImportWorkflowState) -> ImportW
             state.report_ref,
         ),
     )
+    if commit:
+        conn.commit()
     return load_import_workflow_state(conn, workflow_id)
 
 
@@ -227,6 +234,7 @@ def start_import_workflow(
     *,
     message: str = "",
     report_ref: str = "",
+    commit: bool = True,
 ) -> ImportWorkflowState:
     return save_import_workflow_state(
         conn,
@@ -241,6 +249,7 @@ def start_import_workflow(
             message=message,
             report_ref=report_ref,
         ),
+        commit=commit,
     )
 
 
@@ -253,6 +262,7 @@ def advance_import_workflow(
     unresolved: dict[str, int] | None = None,
     message: str = "",
     report_ref: str = "",
+    commit: bool = True,
 ) -> ImportWorkflowState:
     state = load_import_workflow_state(conn, workflow_id)
     if state.outcome is not None:
@@ -270,6 +280,7 @@ def advance_import_workflow(
             message=message or state.message,
             report_ref=report_ref or state.report_ref,
         ),
+        commit=commit,
     )
 
 
@@ -282,6 +293,7 @@ def finish_import_workflow(
     unresolved: dict[str, int] | None = None,
     message: str = "",
     report_ref: str = "",
+    commit: bool = True,
 ) -> ImportWorkflowState:
     state = load_import_workflow_state(conn, workflow_id)
     return save_import_workflow_state(
@@ -297,6 +309,7 @@ def finish_import_workflow(
             message=message or state.message,
             report_ref=report_ref or state.report_ref,
         ),
+        commit=commit,
     )
 
 
