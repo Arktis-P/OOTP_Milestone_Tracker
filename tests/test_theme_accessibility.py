@@ -4,10 +4,10 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtGui import QPalette
+from PyQt6.QtGui import QFontDatabase, QPalette
 from PyQt6.QtWidgets import QApplication
 
-from gui.theme import apply_app_theme, apply_high_contrast_overrides
+from gui.theme import apply_app_theme, apply_high_contrast_overrides, choose_app_font_family
 
 
 def qapp() -> QApplication:
@@ -57,3 +57,18 @@ def test_high_contrast_override_can_be_toggled() -> None:
 
     apply_high_contrast_overrides(app, False)
     assert app.styleSheet() == base_sheet
+
+
+def test_theme_chooses_an_available_ui_font_family() -> None:
+    app = qapp()
+    family = choose_app_font_family()
+    installed = {item.casefold() for item in QFontDatabase.families()}
+    system_family = QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family()
+
+    assert family
+    assert family.casefold() in installed or family == system_family
+    assert family != "sans-serif"
+
+    apply_app_theme(app)
+    assert app.font().family()
+    assert app.font().family() != "sans-serif"

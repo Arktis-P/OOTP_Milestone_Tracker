@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PyQt6.QtGui import QColor, QFont, QPalette
+from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPalette
 from PyQt6.QtWidgets import QApplication
 
 # Base surfaces
@@ -111,15 +111,30 @@ def meta_panel_style() -> str:
     )
 
 
+def choose_app_font_family() -> str:
+    """Pick an installed UI font without breaking Korean glyph fallback.
+
+    The previous loop stopped after the first non-exact match because
+    ``QFont.setFamily`` mutates the request even when the family is not
+    installed.  Use the installed family list first, then the Qt system font.
+    """
+    installed = {family.casefold(): family for family in QFontDatabase.families()}
+    for preferred in ("Segoe UI", "Malgun Gothic", "Arial"):
+        family = installed.get(preferred.casefold())
+        if family:
+            return family
+
+    system_family = QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont).family()
+    if system_family:
+        return system_family
+    return QFont().defaultFamily()
+
+
 def apply_app_theme(app: QApplication) -> None:
     app.setStyle("Fusion")
     app.setPalette(_base_palette())
 
-    font = QFont()
-    for family in ("Segoe UI", "Malgun Gothic", "sans-serif"):
-        font.setFamily(family)
-        if font.exactMatch() or family != "sans-serif":
-            break
+    font = QFont(choose_app_font_family())
     font.setPointSize(9)
     app.setFont(font)
     apply_high_contrast_overrides(app, False)

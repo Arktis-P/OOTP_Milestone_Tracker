@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
@@ -112,8 +113,17 @@ def build_snapshot_incomplete_message(
 EVENT_TYPE_LABELS = dict(EVENT_TYPE_OPTIONS)
 
 # Fixed positions of the compact Type/Source columns in _table_columns().
-TYPE_COLUMN_INDEX = 5
-SOURCE_COLUMN_INDEX = 6
+TYPE_COLUMN_INDEX = 4
+SOURCE_COLUMN_INDEX = 5
+
+MILESTONE_SOURCE_LABELS = {
+    "boxscore_auto": "Boxscore automatic",
+    "message_auto": "News automatic",
+    "manual": "Manual entry",
+    "season_final": "Season final judgement",
+    "migration": "Migrated record",
+    "validation": "Validation replay",
+}
 
 
 def event_type_display_label(event_type: str) -> str:
@@ -121,9 +131,29 @@ def event_type_display_label(event_type: str) -> str:
     return tr(EVENT_TYPE_LABELS.get(event_type, "Other"))
 
 
-def source_display_label(is_manual: bool) -> str:
-    """Human-readable label for a record's automatic/manual source."""
-    return tr("Manual") if is_manual else tr("Automatic")
+def milestone_source(record: dict) -> str:
+    """Return the explicit record source, with legacy is_manual/scope fallback."""
+    source = str(record.get("source") or "").strip().lower()
+    if source:
+        return source
+    if milestone_is_manual(record):
+        return "manual"
+    scope = str(record.get("scope") or "").lower()
+    if scope in {"season", "season_ratio"} and not record.get("game_id"):
+        return "season_final"
+    return "boxscore_auto"
+
+
+def source_display_label(source: str | bool) -> str:
+    """Human-readable label for a milestone provenance source.
+
+    Accepting bool preserves the old helper contract used by older tests and
+    callers while the UI now prefers the explicit source value.
+    """
+    if isinstance(source, bool):
+        return tr("Manual") if source else tr("Automatic")
+    source_key = str(source or "").strip().lower()
+    return tr(MILESTONE_SOURCE_LABELS.get(source_key, "Boxscore automatic"))
 
 
 def milestone_is_manual(record: dict) -> bool:
@@ -190,10 +220,10 @@ def milestone_record_matches(
     record_grade = str(getattr(definition, "grade", "common") or "common")
     if grade and record_grade != grade:
         return False
-    is_manual = milestone_is_manual(record)
-    if source == "manual" and not is_manual:
-        return False
-    if source == "automatic" and is_manual:
+    record_source = milestone_source(record)
+    if source == "automatic":
+        return record_source != "manual"
+    if source and record_source != source:
         return False
     return True
 
@@ -208,22 +238,25 @@ def select_record_row(table, record_id: int) -> bool:
             return True
     return False
 
+
+def _source_id_from_notes(notes: str) -> str:
+    """Extract legacy message automation source:<id> notes for the detail panel."""
+    for part in notes.split(";"):
+        part = part.strip()
+        if part.lower().startswith("source:"):
+            return part.split(":", 1)[1].strip()
+    return ""
+
+
 def _table_columns() -> list[str]:
-    columns = [
+    return [
         tr("Date"),
-        tr("Player Name"),
-        tr("Player Name (Korean)"),
+        tr("Player or Team"),
         tr("Team"),
         tr("Milestone"),
-        tr("Games"),
-        tr("Opponent"),
-        tr("Opp. Player"),
-        tr("Description"),
-        tr("Notes"),
+        tr("Type"),
+        tr("Source"),
     ]
-    columns.insert(TYPE_COLUMN_INDEX, tr("Type"))
-    columns.insert(SOURCE_COLUMN_INDEX, tr("Source"))
-    return columns
 
 
 class MilestoneView(QWidget):
@@ -302,14 +335,21 @@ class MilestoneView(QWidget):
         self.grade_combo = QComboBox()
         self.grade_combo.addItem(tr("All Grades"), "")
         for grade in ("common", "uncommon", "rare", "epic", "legendary"):
-            self.grade_combo.addItem(grade, grade)
+            self.grade_combo.addItem(tr(grade), grade)
         self.grade_combo.currentIndexChanged.connect(self.refresh)
 
         self.source_combo = QComboBox()
         self.source_combo.addItem(tr("All Sources"), "")
-        self.source_combo.addItem(tr("Automatic"), "automatic")
-        self.source_combo.addItem(tr("Manual"), "manual")
+        for value, label in MILESTONE_SOURCE_LABELS.items():
+            self.source_combo.addItem(tr(label), value)
         self.source_combo.currentIndexChanged.connect(self.refresh)
+
+        self.advanced_filter_toggle = QToolButton()
+        self.advanced_filter_toggle.setText(tr("Advanced filters"))
+        self.advanced_filter_toggle.setCheckable(True)
+        self.advanced_filter_toggle.setChecked(False)
+        self.advanced_filter_toggle.setToolTip(tr("Expand or collapse this section."))
+        self.advanced_filter_toggle.toggled.connect(self._set_advanced_filters_visible)
 
         self.reset_filters_button = QPushButton(tr("Reset Filters"))
         self.reset_filters_button.setObjectName("linkButton")
@@ -332,13 +372,25 @@ class MilestoneView(QWidget):
         )
         self.table_panel.filter_bar.search_input.textChanged.connect(self.refresh)
         history_header = self.table_panel.table.horizontalHeader()
-        for col_idx, width in ((TYPE_COLUMN_INDEX, 130), (SOURCE_COLUMN_INDEX, 90)):
+        for col_idx, width in ((0, 104), (2, 110), (TYPE_COLUMN_INDEX, 128), (SOURCE_COLUMN_INDEX, 142)):
             history_header.setSectionResizeMode(col_idx, QHeaderView.ResizeMode.Interactive)
             self.table_panel.table.setColumnWidth(col_idx, width)
+        history_header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        history_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
 
-        self.meta_label = QLabel("")
-        self.meta_label.setWordWrap(True)
-        self.meta_label.setStyleSheet(meta_panel_style())
+        self.detail_title_label = QLabel(tr("Select a record to see details."))
+        self.detail_title_label.setWordWrap(True)
+        self.detail_title_label.setObjectName("detailTitle")
+        self.detail_title_label.setStyleSheet("font-weight: 700; font-size: 14px;")
+        self.detail_description_label = QLabel("")
+        self.detail_description_label.setWordWrap(True)
+        self.detail_description_label.setStyleSheet(meta_panel_style())
+        self.detail_facts_label = QLabel("")
+        self.detail_facts_label.setWordWrap(True)
+        self.detail_facts_label.setStyleSheet(hint_style(TEXT_SECONDARY))
+        self.detail_notes_label = QLabel("")
+        self.detail_notes_label.setWordWrap(True)
+        self.detail_notes_label.setStyleSheet(hint_style(TEXT_SECONDARY))
         self.game_log_button = QPushButton(tr("🌐 Open Game Log"))
         self.game_log_button.setEnabled(False)
         self.game_log_button.clicked.connect(self._open_selected_game_log)
@@ -395,34 +447,41 @@ class MilestoneView(QWidget):
         self._delete_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.table_panel.table)
         self._delete_shortcut.activated.connect(self._delete_selected_record)
 
-        filter_row = QHBoxLayout()
-        filter_row.setSpacing(10)
-        filter_row.addWidget(section_label(tr("Subject")))
-        filter_row.addWidget(self.subject_combo)
-        self.subject_combo.setMaximumWidth(88)
-        filter_row.addWidget(section_label(tr("Team")))
-        filter_row.addWidget(self.team_filter)
+        basic_filter_grid = QGridLayout()
+        basic_filter_grid.setHorizontalSpacing(10)
+        basic_filter_grid.setVerticalSpacing(8)
+        basic_filter_grid.addWidget(section_label(tr("Season")), 0, 0)
+        basic_filter_grid.addWidget(self.season_spin, 0, 1)
+        self.season_spin.setMaximumWidth(76)
+        basic_filter_grid.addWidget(section_label(tr("Team")), 0, 2)
+        basic_filter_grid.addWidget(self.team_filter, 0, 3)
         self.team_filter.setMinimumWidth(100)
         self.team_filter.setMaximumWidth(150)
-        filter_row.addWidget(section_label("SCOPE"))
-        filter_row.addWidget(self.scope_combo)
-        self.scope_combo.setMaximumWidth(120)
-        filter_row.addWidget(section_label(tr("Season")))
-        filter_row.addWidget(self.season_spin)
-        self.season_spin.setMaximumWidth(72)
-        filter_row.addWidget(section_label(tr("Search")))
-        filter_row.addWidget(self.table_panel.filter_bar.search_input, stretch=1)
+        basic_filter_grid.addWidget(section_label(tr("Search")), 0, 4)
+        basic_filter_grid.addWidget(self.table_panel.filter_bar.search_input, 0, 5)
+        basic_filter_grid.addWidget(section_label(tr("Event Type")), 1, 0)
+        basic_filter_grid.addWidget(self.event_type_combo, 1, 1, 1, 3)
+        basic_filter_grid.addWidget(self.reset_filters_button, 1, 4)
+        basic_filter_grid.addWidget(self.advanced_filter_toggle, 1, 5)
+        basic_filter_grid.setColumnStretch(5, 1)
 
-        type_filter_row = QHBoxLayout()
-        type_filter_row.setSpacing(10)
-        type_filter_row.addWidget(section_label(tr("Event Type")))
-        type_filter_row.addWidget(self.event_type_combo)
-        type_filter_row.addWidget(section_label(tr("Grade")))
-        type_filter_row.addWidget(self.grade_combo)
-        type_filter_row.addWidget(section_label(tr("Source")))
-        type_filter_row.addWidget(self.source_combo)
-        type_filter_row.addStretch()
-        type_filter_row.addWidget(self.reset_filters_button)
+        self.advanced_filter_widget = QWidget()
+        advanced_filter_grid = QGridLayout(self.advanced_filter_widget)
+        advanced_filter_grid.setContentsMargins(0, 0, 0, 0)
+        advanced_filter_grid.setHorizontalSpacing(10)
+        advanced_filter_grid.setVerticalSpacing(8)
+        advanced_filter_grid.addWidget(section_label(tr("Subject")), 0, 0)
+        advanced_filter_grid.addWidget(self.subject_combo, 0, 1)
+        self.subject_combo.setMaximumWidth(120)
+        advanced_filter_grid.addWidget(section_label(tr("Scope")), 0, 2)
+        advanced_filter_grid.addWidget(self.scope_combo, 0, 3)
+        self.scope_combo.setMaximumWidth(140)
+        advanced_filter_grid.addWidget(section_label(tr("Grade")), 0, 4)
+        advanced_filter_grid.addWidget(self.grade_combo, 0, 5)
+        advanced_filter_grid.addWidget(section_label(tr("Source")), 1, 0)
+        advanced_filter_grid.addWidget(self.source_combo, 1, 1, 1, 3)
+        advanced_filter_grid.setColumnStretch(5, 1)
+        self.advanced_filter_widget.setVisible(False)
 
         action_row = QHBoxLayout()
         action_row.setSpacing(6)
@@ -437,16 +496,13 @@ class MilestoneView(QWidget):
         action_row.addWidget(self.export_menu_button)
         action_row.addWidget(self.final_season_button)
         action_row.addWidget(self.more_menu_button)
-        action_row.addSpacing(12)
-        action_row.addWidget(self.edit_button)
-        action_row.addWidget(self.delete_button)
 
         hint = QLabel(tr("F2: Edit · Del: Delete · Double-click: Game Log"))
         hint.setObjectName("mutedLabel")
 
         filter_card = CardPanel()
-        filter_card.content_layout.addLayout(filter_row)
-        filter_card.content_layout.addLayout(type_filter_row)
+        filter_card.content_layout.addLayout(basic_filter_grid)
+        filter_card.content_layout.addWidget(self.advanced_filter_widget)
         filter_card.content_layout.addWidget(self.filter_summary_label)
         filter_card.content_layout.addLayout(action_row)
         filter_card.content_layout.addWidget(hint)
@@ -460,12 +516,18 @@ class MilestoneView(QWidget):
         self.empty_state.hide()
         table_card.add_widget(self.empty_state)
 
-        meta_row = QHBoxLayout()
-        meta_row.addWidget(self.meta_label, stretch=1)
-        meta_row.addWidget(self.player_detail_button)
-        meta_row.addWidget(self.game_log_button)
-        self.meta_card = CardPanel()
-        self.meta_card.content_layout.addLayout(meta_row)
+        detail_action_row = QHBoxLayout()
+        detail_action_row.addWidget(self.player_detail_button)
+        detail_action_row.addWidget(self.game_log_button)
+        detail_action_row.addStretch()
+        detail_action_row.addWidget(self.edit_button)
+        detail_action_row.addWidget(self.delete_button)
+        self.meta_card = CardPanel(tr("Selected record details"))
+        self.meta_card.content_layout.addWidget(self.detail_title_label)
+        self.meta_card.content_layout.addWidget(self.detail_description_label)
+        self.meta_card.content_layout.addWidget(self.detail_facts_label)
+        self.meta_card.content_layout.addWidget(self.detail_notes_label)
+        self.meta_card.content_layout.addLayout(detail_action_row)
         self.meta_card.setVisible(False)
 
         layout = QVBoxLayout(self)
@@ -495,6 +557,12 @@ class MilestoneView(QWidget):
             if index >= 0:
                 self.team_filter.setCurrentIndex(index)
         self.team_filter.blockSignals(False)
+
+    def _set_advanced_filters_visible(self, visible: bool) -> None:
+        self.advanced_filter_widget.setVisible(visible)
+        self.advanced_filter_toggle.setText(
+            tr("Hide advanced filters") if visible else tr("Advanced filters")
+        )
 
     def on_data_refreshed(self, kind: str) -> None:
         if kind in ("boxscore", "milestone", "all"):
@@ -710,25 +778,19 @@ class MilestoneView(QWidget):
                     player_id=pid,
                     roster_names=roster_names,
                 )
-            games = record.get("games_at_achievement")
             event_type = milestone_event_type(record, milestone)
             type_label = event_type_display_label(event_type)
-            is_manual = milestone_is_manual(record)
-            source_label = source_display_label(is_manual)
+            record_source = milestone_source(record)
+            is_manual = record_source == "manual"
+            source_label = source_display_label(record_source)
             values = [
                 record.get("achieved_date") or "",
                 display_name,
-                korean_name,
                 affiliation,
                 label,
-                "" if games is None else str(games),
-                record.get("opponent_team") or "",
-                record.get("opponent_player") or "",
-                record.get("description") or "",
-                record.get("notes") or "",
+                type_label,
+                source_label,
             ]
-            values.insert(TYPE_COLUMN_INDEX, type_label)
-            values.insert(SOURCE_COLUMN_INDEX, source_label)
             grade = milestone.grade if milestone else "common"
             is_injury = record.get("milestone_key") == "manual_injury"
             is_highlighted = (
@@ -744,6 +806,13 @@ class MilestoneView(QWidget):
                     item.setToolTip(type_label)
                 elif col_idx == SOURCE_COLUMN_INDEX:
                     item.setToolTip(source_label)
+                elif col_idx == 3:
+                    details = [label]
+                    if korean_name:
+                        details.append(tr("Korean name: {value}").format(value=korean_name))
+                    if record.get("description"):
+                        details.append(str(record.get("description")))
+                    item.setToolTip("\n".join(details))
 
                 if is_injury:
                     item.setForeground(QColor(RED_TEXT))
@@ -757,7 +826,7 @@ class MilestoneView(QWidget):
                             item.setBackground(QColor(colors["bg"]))
                         if colors.get("fg"):
                             item.setForeground(QColor(colors["fg"]))
-                    if is_manual and col_idx in (4, SOURCE_COLUMN_INDEX):
+                    if is_manual and col_idx in (3, SOURCE_COLUMN_INDEX):
                         item.setForeground(QColor(AMBER_TEXT))
 
                 if is_highlighted:
@@ -766,9 +835,13 @@ class MilestoneView(QWidget):
                 self.table_panel.table.setItem(row_idx, col_idx, item)
         self.table_panel.table.setSortingEnabled(True)
         if preferred_record_id is not None:
-            select_record_row(self.table_panel.table, preferred_record_id)
+            restored = select_record_row(self.table_panel.table, preferred_record_id)
+            if not restored and self._records:
+                self.table_panel.table.selectRow(0)
             if self._highlight_id is not None:
                 self._highlight_id = None
+        elif self._records:
+            self.table_panel.table.selectRow(0)
         if not self._records:
             self._highlight_id = None
             self._update_meta_panel()
@@ -1224,6 +1297,12 @@ class MilestoneView(QWidget):
         has_selection = bool(self.table_panel.table.selectionModel().selectedRows())
         self.edit_button.setEnabled(has_selection)
         self.delete_button.setEnabled(has_selection)
+        self.edit_button.setToolTip(
+            "" if has_selection else tr("Select a record to edit.")
+        )
+        self.delete_button.setToolTip(
+            "" if has_selection else tr("Select a record to delete.")
+        )
 
     def _record_has_player(self, record: dict | None) -> bool:
         player_id = int((record or {}).get("player_id") or 0)
@@ -1244,7 +1323,10 @@ class MilestoneView(QWidget):
         record = self._selected_record()
         if record is None:
             self._selected_record_id = None
-            self.meta_label.setText("")
+            self.detail_title_label.setText(tr("Select a record to see details."))
+            self.detail_description_label.setText("")
+            self.detail_facts_label.setText("")
+            self.detail_notes_label.setText("")
             self.game_log_button.setEnabled(False)
             self.player_detail_button.setEnabled(False)
             self.log_hint_panel.hide()
@@ -1252,20 +1334,68 @@ class MilestoneView(QWidget):
             return
         self.meta_card.setVisible(True)
         self._selected_record_id = int(record["id"])
-        parts: list[str] = []
-        if record.get("scope"):
-            parts.append(f"scope: {record['scope']}")
+        milestone = self.milestones.get_by_key(str(record.get("milestone_key") or ""))
+        label = (
+            milestone.label
+            if milestone
+            else record.get("milestone_label", record.get("milestone_key", ""))
+        )
+        is_team = int(record.get("player_id") or 0) == 0 and bool(record.get("team"))
+        target = str(record.get("team") or "") if is_team else str(record.get("player_name") or "")
+        self.detail_title_label.setText(f"{target} · {label}" if target else str(label))
+
+        description_parts: list[str] = []
+        if milestone is not None and getattr(milestone, "description_template", ""):
+            description_parts.append(str(getattr(milestone, "description_template")))
+        if record.get("description"):
+            description_parts.append(str(record.get("description")))
+        self.detail_description_label.setText("\n".join(description_parts))
+
+        facts: list[str] = []
         if record.get("achieved_value") is not None:
-            parts.append(tr("Value: {value}").format(value=record["achieved_value"]))
+            facts.append(tr("Value: {value}").format(value=record["achieved_value"]))
+        games = record.get("games_at_achievement")
+        if games is not None:
+            facts.append(tr("Games at achievement: {value}").format(value=games))
         if record.get("season"):
-            parts.append(tr("Season: {season}").format(season=record["season"]))
+            facts.append(tr("Season: {season}").format(season=record["season"]))
+        if record.get("scope"):
+            facts.append(tr("Scope: {value}").format(value=record["scope"]))
+        facts.append(tr("Type: {value}").format(
+            value=event_type_display_label(milestone_event_type(record, milestone))
+        ))
+        facts.append(tr("Source: {value}").format(
+            value=source_display_label(milestone_source(record))
+        ))
         if record.get("game_id"):
-            parts.append(tr("Game ID: {game_id}").format(game_id=record["game_id"]))
-        if record.get("is_manual"):
-            parts.append(tr("Manual entry"))
-        self.meta_label.setText(" · ".join(parts))
+            facts.append(tr("Game ID: {game_id}").format(game_id=record["game_id"]))
+        if record.get("opponent_team"):
+            facts.append(tr("Opponent: {value}").format(value=record["opponent_team"]))
+        if record.get("opponent_player"):
+            facts.append(tr("Opposing player: {value}").format(value=record["opponent_player"]))
+        source_id = record.get("source_id") or _source_id_from_notes(str(record.get("notes") or ""))
+        if source_id:
+            facts.append(tr("Original source: {value}").format(value=source_id))
+        self.detail_facts_label.setText(" · ".join(facts))
+
+        notes = str(record.get("notes") or "").strip()
+        self.detail_notes_label.setText(
+            tr("Notes: {value}").format(value=notes) if notes else tr("No notes.")
+        )
         self.game_log_button.setEnabled(bool(record.get("game_id")))
         self.player_detail_button.setEnabled(self._record_has_player(record))
+        self.game_log_button.setToolTip(
+            "" if self.game_log_button.isEnabled() else tr("No linked game is available.")
+        )
+        self.player_detail_button.setToolTip(
+            "" if self.player_detail_button.isEnabled() else tr("No linked player is available.")
+        )
+        self.edit_button.setToolTip(
+            "" if self.edit_button.isEnabled() else tr("Select a record to edit.")
+        )
+        self.delete_button.setToolTip(
+            "" if self.delete_button.isEnabled() else tr("Select a record to delete.")
+        )
         self._update_log_hint_panel(record)
 
     def _update_log_hint_panel(self, record: dict) -> None:
