@@ -37,14 +37,21 @@
 
 이적·부상은 CSV 밖 `manual_event` (`manual_transfer_*`, `manual_injury`).
 
-## 예정 — `messages/` 자동화
+## 구현됨 — `messages/` 자동화 코어
 
 박스스코어에 없는 수상·이적·부상·일부 포스트시즌은 OOTP `messages/` 텍스트로
-자동 기록하는 것을 검토 중. **아직 파서 미구현.**
+분류·파싱하고 기존 수동 입력 폼과 `record_manual_*` 저장 경로로 기록한다.
 
 - 필드 규칙: [`message_automation_field_rules.md`](message_automation_field_rules.md)
 - 샘플: `tests/fixtures/messages/`
 - 수집: `scripts/collect_message_samples.py`
+- 구현: `core/milestone/message_automation/`
+- 검증: `python scripts/verify_message_automation.py`
+- 일괄 기록: `import_message_files(checker, paths, message_dates=...)`
+
+`messages.dat`에서 해석한 날짜는 호출자가 `message_dates`로 전달한다. 동일 소스는
+`notes`의 `source:` 표식을 기준으로 멱등 처리한다. README의 「1차 제외」 fixture는
+분류 결과와 제외 사유만 반환하고 기록 폼을 만들지 않는다.
 
 OOTP 인게임 명칭: Gold Glove → **Great Glove**, Silver Slugger → **Platinum Stick**
 (CSV key는 `award_gold_glove` / `award_silver_slugger` 유지).
@@ -65,4 +72,4 @@ OOTP 인게임 명칭: Gold Glove → **Great Glove**, Silver Slugger → **Plat
 - `core/parser/batting_notes.py` — 그랜드슬램 `3 on` 파싱
 - `core/milestone/implementation.py` — 수동 전용·비율 시즌 구분
 - `gui/views/milestone_view.py` — 기록 추가·시즌 비율 버튼
-- (예정) `messages/` 파서 — [`message_automation_field_rules.md`](message_automation_field_rules.md)
+- `core/milestone/message_automation/` — `messages/` 분류·파싱·기존 수동 API 기록

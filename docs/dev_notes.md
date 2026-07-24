@@ -3,7 +3,7 @@
 ## 백로그 (TODO)
 
 - [ ] **공개 품질 후속 작업** — 통합 기록·선수 상세·연속 기록 센터·설명 가능한 예측·데이터 정책은 [`public_release_followups.md`](public_release_followups.md)에서 추적
-- [ ] **`messages/` 자동화** — 수상·이적·부상·일부 포스트시즌을 인박스 메시지로 기록. 필드 규칙은 [`message_automation_field_rules.md`](message_automation_field_rules.md). 샘플은 `tests/fixtures/messages/`. (옵션 연수·부상명 Gemini 번역 등 TODO는 해당 문서 §13)
+- [x] **`messages/` 자동화 코어** — 수상·이적·부상·일부 포스트시즌을 분류·파싱하고 기존 `record_manual_*` 경로로 기록. 필드 규칙은 [`message_automation_field_rules.md`](message_automation_field_rules.md), 샘플은 `tests/fixtures/messages/`. `messages.dat` 날짜 맵은 호출자가 `import_message_files()`에 전달한다. (옵션 연수·부상명 Gemini 번역 TODO는 해당 문서 §13)
 
 - [x] **레이팅 일괄 편집** — MLB+KBO 통합 팝업, 인지도/유망주 규칙, `mod_*_rosters.txt` 저장
 - [x] **마일스톤 기준 재정의** — `milestones_v1.csv` 반영 (266건), `boolean`·복합 threshold 로더 지원
@@ -16,6 +16,16 @@
 - [ ] **한글 이름 매핑 데이터 보완** — `korean_*_names.csv`·pending 큐 등 매핑 비어 있는 선수 채우기
 - [ ] **마일스톤 예측(추적) 시작값 결정** — 통산(career) 기록 위주로 예측·추적 시 baseline(시작 누적값) 정책 수립·반영
 - [x] **배포 빌드·사용자 데이터 분리** — PyInstaller, 아이콘, 한글 CSV 번들, AppData 저장
+
+## 2026-07-24 — `messages/` 마일스톤 자동화 코어
+
+- `core/milestone/message_automation/` — 메시지 분류, OOTP 태그 파싱, 유형별 필드 추출, 저장 서비스
+- `parse_message()` — 기록 대상 폼 또는 안정적인 제외 사유 반환
+- `import_message_text()` / `import_message_file()` / `import_message_files()` — 추적 팀 필터와 메시지 날짜를 받아 기존 수동 입력 API로 저장
+- 동일 소스 메시지는 `notes=source:...`를 기준으로 재실행해도 중복 기록하지 않음
+- Great Glove → `award_gold_glove`, Platinum Stick → `award_silver_slugger` 매핑 유지
+- `scripts/verify_message_automation.py` — fixture 전체 분류와 README 「1차 제외」 검증
+- `tests/test_message_automation_fixtures.py` — 전체 fixture 인식, 필드 규칙, 저장 경로, 멱등성 검증
 
 ## 2026-06-14 — 한글 매핑 안전장치·레이팅 필터·빌드·AppData
 
