@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import fields, is_dataclass
 from datetime import date
 from typing import Any
 
@@ -14,9 +13,9 @@ from PyQt6.QtWidgets import (
     QDateEdit,
     QDialog,
     QDialogButtonBox,
-    QHeaderView,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPlainTextEdit,
     QPushButton,
     QSplitter,
@@ -38,7 +37,16 @@ from gui.widgets.message_review_model import (
     STATUS_EXCLUDED,
     MessageReviewItem,
     MessageReviewModel,
-    editable_form_values,
+)
+from gui.widgets.guided_milestone_form import (
+    GuidedMilestoneForm,
+    display_category,
+    display_field,
+    display_field_value,
+    display_reason,
+    display_status,
+    editable_field_values,
+    form_type_label,
 )
 
 
@@ -67,6 +75,7 @@ class MessageReviewView(QWidget):
         self._save_callback = save_callback
         self._reanalyze_callback = reanalyze_callback
         self._selected_row = -1
+        self._visible_model_rows: list[int] = []
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -90,6 +99,26 @@ class MessageReviewView(QWidget):
         self.summary_label.setObjectName("messageReviewSummary")
         self.summary_label.setWordWrap(True)
         root.addWidget(self.summary_label)
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel(tr("Show")))
+        self.filter_combo = QComboBox()
+        self.filter_combo.setObjectName("messageReviewFilter")
+        self._filter_items = [
+            ("all", tr("All")),
+            (STATUS_CANDIDATE, tr("Candidates")),
+            (STATUS_APPROVED, tr("Approved")),
+            (STATUS_DATE_NEEDED, tr("Date needed")),
+            (STATUS_EXCLUDED, tr("Excluded")),
+            (STATUS_APPLIED, tr("Already applied")),
+            (STATUS_ERROR, tr("Errors")),
+        ]
+        for key, label in self._filter_items:
+            self.filter_combo.addItem(label, key)
+        self.filter_combo.currentIndexChanged.connect(self.refresh)
+        filter_row.addWidget(self.filter_combo)
+        filter_row.addStretch()
+        root.addLayout(filter_row)
 
         actions = QHBoxLayout()
         self.approve_button = QPushButton(tr("Approve selected"))
@@ -170,7 +199,12 @@ class MessageReviewView(QWidget):
         self.refresh()
 
     def selected_rows(self) -> list[int]:
-        return sorted({index.row() for index in self.table.selectedIndexes()})
+        table_rows = sorted({index.row() for index in self.table.selectedIndexes()})
+        return [
+            self._visible_model_rows[row]
+            for row in table_rows
+            if 0 <= row < len(self._visible_model_rows)
+        ]
 
     def approve_selected(self) -> int:
         changed = self.model.approve(self.selected_rows())
@@ -230,19 +264,39 @@ class MessageReviewView(QWidget):
         return changed
 
     def reanalyze_selected(self) -> int:
-        rows = self.selected_rows()
+        if self._reanalyze_callback is None:
+            return 0
+        rows = [row for row in self.selected_rows() if 0 <= row < len(self.model)]
+        if not rows:
+            return 0
+
+        reanalyzable = [row for row in rows if self.model[row].status != STATUS_APPLIED]
+        if not reanalyzable:
+            QMessageBox.information(
+                self,
+                tr("Reanalyze selected"),
+                tr("Already-applied messages are not reanalyzed. Use guided edit to add a correction instead."),
+            )
+            return 0
+
+        if any(self.model[row].manually_edited for row in reanalyzable):
+            reply = QMessageBox.question(
+                self,
+                tr("Reanalyze selected"),
+                tr("This message was manually edited. Reanalyzing will discard your edits. Continue?"),
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return 0
+
         changed = 0
-        for row in rows:
-            if not (0 <= row < len(self.model)):
-                continue
+        for row in reanalyzable:
             item = self.model[row]
             self.reanalysis_requested.emit(item.source_id)
-            if self._reanalyze_callback is None:
-                continue
             try:
                 parsed = self._reanalyze_callback(item)
             except Exception as exc:  # pragma: no cover - defensive UI path
-                self.model.mark_error(row, str(exc))
+                self.model.mark_error(row, tr("Reanalysis failed: {error}").format(error=str(exc)))
             else:
                 self.model.update_parsed(row, parsed)
                 changed += 1
@@ -270,16 +324,19 @@ class MessageReviewView(QWidget):
         self.review_changed.emit()
 
     def _populate_table(self) -> None:
-        self.table.setRowCount(len(self.model))
-        for row, item in enumerate(self.model.items):
+        filter_key = str(self.filter_combo.currentData()) if hasattr(self, "filter_combo") else "all"
+        self._visible_model_rows = self.model.filtered_indexes(filter_key)
+        self.table.setRowCount(len(self._visible_model_rows))
+        for row, model_row in enumerate(self._visible_model_rows):
+            item = self.model.items[model_row]
             values = [
                 item.message_date.isoformat() if item.message_date else "",
                 item.title,
-                item.category,
+                display_category(item.category),
                 _subject_text(item),
-                _status_label(item.status or ""),
+                display_status(item.status or ""),
                 str(item.generated_count),
-                item.reason,
+                display_reason(item.reason),
             ]
             for col, value in enumerate(values):
                 table_item = QTableWidgetItem(value)
@@ -298,12 +355,12 @@ class MessageReviewView(QWidget):
         )
 
     def _restore_or_show_selection(self) -> None:
-        row = self._selected_row
-        if not (0 <= row < len(self.model)):
-            row = 0 if len(self.model) else -1
-        if row >= 0 and not self.table.selectedIndexes():
-            self.table.selectRow(row)
-        self._show_detail(row)
+        model_row = self._selected_row
+        if model_row not in self._visible_model_rows:
+            model_row = self._visible_model_rows[0] if self._visible_model_rows else -1
+        if model_row >= 0 and not self.table.selectedIndexes():
+            self.table.selectRow(self._visible_model_rows.index(model_row))
+        self._show_detail(model_row)
 
     def _on_selection_changed(self) -> None:
         rows = self.selected_rows()
@@ -325,7 +382,11 @@ class MessageReviewView(QWidget):
         self.approve_button.setEnabled(any(item.can_approve() for item in selected))
         self.exclude_button.setEnabled(any(item.status not in (STATUS_APPLIED, STATUS_ERROR) for item in selected))
         self.edit_button.setEnabled(len(selected) == 1 and bool(selected[0].parsed.forms))
-        self.reanalyze_button.setEnabled(bool(selected))
+        has_reanalyze_callback = self._reanalyze_callback is not None
+        self.reanalyze_button.setEnabled(has_reanalyze_callback and bool(selected))
+        self.reanalyze_button.setToolTip(
+            "" if has_reanalyze_callback else tr("Reanalysis is unavailable in this session.")
+        )
         self.assign_date_button.setEnabled(any(item.status == STATUS_DATE_NEEDED for item in selected))
         self.approve_all_button.setEnabled(any(item.can_approve() for item in self.model.items))
         self.save_button.setEnabled(bool(self.model.approved_items()) and self._save_callback is not None)
@@ -338,7 +399,7 @@ def _text_card(title: str, editor: QPlainTextEdit) -> CardPanel:
 
 
 class ExtractedResultEditDialog(QDialog):
-    """Small field table for correcting one extracted dataclass form."""
+    """Guided field editor for correcting one extracted record."""
 
     def __init__(self, item: MessageReviewItem, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -346,22 +407,12 @@ class ExtractedResultEditDialog(QDialog):
         self.setWindowTitle(tr("Edit extracted result"))
         self.resize(760, 620)
 
-        self.form_combo = QComboBox()
-        for index, form in enumerate(item.parsed.forms):
-            self.form_combo.addItem(f"{index + 1}. {type(form).__name__}", index)
-        self.form_combo.currentIndexChanged.connect(self._load_selected_form)
-
-        self.table = QTableWidget(0, 2)
-        self.table.setHorizontalHeaderLabels([tr("Field"), tr("Value")])
-        self.table.verticalHeader().setVisible(False)
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-
         hint = QLabel(
-            tr("Edit parsed values before approval. Dates must use YYYY-MM-DD.")
+            tr("Edit extracted values with the same guided fields used by manual entry. Dates must use YYYY-MM-DD.")
         )
         hint.setWordWrap(True)
         hint.setObjectName("mutedLabel")
+        self.form = GuidedMilestoneForm(item.parsed.forms, parent=self)
 
         self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -371,47 +422,14 @@ class ExtractedResultEditDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addWidget(hint)
-        layout.addWidget(self.form_combo)
-        layout.addWidget(self.table, stretch=1)
+        layout.addWidget(self.form, stretch=1)
         layout.addWidget(self.buttons)
-        self._load_selected_form()
 
     def selected_form_index(self) -> int:
-        data = self.form_combo.currentData()
-        return int(data) if data is not None else 0
+        return self.form.selected_form_index()
 
     def edited_values(self) -> dict[str, str]:
-        values: dict[str, str] = {}
-        for row in range(self.table.rowCount()):
-            field_item = self.table.item(row, 0)
-            value_item = self.table.item(row, 1)
-            if field_item is None:
-                continue
-            values[field_item.text()] = value_item.text() if value_item is not None else ""
-        return values
-
-    def _load_selected_form(self) -> None:
-        index = self.selected_form_index()
-        form = self.item.parsed.forms[index]
-        values = editable_form_values(form)
-        self.table.setRowCount(len(values))
-        for row, (key, value) in enumerate(values.items()):
-            key_item = QTableWidgetItem(key)
-            key_item.setFlags(key_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
-            self.table.setItem(row, 0, key_item)
-            self.table.setItem(row, 1, QTableWidgetItem(value))
-
-
-def _status_label(status: str) -> str:
-    labels = {
-        STATUS_CANDIDATE: tr("Candidate"),
-        STATUS_APPROVED: tr("Approved"),
-        STATUS_APPLIED: tr("Applied"),
-        STATUS_EXCLUDED: tr("Excluded"),
-        STATUS_DATE_NEEDED: tr("Date needed"),
-        STATUS_ERROR: tr("Error"),
-    }
-    return labels.get(status, status)
+        return self.form.edited_values()
 
 
 def _subject_text(item: MessageReviewItem) -> str:
@@ -430,31 +448,27 @@ def _subject_text(item: MessageReviewItem) -> str:
 
 def _extracted_text(item: MessageReviewItem) -> str:
     lines = [
-        f"Source: {item.source_id}",
-        f"Title: {item.title}",
-        f"Type: {item.category}",
-        f"Status: {_status_label(item.status or '')}",
-        f"Planned records: {item.generated_count}",
+        f"{tr('Original message ID')}: {item.source_id}",
+        f"{tr('Message title')}: {item.title}",
+        f"{tr('Record type')}: {display_category(item.category)}",
+        f"{tr('Status')}: {display_status(item.status or '')}",
+        f"{tr('Planned records')}: {item.generated_count}",
     ]
     if item.reason:
-        lines.append(f"Reason: {item.reason}")
+        lines.append(f"{tr('Reason')}: {display_reason(item.reason)}")
     if item.created_record_ids:
-        lines.append("Created record IDs: " + ", ".join(str(value) for value in item.created_record_ids))
+        lines.append(tr("Created records") + ": " + ", ".join(str(value) for value in item.created_record_ids))
+    if item.duplicate_record_ids:
+        lines.append(tr("Duplicate records") + ": " + ", ".join(str(value) for value in item.duplicate_record_ids))
     if item.parsed.forms:
         lines.append("")
-        lines.append("Forms")
+        lines.append(tr("Extracted records"))
     for index, form in enumerate(item.parsed.forms, start=1):
-        lines.append(f"[{index}] {type(form).__name__}")
+        lines.append(f"[{index}] {form_type_label(form)}")
         for key, value in _form_values(form).items():
-            lines.append(f"  {key}: {value}")
+            lines.append(f"  {display_field(key)}: {display_field_value(key, value)}")
     return "\n".join(lines)
 
 
 def _form_values(form: Any) -> dict[str, Any]:
-    if is_dataclass(form):
-        return {field.name: getattr(form, field.name) for field in fields(form)}
-    return {
-        key: value
-        for key, value in vars(form).items()
-        if not key.startswith("_")
-    }
+    return editable_field_values(form)

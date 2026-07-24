@@ -97,6 +97,7 @@ SCANNED_UI_FILES = (
     "gui/views/message_review_view.py",
     "gui/views/advanced_tools_view.py",
     "gui/widgets/import_workflow_status.py",
+    "gui/widgets/guided_milestone_form.py",
     "gui/widgets/message_review_model.py",
     "gui/widgets/manual_milestone_dialog.py",
 )

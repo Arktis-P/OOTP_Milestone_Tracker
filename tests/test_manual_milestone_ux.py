@@ -89,3 +89,25 @@ def test_extracted_injury_reuses_manual_form_population(dialog) -> None:
     assert dialog.injury_table.rowCount() >= 1
     assert dialog.injury_table.cellWidget(0, 0).text() == "2026-05-10"
     assert dialog.injury_table.cellWidget(0, 2).text() == "Hamstring"
+
+
+def test_manual_dialog_exposes_shared_guided_form(dialog) -> None:
+    form = ManualInjuryFormData(
+        player_name="Aaron Judge",
+        achieved_date=date(2026, 5, 10),
+        injury_label="Hamstring",
+        duration="3 days",
+        team="Seattle Mariners",
+        season=2026,
+        description="Hamstring for 3 days",
+        notes="source:message1433",
+    )
+
+    guided = dialog.create_guided_form_for_extracted([form])
+    try:
+        assert guided.edited_values()["injury_label"] == "Hamstring"
+        labels = [guided.table.item(row, 0).text() for row in range(guided.table.rowCount())]
+        assert ("Injury" in labels) or ("부상" in labels)
+        assert "injury_label" not in labels
+    finally:
+        guided.deleteLater()

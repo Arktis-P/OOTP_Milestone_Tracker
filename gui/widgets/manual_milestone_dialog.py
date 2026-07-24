@@ -68,6 +68,7 @@ from gui.widgets.manual_entry_fields import (
     tracked_team_names,
     apply_completer,
 )
+from gui.widgets.guided_milestone_form import GuidedMilestoneForm
 from gui.widgets.single_record_dialogs import (
     SingleInjuryEntryDialog,
     SingleMilestoneEntryDialog,
@@ -213,7 +214,7 @@ class ManualMilestoneDialog(QDialog):
         hint = QLabel(
             tr(
                 "Add one record at a time. Choose a type below; the form shows only "
-                "the fields needed for that record type."
+                "the fields needed for that record type. Message review corrections use the same guided fields."
             )
         )
         hint.setWordWrap(True)
@@ -1292,6 +1293,14 @@ class ManualMilestoneDialog(QDialog):
         self.tabs.setCurrentIndex(_TAB_INJURY)
         self._show_bulk_mode()
         self._populate_injury_row_from_form(form)
+
+    def create_guided_form_for_extracted(self, forms: list[object]) -> GuidedMilestoneForm:
+        """Shared guided editor used by message extraction review dialogs."""
+        return GuidedMilestoneForm(
+            forms,
+            intro=tr("Review and correct only the fields needed for this record."),
+            parent=self,
+        )
 
     @staticmethod
     def _is_award_milestone(milestone: MilestoneDefinition) -> bool:

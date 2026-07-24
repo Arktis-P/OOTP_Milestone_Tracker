@@ -153,9 +153,15 @@ def test_view_shows_required_summary_list_original_and_extracted_details(qapp) -
         view.table.selectRow(0)
         assert "Candidate\nBody" == view.raw_text.toPlainText()
         details = view.extracted_text.toPlainText()
-        assert "Source: message1" in details
-        assert "ManualMilestoneFormData" in details
-        assert "milestone_key: award_mvp" in details
+        assert "message1" in details
+        assert "award_mvp" not in details
+        assert "milestone_key" not in details
+        assert "ManualMilestoneFormData" not in details
+        assert ("기록 유형: MVP 수상" in details) or ("Record type: Most Valuable Player award" in details)
+        # The extracted form's raw `milestone_key` value ("award_mvp") must also be
+        # translated (not just the message-category header), so the natural label
+        # appears twice: once for the category, once for the field-level value.
+        assert details.count("MVP 수상") == 2 or details.count("Most Valuable Player award") == 2
     finally:
         view.deleteLater()
 
@@ -182,6 +188,66 @@ def test_view_reanalysis_and_date_waiting_workflow(qapp) -> None:
         assert view.model[0].status == STATUS_CANDIDATE
     finally:
         view.deleteLater()
+
+
+def test_reanalysis_button_is_disabled_without_callback(qapp) -> None:
+    view = MessageReviewView([MessageReviewItem(_parsed("Candidate", forms=[_form()]))])
+    try:
+        view.table.selectRow(0)
+        assert not view.reanalyze_button.isEnabled()
+        assert view.reanalyze_selected() == 0
+    finally:
+        view.deleteLater()
+
+
+def test_status_filter_limits_visible_rows_and_keeps_actions_scoped(qapp) -> None:
+    view = MessageReviewView(
+        [
+            MessageReviewItem(_parsed("Candidate", forms=[_form()], source_id="candidate")),
+            MessageReviewItem(_parsed("Excluded", excluded=True, reason="tracked team not involved", source_id="excluded")),
+            MessageReviewItem(_parsed("Missing date", forms=[_form(None)], source_id="date")),
+            MessageReviewItem(_parsed("Applied", forms=[_form()], source_id="applied"), created_record_ids=[99]),
+            MessageReviewItem(_parsed("Broken", source_id="error"), error="parse failed"),
+        ]
+    )
+    try:
+        view.filter_combo.setCurrentIndex(view.filter_combo.findData(STATUS_DATE_NEEDED))
+        assert view.table.rowCount() == 1
+        assert view.table.item(0, 1).text() == "Missing date"
+
+        view.table.selectRow(0)
+        view.date_edit.setDate(QDate(2026, 9, 11))
+        assert view.assign_date_to_selected() == 1
+        assert view.model[2].status == STATUS_CANDIDATE
+    finally:
+        view.deleteLater()
+
+
+def test_message_result_mapping_marks_each_row_created_duplicate_or_error() -> None:
+    model = MessageReviewModel(
+        [
+            MessageReviewItem(_parsed("Created", forms=[_form()], source_id="message1"), status=STATUS_APPROVED),
+            MessageReviewItem(_parsed("Duplicate", forms=[_form()], source_id="message2"), status=STATUS_APPROVED),
+            MessageReviewItem(_parsed("Broken", forms=[_form()], source_id="message3"), status=STATUS_APPROVED),
+        ]
+    )
+
+    model.mark_applied(
+        model.approved_items(),
+        [
+            {"source_id": "message1", "created_record_ids": [11], "duplicate_record_ids": [], "errors": []},
+            {"source_id": "message2", "created_record_ids": [], "duplicate_record_ids": [22], "errors": []},
+            {"source_id": "message3", "created_record_ids": [], "duplicate_record_ids": [], "errors": ["save failed"]},
+        ],
+    )
+
+    assert model[0].status == STATUS_APPLIED
+    assert model[0].created_record_ids == [11]
+    assert model[1].status == STATUS_APPLIED
+    assert model[1].duplicate_record_ids == [22]
+    assert model[1].reason == "duplicate"
+    assert model[2].status == STATUS_ERROR
+    assert "save failed" in model[2].error
 
 
 def test_extracted_result_edit_updates_form_and_returns_to_candidate(qapp) -> None:
@@ -233,7 +299,7 @@ def test_invalid_extracted_result_edit_blocks_save_and_leaves_page_error(qapp) -
         assert ok is False
         assert view.model[0].status == STATUS_ERROR
         assert "YYYY-MM-DD" in view.model[0].error
-        assert "YYYY-MM-DD" in view.table.item(0, 6).text()
+        assert "yyyy-mm-dd" in view.table.item(0, 6).text().lower()
         assert view.save_approved() is None
         assert saved == []
     finally:
@@ -253,5 +319,12 @@ def test_edit_extracted_result_dialog_exposes_dataclass_fields(qapp) -> None:
         assert values["description"] == "MVP award"
         assert values["notes"] == "source:message1"
         assert dialog.selected_form_index() == 0
+        displayed_fields = [
+            dialog.form.table.item(row, 0).text()
+            for row in range(dialog.form.table.rowCount())
+        ]
+        assert ("Date" in displayed_fields) or ("날짜" in displayed_fields)
+        assert ("Player" in displayed_fields) or ("선수" in displayed_fields)
+        assert "milestone_key" not in displayed_fields
     finally:
         dialog.deleteLater()

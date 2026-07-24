@@ -13,7 +13,16 @@ from dataclasses import dataclass, field, fields, is_dataclass, replace
 from datetime import date
 from typing import Any, Iterable
 
+from core.i18n import tr
 from core.milestone.message_automation.parser import ParsedMessage
+from core.milestone.manual_entry import (
+    ManualInjuryFormData,
+    ManualMilestoneFormData,
+    ManualTransferFormData,
+    validate_manual_injury,
+    validate_manual_transfer,
+)
+from gui.widgets.guided_milestone_form import display_field, editable_field_values
 
 
 STATUS_CANDIDATE = "candidate"
@@ -42,7 +51,10 @@ class MessageReviewItem:
     message_date: date | None = None
     status: str | None = None
     error: str = ""
+    notice: str = ""
     created_record_ids: list[int] = field(default_factory=list)
+    duplicate_record_ids: list[int] = field(default_factory=list)
+    manually_edited: bool = False
 
     def __post_init__(self) -> None:
         if self.status is None:
@@ -70,6 +82,10 @@ class MessageReviewItem:
     def reason(self) -> str:
         if self.error:
             return self.error
+        if self.notice:
+            return self.notice
+        if self.duplicate_record_ids:
+            return "duplicate"
         if self.parsed.excluded:
             return self.parsed.exclusion_reason or ""
         if self.status == STATUS_DATE_NEEDED:
@@ -115,6 +131,15 @@ class MessageReviewModel:
 
     def set_items(self, items: Iterable[MessageReviewItem]) -> None:
         self._items = list(items)
+
+    def filtered_indexes(self, filter_key: str = "all") -> list[int]:
+        if filter_key == "all":
+            return list(range(len(self._items)))
+        return [
+            index
+            for index, item in enumerate(self._items)
+            if item.status == filter_key
+        ]
 
     def summary_counts(self) -> dict[str, int]:
         """Return the directive-required summary buckets."""
@@ -168,12 +193,18 @@ class MessageReviewModel:
 
     def update_parsed(self, index: int, parsed: ParsedMessage, raw_text: str | None = None) -> None:
         item = self._items[index]
+        was_applied = item.status == STATUS_APPLIED
         item.parsed = parsed
         if raw_text is not None:
             item.raw_text = raw_text
         item.error = ""
-        item.created_record_ids = []
-        item.status = item._initial_status()
+        item.manually_edited = False
+        if was_applied:
+            item.status = STATUS_APPLIED
+        else:
+            item.created_record_ids = []
+            item.duplicate_record_ids = []
+            item.status = item._initial_status()
 
     def update_form_fields(
         self,
@@ -196,6 +227,7 @@ class MessageReviewModel:
             item.parsed = replace(item.parsed, forms=forms, excluded=False, exclusion_reason=None)
             item.error = ""
             item.created_record_ids = []
+            item.manually_edited = True
             item.status = STATUS_CANDIDATE
         except ValueError as exc:
             item.error = str(exc)
@@ -210,11 +242,21 @@ class MessageReviewModel:
         return [item for item in self._items if item.can_save()]
 
     def mark_applied(self, applied: Iterable[MessageReviewItem], result: Any = None) -> None:
-        ids = _flatten_record_ids(result)
+        result_map = _message_result_map(result)
+        fallback_ids = _flatten_record_ids(result)
         for item in applied:
+            row_result = result_map.get(item.source_id)
+            if row_result is not None:
+                errors = _result_errors(row_result)
+                if errors:
+                    item.error = "; ".join(errors)
+                    item.status = STATUS_ERROR
+                    continue
+                item.created_record_ids = _result_ids(row_result, "created_record_ids")
+                item.duplicate_record_ids = _result_ids(row_result, "duplicate_record_ids")
+            elif fallback_ids:
+                item.created_record_ids = list(fallback_ids)
             item.status = STATUS_APPLIED
-            if ids:
-                item.created_record_ids = list(ids)
 
     def _resolve_indexes(self, indexes: Iterable[int]) -> list[MessageReviewItem]:
         resolved: list[MessageReviewItem] = []
@@ -238,17 +280,7 @@ def _form_with_date(form: Any, achieved_date: date) -> Any:
 
 def editable_form_values(form: Any) -> dict[str, str]:
     """Return user-editable dataclass values rendered as strings."""
-
-    if not is_dataclass(form):
-        return {
-            key: _value_to_text(value)
-            for key, value in vars(form).items()
-            if not key.startswith("_")
-        }
-    return {
-        field.name: _value_to_text(getattr(form, field.name))
-        for field in fields(form)
-    }
+    return editable_field_values(form)
 
 
 def update_form_values(form: Any, values: dict[str, str]) -> Any:
@@ -265,9 +297,24 @@ def update_form_values(form: Any, values: dict[str, str]) -> Any:
             continue
         updates[key] = _convert_value(key, raw_value, getattr(form, key))
     try:
-        return replace(form, **updates)
+        updated = replace(form, **updates)
     except TypeError as exc:
         raise ValueError(str(exc)) from exc
+    errors: list[str] = []
+    if isinstance(updated, ManualTransferFormData):
+        errors = validate_manual_transfer(updated)
+    elif isinstance(updated, ManualInjuryFormData):
+        errors = validate_manual_injury(updated)
+    elif isinstance(updated, ManualMilestoneFormData):
+        if updated.target == "player" and not updated.player_id:
+            errors.append(tr("Please select a player."))
+        if updated.target == "team" and not (updated.team or "").strip():
+            errors.append(tr("Please select a team."))
+        if not updated.milestone_key:
+            errors.append(tr("Please select a milestone."))
+    if errors:
+        raise ValueError(" ".join(errors))
+    return updated
 
 
 def _value_to_text(value: Any) -> str:
@@ -280,13 +327,14 @@ def _value_to_text(value: Any) -> str:
 
 def _convert_value(key: str, raw_value: str, current: Any) -> Any:
     text = raw_value.strip()
+    label = display_field(key)
     if isinstance(current, date) or key.endswith("date") or key == "achieved_date":
         if not text:
-            raise ValueError(f"{key}: date is required.")
+            raise ValueError(tr("{field}: enter a date.").format(field=label))
         try:
             return date.fromisoformat(text)
         except ValueError as exc:
-            raise ValueError(f"{key}: use YYYY-MM-DD.") from exc
+            raise ValueError(tr("{field}: use YYYY-MM-DD format.").format(field=label)) from exc
     if current is None:
         if not text:
             return None
@@ -297,11 +345,11 @@ def _convert_value(key: str, raw_value: str, current: Any) -> Any:
         return text
     if isinstance(current, int) and not isinstance(current, bool):
         if not text:
-            raise ValueError(f"{key}: integer is required.")
+            raise ValueError(tr("{field}: this field is required.").format(field=label))
         return _parse_int(key, text)
     if isinstance(current, float):
         if not text:
-            raise ValueError(f"{key}: number is required.")
+            raise ValueError(tr("{field}: this field is required.").format(field=label))
         return _parse_float(key, text)
     return text
 
@@ -310,14 +358,14 @@ def _parse_int(key: str, text: str) -> int:
     try:
         return int(text)
     except ValueError as exc:
-        raise ValueError(f"{key}: integer is required.") from exc
+        raise ValueError(tr("{field}: enter a whole number.").format(field=display_field(key))) from exc
 
 
 def _parse_float(key: str, text: str) -> float:
     try:
         return float(text)
     except ValueError as exc:
-        raise ValueError(f"{key}: number is required.") from exc
+        raise ValueError(tr("{field}: enter a number.").format(field=display_field(key))) from exc
 
 
 def _flatten_record_ids(result: Any) -> list[int]:
@@ -336,4 +384,40 @@ def _flatten_record_ids(result: Any) -> list[int]:
         for value in result:
             ids.extend(_flatten_record_ids(value))
         return ids
+    return []
+
+
+def _message_result_map(result: Any) -> dict[str, Any]:
+    if result is None:
+        return {}
+    if isinstance(result, dict):
+        if "source_id" in result:
+            return {str(result["source_id"]): result}
+        for key in ("results", "message_results", "items"):
+            if key in result:
+                return _message_result_map(result[key])
+        return {}
+    if isinstance(result, (list, tuple, set)):
+        mapped: dict[str, Any] = {}
+        for value in result:
+            mapped.update(_message_result_map(value))
+        return mapped
+    source_id = getattr(result, "source_id", None)
+    if source_id is not None:
+        return {str(source_id): result}
+    return {}
+
+
+def _result_ids(result: Any, key: str) -> list[int]:
+    if isinstance(result, dict):
+        return _flatten_record_ids(result.get(key, []))
+    return _flatten_record_ids(getattr(result, key, []))
+
+
+def _result_errors(result: Any) -> list[str]:
+    errors = result.get("errors", []) if isinstance(result, dict) else getattr(result, "errors", [])
+    if isinstance(errors, str):
+        return [errors] if errors else []
+    if isinstance(errors, (list, tuple, set)):
+        return [str(error) for error in errors if str(error)]
     return []
