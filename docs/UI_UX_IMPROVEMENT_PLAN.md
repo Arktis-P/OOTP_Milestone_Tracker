@@ -1,55 +1,77 @@
 # UI/UX 개선 구현 계획
 
-> **현재 최상위 지시서:** [`UI_UX_LAST_MILE_ORCHESTRATOR_DIRECTIVE.md`](UI_UX_LAST_MILE_ORCHESTRATOR_DIRECTIVE.md)  
-> 선행 최종화 지시서: [`UI_UX_FINALIZATION_ORCHESTRATOR_DIRECTIVE.md`](UI_UX_FINALIZATION_ORCHESTRATOR_DIRECTIVE.md)  
-> 최초 오케스트레이션 지시서: [`UI_UX_ORCHESTRATOR_DIRECTIVE.md`](UI_UX_ORCHESTRATOR_DIRECTIVE.md)  
-> 감사 기준: [`OOTP_Milestone_Tracker_UI_UX_Audit.md`](OOTP_Milestone_Tracker_UI_UX_Audit.md)
+> **현재 최상위 지시서:** [`UI_UX_FINAL_ACCEPTANCE_FIX_DIRECTIVE.md`](UI_UX_FINAL_ACCEPTANCE_FIX_DIRECTIVE.md)  
+> 선행 잔여 작업 지시서: [`UI_UX_LAST_MILE_ORCHESTRATOR_DIRECTIVE.md`](UI_UX_LAST_MILE_ORCHESTRATOR_DIRECTIVE.md)  
+> 최초 감사 기준: [`OOTP_Milestone_Tracker_UI_UX_Audit.md`](OOTP_Milestone_Tracker_UI_UX_Audit.md)
 
-## 현재 상태
+## 현재 판정
 
-현재 브랜치는 UI 구조 개편, 가져오기 상태 모델, 메시지 기존 반영 감지, 재분석, 동적 현지화, 출처 마이그레이션과 CI 파일까지 구현된 상태다.
+W1~W8 구현으로 주요 UI 구조와 대부분의 자동화 흐름은 완성됐다. 다음 항목은 용인 가능한 수준으로 구현됐다.
 
-다만 최신 검수에서 다음 핵심 결함이 확인됐다.
+- 가져오기·처리 메시지 상태의 기본 영속성
+- 박스스코어 구조화 결과와 네 종료 상태
+- 날짜 누락 메시지 재분석
+- 기본 메시지 검토·출처·결과 라우팅
+- typed guided editor의 공통 기반
 
-1. 가져오기 상태와 처리 메시지 상태의 commit 경계가 명확하지 않아 앱 재실행 후 영속성이 보장되지 않을 수 있음
-2. 박스스코어 완료·부분 성공·실패·취소 상태가 실제 worker 결과와 모두 연결되지 않음
-3. `message_date_required` 메시지가 `날짜 필요`가 아니라 `제외`로 분류돼 복구할 수 없음
-4. 시즌 최종 판정 행동이 실제 실행 기능으로 연결되지 않음
-5. 사용자 제외·미처리 수·신규/변경 메시지 계산과 뉴스 작업 완료 판정이 불완전함
-6. 결과·오류 버튼이 작업 유형별 목적지로 완전히 분리되지 않음
-7. 메시지 수정과 수동 입력의 공통 폼이 번역된 2열 문자열 표 수준에 머물러 있음
-8. GitHub Actions 실제 성공 실행과 Windows 125% 실검수가 남아 있음
+그러나 최신 인수 검수에서 데이터 정확성에 영향을 줄 수 있는 결함이 남아 있어 현재 브랜치를 최종 완료로 판정하지 않는다.
 
-따라서 현재 상태를 `UI/UX 전면 개선 완료`로 판정하지 않는다.
+1. 시즌 최종 판정의 분석 시즌과 저장 시즌이 달라질 수 있음
+2. 시즌 후보의 실제 검토 목록이 없음
+3. 과거 뉴스 작업 완료 상태가 현재 신규·변경 파일을 가릴 수 있음
+4. 정책상 자동 제외된 메시지가 처리 상태에 저장되지 않을 수 있음
+5. 메시지 수정 편집기에 실제 선수·팀·마일스톤 문맥이 전달되지 않음
+6. CSV 내보내기에서 명시적 출처가 수동/자동으로 축약됨
+7. 최종 제품 SHA의 CI 성공과 실제 Windows 125% 증거가 확정되지 않음
 
 ## 이후 작업 기준
 
-오케스트레이터는 더 이상 이 문서를 기반으로 구현 범위를 재설계하지 않는다. 다음 최상위 문서의 W1~W8을 하위 작업자에게 그대로 분배한다.
+오케스트레이터는 범위를 다시 설계하지 않고 다음 문서의 A1~A5를 그대로 분배한다.
 
-- `docs/UI_UX_LAST_MILE_ORCHESTRATOR_DIRECTIVE.md`
+- `docs/UI_UX_FINAL_ACCEPTANCE_FIX_DIRECTIVE.md`
 
-해당 문서에는 다음이 포함돼 있다.
+### A1 — 시즌 최종 판정
 
-- 작업별 문제와 원인
-- 구체적인 구현 방법
-- 수정 대상 파일과 함수
-- 작업 선행 관계
-- 파일 소유권 원칙
-- 필수 단위·통합 테스트
-- 실제 사용자 검수 시나리오
-- CI와 Windows 125% 검증 절차
-- 최종 완료·완료 금지 조건
+- 명시적 season/request를 사용하는 core 서비스
+- 실제 후보 검토 화면
+- 분석 후 export 변경 감지
+- 분석·검토·저장 시즌 일치
 
-## 오케스트레이터 운영 규칙
+### A2 — 메시지 정합성
 
-- 저장소 전체를 다시 분석하는 장문의 계획을 작성하지 않는다.
-- W1~W8 담당자와 파일 소유권만 확정한 뒤 바로 구현을 시작한다.
-- 같은 파일을 여러 하위 작업자가 동시에 수정하지 않는다.
+- 정책 제외 상태 영속화
+- 신규·변경 파일이 과거 completed보다 우선하도록 대시보드 수정
+- processed 갱신 시 기존 record ID 보존
+- 전체 review model 기반 완료 판정
+
+### A3 — 메시지 수정 문맥
+
+- MessageReviewView에 aggregator/settings/milestones 전달
+- 수동 입력과 동일한 선수·팀·기록 선택 및 검증
+- source provenance 읽기 전용 유지
+
+### A4 — 출처와 결과 복원
+
+- CSV에서 명시적 source 보존
+- 앱 재시작 후 마지막 결과 summary 복원
+- persisted 오류 보고서의 실제 확인 경로
+
+### A5 — 독립 인수 검수
+
+- 전체·집중 테스트
+- 정확한 제품 SHA의 GitHub Actions 성공
+- 실제 Windows 125% 검증 또는 미완료 사용자 게이트
+- 구현 보고서와 검증 문서 정합성
+
+## 오케스트레이터 규칙
+
+- 저장소 전체를 다시 분석하는 계획서를 작성하지 않는다.
+- A1~A5 담당자와 파일 소유권만 확정하고 구현한다.
 - `gui/app.py`는 한 담당자 또는 오케스트레이터가 순차 통합한다.
-- 테스트 추가만으로 완료하지 않고 실제 앱 재실행·결과 상태·화면 이동을 확인한다.
-- offscreen 캡처는 Windows 125% 실검수를 대체하지 않는다.
-- GitHub Actions 파일 존재가 아니라 실제 성공 run을 확인한다.
+- 테스트 기대값만 변경해 현재 동작을 정당화하지 않는다.
+- 후보 수만 보여주는 화면을 후보 검토 완료로 간주하지 않는다.
+- CI 파일 존재와 offscreen PNG 생성을 최종 검증으로 간주하지 않는다.
 
 ## 최종 완료 조건
 
-세부 완료 조건은 `UI_UX_LAST_MILE_ORCHESTRATOR_DIRECTIVE.md`의 14절과 15절을 따른다. 해당 조건을 모두 통과하기 전에는 최종 완료로 보고하지 않는다.
+세부 구현 방법, 테스트, 사용자 시나리오와 완료 금지 조건은 `UI_UX_FINAL_ACCEPTANCE_FIX_DIRECTIVE.md`를 따른다. 해당 문서의 11절을 모두 통과하기 전에는 `UI/UX 전면 개선 완료` 또는 `병합 가능`으로 보고하지 않는다.
