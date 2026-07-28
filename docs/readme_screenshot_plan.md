@@ -1,62 +1,51 @@
 # README 스크린샷 촬영 계획
 
-README에 사용할 화면 이미지는 기능을 모두 나열하기보다, 처음 보는 사용자가 앱의 가치와 사용 흐름을 빠르게 이해하도록 구성합니다.
+README에는 아직 실제 이미지 파일을 연결하지 않는다. 아래 계획은 촬영 위치와 필요한 화면 상태를 정리한 것이며, 이미지가 실제로 저장되고 검수되기 전까지 README에 이미지 링크를 추가하지 않는다.
 
-## 권장 구성
+## 저장 위치와 파일명
 
-| 우선순위 | 파일명 | 촬영 화면 | 포함할 상태 | README 삽입 위치 |
+스크린샷을 추가할 때는 다음 폴더를 사용한다.
+
+```text
+docs/images/readme/
+├─ dashboard.png
+├─ achievement-records.png
+├─ player-stats.png
+├─ achievement-predictions.png
+├─ import-existing-records.png
+├─ rating-editor.png
+└─ settings.png
+```
+
+파일명은 소문자와 하이픈을 사용한다. 같은 화면을 여러 크기로 중복 저장하지 않는다.
+
+## 권장 촬영 순서
+
+| 우선순위 | 파일명 | 실제 화면 | 보여줄 상태 | README 삽입 후보 |
 |---:|---|---|---|---|
-| 1 | `docs/images/dashboard.png` | 대시보드 | 최근 마일스톤, 임박 예측, 진행 중 연속 기록이 함께 보이는 상태 | 프로젝트 소개 바로 아래 |
-| 2 | `docs/images/achievements.png` | 달성 기록 | 자동·수동 기록과 유형·중요도 필터가 보이는 상태 | 핵심 기능 아래 |
-| 3 | `docs/images/player-records.png` | 선수 기록 | 선수 선택, 시즌·통산 전환, 최근 이벤트와 다음 마일스톤이 보이는 상태 | 처음 사용하는 순서 아래 |
-| 4 | `docs/images/predictions.png` | 기록 달성 예측 | 현재값, 목표값, 예상 추가치, 계산 근거가 보이는 상태 | 마일스톤 관리 아래 |
-| 5 | `docs/images/streak-center.png` | 연속 기록 센터 | 진행 중 기록과 최근 종료 기록이 함께 보이는 상태 | 마일스톤 관리 아래 |
-| 6 | `docs/images/import-history.png` | 기존 기록 가져오기 | 파일 경로, import 모드, 미리보기 또는 완료 결과 | 설치 및 실행 아래 |
-| 7 | `docs/images/settings.png` | 설정 | OOTP 경로, 시즌, 추적 팀 설정이 보이는 상태 | 처음 사용하는 순서 2번 근처 |
+| 1 | `dashboard.png` | 대시보드 | **Getting Started**가 완료됐거나 거의 완료된 상태, 최근 마일스톤, 임박 예측, 진행 중 연속 기록 | 프로젝트 소개 아래 |
+| 2 | `achievement-records.png` | 달성 기록 | 자동 기록과 수동 기록이 함께 있고, 유형·등급·출처 필터와 **Add Record**, **Export**가 보이는 상태 | 화면별 기능 인벤토리의 달성 기록 아래 |
+| 3 | `player-stats.png` | 선수 기록 | 선수 목록, 시즌·통산·포스트시즌 전환, Batting/Pitching/Milestones 탭, 선수 요약 | 처음 사용하는 순서 또는 선수 기록 설명 아래 |
+| 4 | `achievement-predictions.png` | 기록 달성 예측 | 선수·등급 필터, **Near Only**, 진행률과 이번 시즌 근거가 보이는 상태 | 기록 달성 예측 설명 아래 |
+| 5 | `import-existing-records.png` | 기존 기록 가져오기 | 두 stats 파일 경로, 세 import 모드, **Load Database** 또는 비교 결과 | OOTP에서 준비할 파일과 경로 아래 |
+| 6 | `rating-editor.png` | 레이팅 편집 | MLB/KBO 선택, 포지션·나이 필터, 로스터 목록, **Bulk Edit...**, **Save Backup**, **Save** | 레이팅 편집 설명 아래 |
+| 7 | `settings.png` | 설정 | `saved_games` 경로, 리그, 시즌, 추적 팀, 고급 도구와 DB 상태 | 처음 사용하는 순서 3-4단계 근처 |
 
-## 최소 권장 세트
-
-README가 지나치게 길어지지 않도록 다음 세 장을 우선 사용합니다.
-
-1. `dashboard.png` — 앱 전체 가치 전달
-2. `player-records.png` — 핵심 조회 기능 전달
-3. `predictions.png` — 차별화 기능 전달
+연속 기록은 독립 사이드바 화면이 아니다. 별도 이미지가 꼭 필요하면 `dashboard.png` 안의 진행 중 연속 기록이나 대시보드의 **View Ended Streaks**로 여는 **Streak Center** 대화상자를 촬영하되, README에는 독립 화면처럼 설명하지 않는다.
 
 ## 촬영 기준
 
-- Windows 디스플레이 배율을 가능하면 100%로 맞춥니다.
-- 앱 창 크기와 위치를 모든 이미지에서 동일하게 유지합니다.
-- 실제 사용자 이름, 세이브 경로, 개인 폴더 경로는 노출하지 않습니다.
-- 빈 화면보다 기능을 이해할 수 있는 샘플 데이터가 있는 상태를 사용합니다.
-- 드롭다운이나 팝업은 해당 기능 설명에 꼭 필요할 때만 펼칩니다.
-- 이미지 폭은 1400~1800px 정도를 권장하며 PNG로 저장합니다.
-- 같은 화면의 전체 이미지와 세부 이미지를 중복해서 넣지 않습니다.
+- Windows 디스플레이 배율과 앱 창 크기를 모든 이미지에서 통일한다.
+- 권장 폭은 1400-1800px이며 PNG로 저장한다.
+- 실제 사용자 이름, 로컬 사용자 폴더, 개인 세이브 경로, API Key, 이메일 등 민감 정보는 보이지 않게 한다.
+- 빈 DB나 오류 상태만 보이는 화면은 대표 이미지로 사용하지 않는다.
+- 설명이 필요한 경우에도 팝업이나 드롭다운은 화면의 핵심 조작을 보여줄 때만 펼친다.
+- 화면 텍스트가 README 설명과 일치하는지 촬영 직후 확인한다.
 
-## README 삽입 예시
+## README 삽입 기준
 
-대시보드 대표 이미지는 프로젝트 소개 아래에 배치합니다.
+이미지가 실제로 존재하고 검수된 뒤에만 README에 상대 경로로 삽입한다. alt 문구는 화면 이름만 반복하지 말고, 이미지가 보여주는 기능을 설명한다. 아직 파일이 없을 때는 README 본문에 이미지 문법이나 HTML `img` 태그를 넣지 않는다.
 
-```markdown
-![OOTP Milestone Tracker 대시보드](docs/images/dashboard.png)
-```
+## 자동 촬영 도입 전 확인
 
-기능별 이미지는 두 장을 나란히 배치할 수 있습니다.
-
-```html
-<p align="center">
-  <img src="docs/images/player-records.png" width="49%" alt="선수 기록 화면">
-  <img src="docs/images/predictions.png" width="49%" alt="기록 달성 예측 화면">
-</p>
-```
-
-## 자동 촬영 적용 시 고려사항
-
-현재 앱은 PyQt6 데스크톱 애플리케이션이므로 Playwright 기반 웹 스크린샷 자동화 대상이 아닙니다. 자동화하려면 별도 스크립트에서 다음 절차를 구현해야 합니다.
-
-1. 테스트용 세이브 또는 fixture DB를 준비합니다.
-2. 앱을 일정한 창 크기로 실행합니다.
-3. Qt 테스트 도구나 Windows GUI 자동화 도구로 탭을 전환합니다.
-4. 화면이 안정된 뒤 창 영역만 캡처합니다.
-5. 결과를 `docs/images/`에 저장하고 민감 정보가 없는지 검증합니다.
-
-자동 촬영을 도입하기 전까지는 위 파일명과 촬영 상태를 기준으로 수동 캡처하는 편이 재현성과 품질 관리에 유리합니다.
+이 앱은 PyQt6 데스크톱 애플리케이션이므로 Playwright 기반 웹 스크린샷 대상이 아니다. 자동 촬영을 만들려면 테스트용 세이브 또는 fixture DB, 고정 창 크기, Qt 또는 Windows GUI 자동화, 화면 안정화 대기, 민감 정보 검사 절차가 먼저 필요하다.

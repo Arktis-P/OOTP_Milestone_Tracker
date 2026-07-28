@@ -11,7 +11,7 @@
 | `label` | string | GUI 표시용 이름 |
 | `stat` | string | 비교할 통계 항목 (아래 stat 코드 참조) |
 | `threshold` | number | 달성 기준값 |
-| `scope` | string | `game` / `season` / `career` / `team_game` / `team_season` / `team_manual` (`season_ratio` 비활성) |
+| `scope` | string | `game` / `season` / `career` / `season_ratio` / `team_game` / `team_season` / `team_manual` |
 | `direction` | string | `higher`(기본) 또는 `lower` (ERA, WHIP 등) |
 | `grade` | string | `common` / `uncommon` / `rare` / `epic` / `legendary` (GUI 표시 서식용) |
 | `track_from` | number | (선택) 예측 감시 목록 진입 기준 — **남은 수치**가 이 값 이하일 때 추적 시작. 미지정 시 `int(threshold * 0.15)` (15%, 정수 내림) |
@@ -33,6 +33,7 @@ pitching,season_era_200,시즌 2점대 ERA,season_ratio,season_era,2.99,lower,le
 | `game` | 박스스코어 import 직후 | 해당 경기 `batting_logs` / `pitching_logs` | `(player_id, milestone_key, game_id)` |
 | `season` | import 직후 | 시즌 누계 (박스스코어만, 초기값 제외) | `(player_id, milestone_key, season)` |
 | `career` | import 직후 | `career_*_init` + 박스스코어 UNION | `(player_id, milestone_key)` |
+| `season_ratio` | 사용자가 시즌 종료 후 실행 | OOTP 최종 stats export 스냅샷 | `(player_id, milestone_key, season)` |
 | `team_game` | 박스스코어 import 직후 | 해당 경기 팀 단위 이벤트 (`tracked_teams`만) | `(team, milestone_key, game_id)` |
 | `team_season` | import 직후 | 시즌 팀 승수 누계 | `(team, milestone_key, season)` |
 | `team_manual` | 사용자 수동 입력 | 포스트시즌·우승 등 | `(team, milestone_key, season)` |
@@ -88,10 +89,11 @@ pitching,season_era_200,시즌 2점대 ERA,season_ratio,season_era,2.99,lower,le
 
 연쇄 관계: perfect → no_hitter → sho → cg
 
-## 비율 스탯 (`season_ratio`) — 비활성
+## 비율 스탯 (`season_ratio`) — 시즌 종료 후 수동 판정
 
-타율·ERA 등 `season_ratio` 마일스톤은 커리어 종료 시점을 감지할 수 없어 현재 비활성입니다.
-체커 `ACTIVE_SCOPES`에서 제외되며, 예측 탭(`PREDICTABLE_SCOPES`)에도 포함되지 않습니다.
+타율·출루율·장타율·OPS·ERA 등 `season_ratio` 마일스톤은 박스스코어 import 직후 자동 판정하지 않습니다. 시즌 종료 후 OOTP에서 최신 `player_batting_stats.txt`와 `player_pitching_stats.txt`를 export한 뒤, **달성 기록** 화면의 **Determine Final Season Records** 버튼으로 1회 판정합니다.
+
+실행 시 앱은 export 파일에 현재 시즌 행이 있는지 확인하고, export 값이 이미 DB에 들어온 박스스코어 누적보다 작으면 오래된 export로 판단해 경고합니다. `season_ratio` 항목은 통산 예측 탭(`PREDICTABLE_SCOPES`)에는 포함되지 않습니다.
 
 ## 초기값 (career scope)
 
