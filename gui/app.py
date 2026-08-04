@@ -792,6 +792,7 @@ class MainWindow(QMainWindow):
             self._aggregator.db_path,
             directories,
             tracked_teams=self.settings.tracked_teams,
+            custom_teams=self.settings.custom_mlb_teams,
             season_hint=self.settings.current_season,
             parent=self,
         )

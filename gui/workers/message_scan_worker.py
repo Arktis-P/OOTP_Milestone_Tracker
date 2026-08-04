@@ -43,6 +43,7 @@ from core.milestone.message_automation.processed import (
 )
 from core.milestone.message_automation.recorder import record_parsed_message_result
 from core.stats.aggregator import Aggregator
+from core.stats.team_filter import expand_tracked_teams
 from gui.widgets.message_review_model import (
     STATUS_APPLIED,
     STATUS_DATE_NEEDED,
@@ -159,8 +160,27 @@ def scan_message_file(
             item.notice = "changed_source"
             scan_status = SCAN_CHANGED
         elif rescan_status == "excluded":
-            item.status = STATUS_EXCLUDED
-            scan_status = SCAN_EXCLUDED
+            # A policy exclusion (such as a custom team's abbreviation not
+            # yet being expanded to its display name) must not permanently
+            # hide an unchanged message after the tracking configuration is
+            # corrected.  A reviewer exclusion is an explicit decision and
+            # remains durable.
+            if (
+                processed is not None
+                and processed.exclusion_reason != "excluded_by_reviewer"
+                and not parsed.excluded
+            ):
+                upsert_processed_message(
+                    conn,
+                    fingerprint=fingerprint,
+                    status="candidate",
+                    category=parsed.category,
+                    commit=False,
+                )
+                scan_status = SCAN_NEW
+            else:
+                item.status = STATUS_EXCLUDED
+                scan_status = SCAN_EXCLUDED
         elif item.status == STATUS_EXCLUDED:
             upsert_processed_message(
                 conn,
@@ -206,6 +226,7 @@ class MessageScanWorker(QThread):
         directories: list[Path],
         *,
         tracked_teams: list[str] | None = None,
+        custom_teams: dict[str, str] | None = None,
         season_hint: int | None = None,
         scan_file: ScanFileFn | None = None,
         parent: Any = None,
@@ -213,7 +234,9 @@ class MessageScanWorker(QThread):
         super().__init__(parent)
         self.db_path = Path(db_path)
         self.directories = list(directories)
-        self.tracked_teams = list(tracked_teams or [])
+        self.tracked_teams = expand_tracked_teams(
+            list(tracked_teams or []), custom_teams
+        )
         self.season_hint = season_hint
         self._scan_file = scan_file or scan_message_file
         self._cancel_event = threading.Event()
