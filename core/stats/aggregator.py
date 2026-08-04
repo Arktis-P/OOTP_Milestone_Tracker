@@ -892,27 +892,20 @@ class Aggregator:
                         )
                         continue
                     if stored_mtime is not None:
-                        target_id, target_error = self._find_reimport_target(
-                            fname, game_id, season, data
+                        # Reuse the parsed, stable snapshot for both ordinary
+                        # imports and safe replacements.  _replace_parsed_boxscore
+                        # identifies the original game, keeps manual records, and
+                        # uses a savepoint when the worker owns the outer
+                        # transaction.  It also persists this exact snapshot's
+                        # mtime only after the replacement succeeds.
+                        import_result = self._replace_parsed_boxscore(
+                            file_path,
+                            data,
+                            season,
+                            is_mlb=mlb_only,
+                            mtime=file_mtime,
+                            commit=commit,
                         )
-                        if target_error:
-                            import_result = ImportResult(
-                                game_id=game_id, error=target_error
-                            )
-                        elif target_id is not None:
-                            import_result = ImportResult(
-                                game_id=target_id,
-                                error=tr(
-                                    "A changed imported game requires the safe single-game re-import workflow."
-                                ),
-                            )
-                        else:
-                            # A processed spring/non-MLB placeholder can become a
-                            # genuinely new regular-season game. No prior raw game
-                            # exists, so this remains a normal atomic insert.
-                            import_result = self.import_boxscore(
-                                data, season, is_mlb=mlb_only, commit=commit
-                            )
                     else:
                         import_result = self.import_boxscore(
                             data, season, is_mlb=mlb_only, commit=commit

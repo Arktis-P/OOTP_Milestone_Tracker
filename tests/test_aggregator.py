@@ -502,7 +502,59 @@ def test_processed_placeholder_becoming_regular_is_classified_as_imported(
     assert result.refreshed_game_ids == []
 
 
-def test_batch_rewrite_is_deferred_without_updating_data_or_mtime(
+def test_batch_rewrite_safely_refreshes_latest_game_and_updates_mtime(
+    aggregator: Aggregator, tmp_path: Path
+) -> None:
+    for game_id in (14,):
+        target = tmp_path / f"game_box_{game_id}.html"
+        target.write_bytes(
+            (SAMPLES_BOX / f"game_box_{game_id}.html").read_bytes()
+        )
+    aggregator.import_all_new(tmp_path, season=2026)
+    path = tmp_path / "game_box_14.html"
+    stored_mtime = aggregator.conn.execute(
+        "SELECT mtime FROM processed_boxscores WHERE filename = ?", (path.name,)
+    ).fetchone()[0]
+    changed_mtime = float(stored_mtime) + 2.0
+    os.utime(path, (changed_mtime, changed_mtime))
+
+    result = aggregator.import_all_new(tmp_path, season=2026)
+
+    assert result.errors == []
+    assert result.imported == 0
+    assert result.imported_game_ids == []
+    assert result.refreshed_game_ids == [14]
+    assert aggregator.conn.execute(
+        "SELECT mtime FROM processed_boxscores WHERE filename = ?", (path.name,)
+    ).fetchone()[0] == changed_mtime
+
+
+def test_batch_rewrite_commit_false_can_be_rolled_back(
+    aggregator: Aggregator, tmp_path: Path
+) -> None:
+    for game_id in (14,):
+        target = tmp_path / f"game_box_{game_id}.html"
+        target.write_bytes(
+            (SAMPLES_BOX / f"game_box_{game_id}.html").read_bytes()
+        )
+    aggregator.import_all_new(tmp_path, season=2026)
+    path = tmp_path / "game_box_14.html"
+    stored_mtime = aggregator.conn.execute(
+        "SELECT mtime FROM processed_boxscores WHERE filename = ?", (path.name,)
+    ).fetchone()[0]
+    os.utime(path, (float(stored_mtime) + 2.0, float(stored_mtime) + 2.0))
+    before = aggregator.conn.serialize()
+
+    result = aggregator.import_all_new(tmp_path, season=2026, commit=False)
+
+    assert result.errors == []
+    assert result.refreshed_game_ids == [14]
+    assert aggregator.conn.in_transaction
+    aggregator.conn.rollback()
+    assert aggregator.conn.serialize() == before
+
+
+def test_batch_rewrite_of_earlier_game_is_rejected_without_advancing_mtime(
     aggregator: Aggregator, tmp_path: Path
 ) -> None:
     for game_id in (13, 14):
@@ -515,19 +567,15 @@ def test_batch_rewrite_is_deferred_without_updating_data_or_mtime(
     stored_mtime = aggregator.conn.execute(
         "SELECT mtime FROM processed_boxscores WHERE filename = ?", (path.name,)
     ).fetchone()[0]
-    changed_mtime = float(stored_mtime) + 2.0
-    os.utime(path, (changed_mtime, changed_mtime))
+    os.utime(path, (float(stored_mtime) + 2.0, float(stored_mtime) + 2.0))
     before = aggregator.conn.serialize()
 
     result = aggregator.import_all_new(tmp_path, season=2026)
 
     assert len(result.errors) == 1
-    assert "safe single-game re-import" in str(result.errors[0].error)
+    assert "full-season reprocessing" in str(result.errors[0].error)
     assert result.refreshed_game_ids == []
     assert aggregator.conn.serialize() == before
-    assert aggregator.conn.execute(
-        "SELECT mtime FROM processed_boxscores WHERE filename = ?", (path.name,)
-    ).fetchone()[0] == stored_mtime
 
 
 def test_reimport_recalculates_positions_for_removed_batters(
