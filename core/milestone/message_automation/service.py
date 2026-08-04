@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
 from core.milestone.checker import MilestoneChecker
 
+from .discovery import MessageScanEntry
 from .parser import ParsedMessage, parse_message
 from .processed import (
     MessageApplyResult,
@@ -140,3 +141,95 @@ def import_message_files(
             )
         )
     return results
+
+
+class CancellationToken:
+    """Cooperative cancellation flag for a running selected/batch apply.
+
+    Deliberately not tied to Qt (this package stays GUI-agnostic) -- a caller
+    running this from a worker thread just calls `.cancel()` from wherever it
+    already reacts to a user cancel action.
+    """
+
+    def __init__(self) -> None:
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    @property
+    def is_cancelled(self) -> bool:
+        return self._cancelled
+
+
+@dataclass(frozen=True)
+class BatchApplyOutcome:
+    """Aggregated result of a selected/batch apply run."""
+
+    total_requested: int
+    results: list[MessageImportResult] = field(default_factory=list)
+    cancelled: bool = False
+
+    @property
+    def processed_count(self) -> int:
+        return len(self.results)
+
+    @property
+    def not_attempted_count(self) -> int:
+        return self.total_requested - self.processed_count
+
+    @property
+    def created_count(self) -> int:
+        return sum(result.recorded_count for result in self.results)
+
+    @property
+    def duplicate_count(self) -> int:
+        return sum(len(result.duplicate_record_ids or []) for result in self.results)
+
+    @property
+    def error_count(self) -> int:
+        return sum(1 for result in self.results if result.errors)
+
+    @property
+    def excluded_count(self) -> int:
+        return sum(1 for result in self.results if result.parsed.excluded)
+
+
+def apply_selected_messages(
+    checker: MilestoneChecker,
+    entries: Iterable[MessageScanEntry],
+    *,
+    season_hint: int | None = None,
+    tracked_teams: list[str] | None = None,
+    cancellation: CancellationToken | None = None,
+    on_progress: Callable[[int, int, MessageScanEntry], None] | None = None,
+) -> BatchApplyOutcome:
+    """Apply a caller-selected batch of discovered messages, in order.
+
+    Cancellation is checked before each entry (not mid-entry), so a run that
+    is cancelled after N files leaves exactly those N files' results --
+    already-applied ones stay applied, nothing is rolled back. Reuses
+    `import_message_file` for each entry, so persistence/duplicate-detection
+    behavior is identical to a single manual import.
+    """
+
+    entries = list(entries)
+    results: list[MessageImportResult] = []
+    cancelled = False
+    for index, entry in enumerate(entries, start=1):
+        if cancellation is not None and cancellation.is_cancelled:
+            cancelled = True
+            break
+        result = import_message_file(
+            checker,
+            entry.path,
+            message_date=entry.message_date,
+            season_hint=season_hint,
+            tracked_teams=tracked_teams,
+        )
+        results.append(result)
+        if on_progress is not None:
+            on_progress(index, len(entries), entry)
+    return BatchApplyOutcome(
+        total_requested=len(entries), results=results, cancelled=cancelled
+    )
