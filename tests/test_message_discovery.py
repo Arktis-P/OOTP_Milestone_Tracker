@@ -10,6 +10,7 @@ repository (`core/validation/season_replay.py:load_message_date_map`).
 from __future__ import annotations
 
 import json
+import struct
 from datetime import date
 from pathlib import Path
 
@@ -111,6 +112,67 @@ def test_parse_messages_dat_unsupported_binary_degrades_without_raising(tmp_path
     assert result.format == "unsupported"
     assert result.entries == {}
     assert result.warnings
+
+
+def _ootp27_binary(records: dict[int, date], *, corrupt_slots: set[int] | None = None) -> bytes:
+    record_size = 115
+    table_offset = 58
+    highest = max(records, default=0)
+    raw = bytearray(table_offset + (highest + 1) * record_size)
+    raw[:6] = b"\x00OOTP\x1b"
+    corrupt_slots = corrupt_slots or set()
+    for slot in range(highest + 1):
+        offset = table_offset + slot * record_size
+        struct.pack_into("<I", raw, offset, slot + 5000 if slot in corrupt_slots else slot)
+        if slot in records:
+            value = records[slot]
+            raw[offset + 96] = value.day
+            raw[offset + 97] = value.month
+            struct.pack_into("<H", raw, offset + 98, value.year)
+    return bytes(raw)
+
+
+def test_parse_messages_dat_ootp27_binary_maps_verified_id_and_date(tmp_path: Path) -> None:
+    dat_path = tmp_path / "messages.dat"
+    dat_path.write_bytes(
+        _ootp27_binary({1: date(2026, 3, 1), 2: date(2026, 3, 2)})
+    )
+
+    result = discovery.parse_messages_dat(dat_path)
+
+    assert result.format == "ootp27_binary"
+    assert result.entries["message1"].message_id == 1
+    assert result.entries["message1"].message_date == date(2026, 3, 1)
+    assert result.entries["message2"].message_date == date(2026, 3, 2)
+
+
+def test_parse_messages_dat_ootp27_binary_skips_one_corrupt_record(tmp_path: Path) -> None:
+    dat_path = tmp_path / "messages.dat"
+    dat_path.write_bytes(
+        _ootp27_binary(
+            {1: date(2026, 3, 1), 2: date(2026, 3, 2), 3: date(2026, 3, 3)},
+            corrupt_slots={2},
+        )
+    )
+
+    result = discovery.parse_messages_dat(dat_path)
+
+    assert "message1" in result.entries
+    assert "message2" not in result.entries
+    assert result.entries["message3"].message_date == date(2026, 3, 3)
+    assert result.warnings
+
+
+def test_parse_messages_dat_unknown_ootp_binary_version_is_unsupported(tmp_path: Path) -> None:
+    dat_path = tmp_path / "messages.dat"
+    raw = bytearray(_ootp27_binary({1: date(2026, 3, 1)}))
+    raw[5] = 26
+    dat_path.write_bytes(raw)
+
+    result = discovery.parse_messages_dat(dat_path)
+
+    assert result.format == "unsupported"
+    assert result.entries == {}
 
 
 def test_parse_messages_dat_json_skips_bad_entries_without_failing_the_rest(tmp_path: Path) -> None:

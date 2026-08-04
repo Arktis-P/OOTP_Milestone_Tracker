@@ -22,6 +22,7 @@ import csv
 import io
 import json
 import re
+import struct
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import date
@@ -40,6 +41,18 @@ from .processed import (
 MESSAGE_FILENAME_RE = re.compile(r"^message(\d+)\.txt$", re.IGNORECASE)
 
 MESSAGES_DAT_FILENAME = "messages.dat"
+
+# Verified locally against five independent OOTP Baseball 27 saves.  The
+# table begins at byte 58, includes a reserved slot 0, and uses fixed 115-byte
+# records.  Each record stores its numeric message id at +0 and a packed
+# day/month/uint16-year date at +96.  No other field is exposed because its
+# meaning has not been established with equal confidence.
+_OOTP_BINARY_SIGNATURE = b"\x00OOTP"
+_OOTP_BINARY_VERSION = 27
+_OOTP_BINARY_TABLE_OFFSET = 58
+_OOTP_BINARY_RECORD_SIZE = 115
+_OOTP_BINARY_DATE_OFFSET = 96
+_OOTP_BINARY_TRAILER_GUARD = 8
 
 # Discovery-level status contract (distinct from the finer-grained
 # `processed_messages.status` values in `processed.py`).
@@ -98,7 +111,7 @@ class MessagesDatParseResult:
     """Result of attempting to read a ``messages.dat`` metadata sidecar."""
 
     path: Path | None
-    format: str  # "json" | "csv" | "missing" | "unsupported"
+    format: str  # "ootp27_binary" | "json" | "csv" | "missing" | "unsupported"
     entries: dict[str, MessageMetadataEntry] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
 
@@ -113,11 +126,10 @@ class MessagesDatParseResult:
 def parse_messages_dat(path: str | Path | None) -> MessagesDatParseResult:
     """Defensively parse a ``messages.dat`` metadata sidecar.
 
-    Only JSON objects and header CSV are understood, detected by content, not
-    by the ``.dat`` extension (a real OOTP save has no extension signal). Any
-    other content -- including an actual binary layout, if one exists --
-    degrades to ``format="unsupported"`` with a warning rather than raising,
-    so a missing/garbled metadata file never stops message discovery.
+    OOTP 27's verified fixed-record binary table plus JSON objects and header
+    CSV date maps are understood, detected by content rather than extension.
+    Unknown versions/layouts degrade to ``format="unsupported"`` with a
+    warning, so a missing or garbled metadata file never stops discovery.
     """
 
     if path is None:
@@ -133,6 +145,16 @@ def parse_messages_dat(path: str | Path | None) -> MessagesDatParseResult:
             path=dat_path,
             format="unsupported",
             warnings=[f"could not read {dat_path.name}: {exc}"],
+        )
+
+    binary_result = _parse_ootp_binary_metadata(raw_bytes)
+    if binary_result is not None:
+        entries, warnings = binary_result
+        return MessagesDatParseResult(
+            path=dat_path,
+            format="ootp27_binary",
+            entries=entries,
+            warnings=warnings,
         )
 
     try:
@@ -165,6 +187,70 @@ def parse_messages_dat(path: str | Path | None) -> MessagesDatParseResult:
             "date-dependent categories will need a manually supplied date"
         ],
     )
+
+
+def _parse_ootp_binary_metadata(
+    raw: bytes,
+) -> tuple[dict[str, MessageMetadataEntry], list[str]] | None:
+    """Parse the verified OOTP 27 fixed-record message table.
+
+    A short invalid run is tolerated so one damaged record does not hide later
+    messages.  Eight consecutive non-record slots marks the auxiliary trailer;
+    accepting a row still requires both the expected slot id and a valid date.
+    """
+
+    minimum = _OOTP_BINARY_TABLE_OFFSET + _OOTP_BINARY_RECORD_SIZE
+    if len(raw) < minimum or not raw.startswith(_OOTP_BINARY_SIGNATURE):
+        return None
+    version = raw[len(_OOTP_BINARY_SIGNATURE)]
+    if version != _OOTP_BINARY_VERSION:
+        return None
+
+    entries: dict[str, MessageMetadataEntry] = {}
+    warnings: list[str] = []
+    invalid_run = 0
+    pending_invalid: list[str] = []
+    slot_count = (len(raw) - _OOTP_BINARY_TABLE_OFFSET) // _OOTP_BINARY_RECORD_SIZE
+    for slot in range(1, slot_count):  # slot 0 is a reserved control record
+        offset = _OOTP_BINARY_TABLE_OFFSET + slot * _OOTP_BINARY_RECORD_SIZE
+        message_id = struct.unpack_from("<I", raw, offset)[0]
+        day = raw[offset + _OOTP_BINARY_DATE_OFFSET]
+        month = raw[offset + _OOTP_BINARY_DATE_OFFSET + 1]
+        year = struct.unpack_from(
+            "<H", raw, offset + _OOTP_BINARY_DATE_OFFSET + 2
+        )[0]
+        try:
+            message_date = date(year, month, day)
+        except ValueError:
+            message_date = None
+
+        if message_id == slot and message_date is not None:
+            if pending_invalid:
+                warnings.extend(pending_invalid)
+                pending_invalid.clear()
+            invalid_run = 0
+            key = f"message{message_id}"
+            entries[key] = MessageMetadataEntry(
+                key=key,
+                message_id=message_id,
+                message_date=message_date,
+                raw={"format": "ootp27_binary", "record_offset": offset},
+            )
+            continue
+
+        invalid_run += 1
+        if len(pending_invalid) < 3:
+            pending_invalid.append(
+                f"unresolved OOTP message record at slot {slot}: "
+                f"id={message_id}, date={year:04d}-{month:02d}-{day:02d}"
+            )
+        if invalid_run >= _OOTP_BINARY_TRAILER_GUARD:
+            pending_invalid.clear()
+            break
+
+    if not entries:
+        warnings.append("OOTP 27 messages.dat contained no verified message records")
+    return entries, warnings
 
 
 def _parse_json_metadata(

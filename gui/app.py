@@ -748,6 +748,10 @@ class MainWindow(QMainWindow):
         self.data_refreshed.emit("milestone")
 
     def _message_files(self) -> list[Path]:
+        from core.milestone.message_automation.discovery import (
+            discover_message_txt_files,
+        )
+
         if not self.settings.active_save_path:
             return []
         save_root = Path(self.settings.active_save_path)
@@ -759,7 +763,7 @@ class MainWindow(QMainWindow):
         files: list[Path] = []
         for directory in candidates:
             if directory.is_dir():
-                files.extend(sorted(directory.glob("message*.txt")))
+                files.extend(discover_message_txt_files(directory))
         return files
 
     def _open_message_review_from_save(self) -> None:
