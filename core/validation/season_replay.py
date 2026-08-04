@@ -21,6 +21,7 @@ from core.db.reset import reset_save_database, summarize_save_database
 from core.milestone.checker import MilestoneChecker
 from core.milestone.definitions import load_milestones
 from core.milestone.message_automation import import_message_file, parse_message
+from core.milestone.message_automation.discovery import parse_messages_dat
 from core.parser.boxscore_html import GAME_BOX_GLOB, summarize_boxscore_file
 from core.stats.aggregator import Aggregator
 from core.stats.models import BoxscoreFileSnapshot
@@ -292,6 +293,7 @@ def _scan_boxscore_sources(config: ReplayConfig) -> dict[str, Any]:
 
 def _import_messages(checker: MilestoneChecker, config: ReplayConfig) -> dict[str, Any]:
     paths = _message_files(config.messages_dir)
+    message_dates, messages_dat_report = _resolved_message_dates(config)
     categories: Counter[str] = Counter()
     exclusions: Counter[str] = Counter()
     missing_dates: list[str] = []
@@ -302,7 +304,7 @@ def _import_messages(checker: MilestoneChecker, config: ReplayConfig) -> dict[st
     excluded_or_not_recorded = 0
 
     for path in paths:
-        message_date = config.message_dates.get(path.name) or config.message_dates.get(path.stem)
+        message_date = message_dates.get(path.name) or message_dates.get(path.stem)
         if message_date is not None and message_date.year != config.season:
             skipped_outside_season.append(path.name)
             continue
@@ -363,12 +365,8 @@ def _import_messages(checker: MilestoneChecker, config: ReplayConfig) -> dict[st
         "exclusion_reasons": dict(sorted(exclusions.items())),
         "missing_date_count": len(missing_dates),
         "missing_date_sources": missing_dates,
-        "date_map_entries": len(config.message_dates),
-        "messages_dat": {
-            "supported": False,
-            "path": str(config.save_path / "messages.dat"),
-            "reason": "binary messages.dat parsing is not implemented; provide --message-dates JSON/CSV",
-        },
+        "date_map_entries": len(message_dates),
+        "messages_dat": messages_dat_report,
     }
 
 
@@ -384,8 +382,9 @@ def _dry_run_report(config: ReplayConfig, target_db: Path, live_db: Path) -> dic
     parsed_recordable = 0
     parsed_not_recorded = 0
     message_paths = _message_files(config.messages_dir)
+    message_dates, messages_dat_report = _resolved_message_dates(config)
     for path in message_paths:
-        message_date = config.message_dates.get(path.name) or config.message_dates.get(path.stem)
+        message_date = message_dates.get(path.name) or message_dates.get(path.stem)
         if message_date is not None and message_date.year != config.season:
             skipped_outside_season.append(path.name)
             continue
@@ -452,17 +451,36 @@ def _dry_run_report(config: ReplayConfig, target_db: Path, live_db: Path) -> dic
         "exclusion_reasons": dict(sorted(exclusions.items())),
         "missing_date_count": len(missing_dates),
         "missing_date_sources": missing_dates,
-        "date_map_entries": len(config.message_dates),
+        "date_map_entries": len(message_dates),
         "dry_run": True,
-        "messages_dat": {
-            "supported": False,
-            "path": str(config.save_path / "messages.dat"),
-            "reason": "binary messages.dat parsing is not implemented; provide --message-dates JSON/CSV",
-        },
+        "messages_dat": messages_dat_report,
     }
     report["db_summary"] = _db_summary(target_db)
     report["report_path"] = str(target_db.with_name(REPORT_NAME))
     return report
+
+
+def _resolved_message_dates(
+    config: ReplayConfig,
+) -> tuple[dict[str, date], dict[str, Any]]:
+    """Load save metadata dates, then apply explicit replay overrides."""
+
+    path = config.save_path / "messages.dat"
+    parsed = parse_messages_dat(path)
+    dates: dict[str, date] = {}
+    for entry in parsed.entries.values():
+        if entry.message_date is None:
+            continue
+        dates[entry.key] = entry.message_date
+        dates[f"{entry.key}.txt"] = entry.message_date
+    dates.update(dict(config.message_dates))
+    return dates, {
+        "supported": parsed.format in {"ootp27_binary", "json", "csv"},
+        "path": str(path),
+        "format": parsed.format,
+        "entries": len(parsed.entries),
+        "warnings": list(parsed.warnings),
+    }
 
 
 def _base_report(config: ReplayConfig, target_db: Path, live_db: Path) -> dict[str, Any]:

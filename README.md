@@ -38,12 +38,15 @@ Out of the Park Baseball(OOTP) 시뮬레이션의 선수·팀 기록을 추적�
 | 소스                                                       | 용도                               |
 | -------------------------------------------------------- | -------------------------------- |
 | `news/html/box_scores/*.html`                            | 경기별 기록, 실시간 마일스톤, 현재 시즌 누적       |
+| `news/html/messages/messageN.txt` + `messages.dat`       | OOTP 뉴스 기반 수상·이적·부상·포스트시즌 자동 기록 |
 | `player_batting_stats.txt` / `player_pitching_stats.txt` | 통산·과거 시즌 **초기값** (최초 1회 + 시즌 갱신) |
 | `mlb_rosters` / `kbo_rosters`                            | **레이팅 편집** 전용 (통계·마일스톤과 무관)      |
 
 
 - **기존 기록 가져오기** 탭: first_time / refresh / mid_season 모드
 - 초기 기록 미리보기와 저장은 백그라운드에서 실행되며, 작업 중 설정 전환·앱 종료를 차단해 DB 연결을 보호
+- 뉴스 메시지 스캔은 백그라운드에서 실행되며, `messages.dat`에서 날짜를 복구할 수 있으면 날짜 의존 항목도 바로 후보로 표시
+- 메시지 저장은 승인된 메시지별로 원자적으로 적용되며, 처리 상태와 원본 fingerprint를 저장해 재스캔 시 신규·변경·이미 반영·제외·오류를 구분
 - MLB 전용 import 옵션 (WBC·KBO 등 제외)
 - 세이브(리그)마다 **별도 SQLite DB** — 세이브 전환 시 데이터 분리
 
@@ -62,8 +65,9 @@ Out of the Park Baseball(OOTP) 시뮬레이션의 선수·팀 기록을 추적�
 1. **설정** — OOTP 세이브의 `import_export` 경로 지정, 현재 시즌·추적 팀(커스텀 팀은 약칭·팀명 등록) 설정
 2. **기존 기록 가져오기** — `player_batting_stats.txt`, `player_pitching_stats.txt` import (통산·과거 시즌 baseline)
 3. **박스스코어 가져오기** — 선수 기록·달성 기록 탭에서 HTML import (진행 중 시즌 실시간 반영)
-4. **달성 기록 / 기록 달성 예측** — 자동 감지 확인, 필요 시 수동 입력
-5. 시즌 중·시즌 후 — 기존 기록 refresh, 박스스코어 추가 import 반복
+4. **뉴스 메시지 가져오기** — 가져오기 센터에서 OOTP `messages/`를 스캔하고 후보를 검토·승인해 수상·이적·부상·포스트시즌 기록 반영
+5. **달성 기록 / 기록 달성 예측** — 자동 감지 확인, 필요 시 수동 입력
+6. 시즌 중·시즌 후 — 기존 기록 refresh, 박스스코어·뉴스 메시지 추가 import 반복
 
 > **신생팀·확장팀 팁:** stats export에 아직 팀 기록이 없으면 통계 탭에 선수가 안 보일 수 있습니다. 그동안은 **수동 입력**으로 풀 네임 선수를 등록해 마일스톤을 기록하고, stats·박스스코어가 쌓이면 자동으로 연결됩니다.
 
@@ -163,8 +167,11 @@ samples/
 
 - `docs/releases/` — **릴리즈 노트** (버전별 사용자 안내)
 - `docs/milestone_rules.md` — 마일스톤 scope·판정 규칙
-- `docs/milestone_implementation.md` — 자동/수동 판정·messages 자동화 예정
+- `docs/milestone_implementation.md` — 자동/수동 판정·messages 자동화 구현 상태
 - `docs/message_automation_field_rules.md` — 수상·이적·부상 메시지 자동화 필드 규칙
+- `docs/message_import_workflow.md` — 가져오기 센터의 뉴스 메시지 스캔·검토·저장 사용자 흐름
+- `docs/messages_dat_format.md` — 확인된 OOTP 27 `messages.dat` 날짜 테이블 포맷과 제한
+- `docs/message_automation_implementation_report.md` — 뉴스 메시지 자동화 구현·검증 보고
 - `docs/roster_format.md` — OOTP 로스터 export 포맷
 - `docs/dev_notes.md` — 상세 개발·구현 노트
 - `docs/public_release_followups.md` — 공개 품질 후속 작업·정책 결정

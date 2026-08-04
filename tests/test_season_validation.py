@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import sqlite3
+import struct
 from datetime import date
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from core.parser.boxscore_html import BoxscoreHTMLParser
 from core.stats.aggregator import Aggregator
 from core.validation.season_replay import (
     ReplayConfig,
+    _resolved_message_dates,
     build_config_from_settings,
     load_message_date_map,
     run_season_replay,
@@ -286,6 +288,31 @@ def test_date_map_json_and_csv(tmp_path: Path) -> None:
     csv_path = tmp_path / "dates.csv"
     csv_path.write_text("filename,date\nmessage2.txt,2026-05-02\n", encoding="utf-8")
     assert load_message_date_map(csv_path) == {"message2.txt": date(2026, 5, 2)}
+
+
+def test_replay_uses_ootp27_messages_dat_with_explicit_override(tmp_path: Path) -> None:
+    config = _config(
+        tmp_path,
+        reset=True,
+        message_dates={"message2": date(2026, 6, 3)},
+    )
+    raw = bytearray(58 + 3 * 115)
+    raw[:6] = b"\x00OOTP\x1b"
+    for slot, value in ((1, date(2026, 5, 1)), (2, date(2026, 5, 2))):
+        offset = 58 + slot * 115
+        struct.pack_into("<I", raw, offset, slot)
+        raw[offset + 96] = value.day
+        raw[offset + 97] = value.month
+        struct.pack_into("<H", raw, offset + 98, value.year)
+    (config.save_path / "messages.dat").write_bytes(raw)
+
+    dates, report = _resolved_message_dates(config)
+
+    assert dates["message1"] == date(2026, 5, 1)
+    assert dates["message1.txt"] == date(2026, 5, 1)
+    assert dates["message2"] == date(2026, 6, 3)
+    assert report["supported"] is True
+    assert report["format"] == "ootp27_binary"
 
 
 def test_messages_outside_requested_season_are_reported_and_not_recorded(tmp_path: Path) -> None:

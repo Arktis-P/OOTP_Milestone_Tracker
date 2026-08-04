@@ -1,15 +1,11 @@
 """Discover ``messageN.txt`` inbox files and correlate ``messages.dat`` metadata.
 
-This module is intentionally defensive: OOTP's binary ``messages.dat`` layout
-is not documented anywhere in this repository and no verified binary sample
-exists (see ``core/validation/season_replay.py``, which already ships a
-"binary messages.dat parsing is not implemented" fallback). Rather than guess
-at an unproven binary format, this module only understands metadata sidecars
-that are structurally self-describing -- JSON objects or CSV rows -- and
-sniffs their content instead of trusting the ``.dat`` extension, since a real
-``messages.dat`` has no extension hint of its own. Anything else degrades to
-``format="unsupported"`` with a warning instead of raising, and file
-discovery/classification continues using per-file fingerprints alone.
+The OOTP 27 binary layout used here was verified against five independent
+local saves and is limited to fields whose meaning was consistent in all of
+them: numeric message id and exact date. JSON/CSV date-map sidecars remain
+supported for replay tooling. Unknown versions or layouts degrade to
+``format="unsupported"`` with a warning instead of raising, and discovery
+continues using per-file fingerprints alone.
 
 Filename discovery deliberately uses a strict ``message<digits>.txt`` regex
 (case-insensitive) rather than a loose glob, so files like ``messages.txt`` or

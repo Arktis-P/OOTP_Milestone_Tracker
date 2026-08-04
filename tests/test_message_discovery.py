@@ -1,10 +1,8 @@
 """Tests for `core.milestone.message_automation.discovery`.
 
-Covers messageN.txt filename discovery, defensive `messages.dat` metadata
-parsing/sniffing, orphan detection, and rescan-status classification/filtering.
-No binary `messages.dat` layout is assumed or invented -- only JSON/CSV
-sidecars are exercised, matching the only formats evidenced anywhere in this
-repository (`core/validation/season_replay.py:load_message_date_map`).
+Covers messageN.txt filename discovery, verified OOTP 27 binary and defensive
+JSON/CSV `messages.dat` parsing, orphan detection, and rescan-status
+classification/filtering.
 """
 
 from __future__ import annotations
