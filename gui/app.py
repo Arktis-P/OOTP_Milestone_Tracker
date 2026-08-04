@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QProgressDialog,
     QPushButton,
     QRadioButton,
     QStackedWidget,
@@ -60,6 +61,12 @@ from gui.views.setup_view import SetupView
 from gui.views.stats_view import StatsView
 from gui.views.streak_view import StreakView
 from gui.ui_compact import MAIN_WINDOW_SIZE, SETUP_WINDOW_SIZE, compact_widget
+from gui.workers.message_scan_worker import (
+    MessageApplyPayload,
+    MessageApplyWorker,
+    MessageScanPayload,
+    MessageScanWorker,
+)
 
 
 class MainWindow(QMainWindow):
@@ -102,6 +109,10 @@ class MainWindow(QMainWindow):
         self._advanced_tools_view: AdvancedToolsView | None = None
         self._message_review_view: QWidget | None = None
         self._message_fingerprints: dict[str, object] = {}
+        self._message_scan_worker: MessageScanWorker | None = None
+        self._message_scan_progress: QProgressDialog | None = None
+        self._message_apply_worker: MessageApplyWorker | None = None
+        self._message_apply_progress: QProgressDialog | None = None
         self._setup_tab_index: int = SidebarNav.SETUP_PAGE_INDEX
 
         self._sidebar = SidebarNav()
@@ -752,66 +763,99 @@ class MainWindow(QMainWindow):
         return files
 
     def _open_message_review_from_save(self) -> None:
-        from core.milestone.message_automation.parser import parse_message
-        from core.milestone.message_automation.processed import (
-            fingerprint_message_file,
-            get_message_rescan_status,
-            get_processed_message,
-        )
-        from gui.views.message_review_view import MessageReviewView
-        from gui.widgets.message_review_model import (
-            STATUS_APPLIED,
-            STATUS_EXCLUDED,
-            MessageReviewItem,
-        )
+        if self._message_scan_worker is not None and self._message_scan_worker.isRunning():
+            return
 
-        items: list[MessageReviewItem] = []
+        paths = self._message_files()
+        directories = list(dict.fromkeys(path.parent for path in paths))
         self._message_fingerprints = {}
-        for path in self._message_files():
-            raw = ""
-            try:
-                raw = path.read_text(encoding="utf-8", errors="replace")
-                fingerprint = fingerprint_message_file(path)
-                self._message_fingerprints[path.stem] = fingerprint
-                rescan_status = get_message_rescan_status(
-                    self._aggregator.conn, fingerprint
-                )
-                processed = get_processed_message(self._aggregator.conn, path.stem)
-                parsed = parse_message(
-                    raw,
-                    tracked_teams=self.settings.tracked_teams,
-                    season_hint=self.settings.current_season,
-                    source_id=path.stem,
-                )
-                item = MessageReviewItem(parsed, raw_text=raw)
-                if rescan_status == "already_applied" and processed is not None:
-                    item.status = STATUS_APPLIED
-                    item.created_record_ids = list(processed.created_record_ids)
-                    item.duplicate_record_ids = list(processed.duplicate_record_ids)
-                elif rescan_status == "changed_review_needed":
-                    item.notice = "changed_source"
-                elif rescan_status == "excluded":
-                    item.status = STATUS_EXCLUDED
-                items.append(item)
-            except Exception:
-                from core.milestone.message_automation.parser import ParsedMessage
 
-                parsed = ParsedMessage(
-                    category="error",
-                    title=path.stem,
-                    excluded=True,
-                    exclusion_reason="file_read_failed",
-                    forms=[],
-                    source_id=path.stem,
-                    player_names={},
-                )
-                items.append(
-                    MessageReviewItem(
-                        parsed,
-                        raw_text=raw,
-                        error="file_read_failed",
-                    )
-                )
+        progress = QProgressDialog(
+            tr("Scanning news messages..."),
+            tr("Cancel"),
+            0,
+            max(len(paths), 1),
+            self,
+        )
+        progress.setWindowTitle(tr("Scanning Messages"))
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.canceled.connect(self._cancel_message_scan)
+        self._message_scan_progress = progress
+
+        worker = MessageScanWorker(
+            self._aggregator.db_path,
+            directories,
+            tracked_teams=self.settings.tracked_teams,
+            season_hint=self.settings.current_season,
+            parent=self,
+        )
+        worker.progress.connect(self._on_message_scan_progress)
+        worker.completed.connect(self._on_message_scan_completed)
+        worker.cancelled.connect(self._on_message_scan_cancelled)
+        worker.error.connect(self._on_message_scan_error)
+        worker.finished.connect(
+            lambda scan_worker=worker: self._finish_message_scan_worker(scan_worker)
+        )
+        self._message_scan_worker = worker
+        worker.start()
+
+    def _on_message_scan_progress(self, current: int, total: int, filename: str) -> None:
+        progress = self._message_scan_progress
+        if progress is None:
+            return
+        progress.setMaximum(max(total, 1))
+        progress.setValue(current)
+        progress.setLabelText(
+            tr("Scanning news messages... ({current}/{total}) {filename}").format(
+                current=current, total=total, filename=filename
+            )
+        )
+
+    def _cancel_message_scan(self) -> None:
+        worker = self._message_scan_worker
+        if worker is not None and worker.isRunning():
+            worker.cancel()
+
+    def _close_message_scan_progress(self) -> None:
+        progress = self._message_scan_progress
+        if progress is not None:
+            progress.close()
+            self._message_scan_progress = None
+
+    def _finish_message_scan_worker(self, worker: MessageScanWorker) -> None:
+        if self._message_scan_worker is worker:
+            self._message_scan_worker = None
+        worker.deleteLater()
+
+    def _on_message_scan_cancelled(self, message: str) -> None:
+        self._close_message_scan_progress()
+        finish_import_workflow(
+            self._aggregator.conn,
+            WORKFLOW_NEWS_MESSAGES,
+            outcome=OUTCOME_CANCELLED,
+            message=message or tr("Message scan cancelled by user."),
+        )
+        if self._import_center_view is not None:
+            self._import_center_view.set_cancelled_summary(
+                workflow_id=WORKFLOW_NEWS_MESSAGES
+            )
+        self._refresh_import_workflow_views()
+        self._status.showMessage(message, 5000)
+
+    def _on_message_scan_error(self, message: str) -> None:
+        self._close_message_scan_progress()
+        self._fail_workflow_source(WORKFLOW_NEWS_MESSAGES, message)
+
+    def _on_message_scan_completed(self, payload: MessageScanPayload) -> None:
+        self._close_message_scan_progress()
+
+        from gui.views.message_review_view import MessageReviewView
+        from gui.widgets.message_review_model import STATUS_APPLIED, STATUS_EXCLUDED
+
+        items = payload.items
+        self._message_fingerprints = dict(payload.fingerprints)
 
         state = start_import_workflow(
             self._aggregator.conn,
@@ -897,40 +941,102 @@ class MainWindow(QMainWindow):
             source_id=str(getattr(item, "source_id", "")),
         )
 
-    def _save_approved_messages(self, parsed_messages: list[object]) -> list[object]:
-        from core.milestone.checker import MilestoneChecker
-        from core.milestone.message_automation.recorder import (
-            record_parsed_message_result,
-        )
-
-        checker = MilestoneChecker(
-            self._aggregator,
-            self._milestones,
-            season_games_total=self.settings.season_games_total,
-            ratio_qualifiers=self.settings.get_ratio_qualifiers(),
-            tracked_teams=self.settings.tracked_teams,
-            custom_teams=self.settings.custom_mlb_teams,
-        )
+    def _save_approved_messages(self, parsed_messages: list[object]) -> None:
+        if self._message_apply_worker is not None and self._message_apply_worker.isRunning():
+            return
         advance_import_workflow(
             self._aggregator.conn,
             WORKFLOW_NEWS_MESSAGES,
             current_step=STEP_SAVE,
             message=tr("Saving approved message records."),
         )
-        results: list[object] = []
-        for parsed in parsed_messages:
-            fingerprint = self._message_fingerprints.get(
-                str(getattr(parsed, "source_id", ""))
+        progress = QProgressDialog(
+            tr("Saving approved message records."), tr("Cancel"), 0,
+            max(len(parsed_messages), 1), self,
+        )
+        progress.setWindowTitle(tr("Saving Messages"))
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.canceled.connect(self._cancel_message_apply)
+        self._message_apply_progress = progress
+        worker = MessageApplyWorker(
+            self._aggregator.db_path,
+            self._milestones,
+            self.settings,
+            list(parsed_messages),
+            self._message_fingerprints,
+            parent=self,
+        )
+        worker.progress.connect(self._on_message_apply_progress)
+        worker.completed.connect(self._on_message_apply_completed)
+        worker.cancelled.connect(self._on_message_apply_cancelled)
+        worker.error.connect(self._on_message_apply_error)
+        worker.finished.connect(
+            lambda apply_worker=worker: self._finish_message_apply_worker(apply_worker)
+        )
+        self._message_apply_worker = worker
+        worker.start()
+
+    def _on_message_apply_progress(self, current: int, total: int, label: str) -> None:
+        progress = self._message_apply_progress
+        if progress is None:
+            return
+        progress.setMaximum(max(total, 1))
+        progress.setValue(current)
+        progress.setLabelText(
+            tr("Saving approved message records. ({current}/{total}) {label}").format(
+                current=current, total=total, label=label
             )
-            results.append(
-                record_parsed_message_result(
-                    checker,
-                    parsed,
-                    fingerprint=fingerprint,
-                )
-            )
+        )
+
+    def _cancel_message_apply(self) -> None:
+        worker = self._message_apply_worker
+        if worker is not None and worker.isRunning():
+            worker.cancel()
+
+    def _close_message_apply_progress(self) -> None:
+        if self._message_apply_progress is not None:
+            self._message_apply_progress.close()
+            self._message_apply_progress = None
+
+    def _finish_message_apply_worker(self, worker: MessageApplyWorker) -> None:
+        if self._message_apply_worker is worker:
+            self._message_apply_worker = None
+        worker.deleteLater()
+
+    def _on_message_apply_completed(self, payload: MessageApplyPayload) -> None:
+        self._close_message_apply_progress()
+        finish = getattr(self._message_review_view, "finish_save", None)
+        if callable(finish):
+            finish(list(payload.results))
         self.data_refreshed.emit("milestone")
-        return results
+
+    def _on_message_apply_cancelled(self, message: str, payload: MessageApplyPayload) -> None:
+        self._close_message_apply_progress()
+        cancel = getattr(self._message_review_view, "cancel_save", None)
+        if callable(cancel):
+            cancel(list(payload.results))
+        totals = {"processed": len(payload.results), "created": payload.created}
+        finish_import_workflow(
+            self._aggregator.conn,
+            WORKFLOW_NEWS_MESSAGES,
+            outcome=OUTCOME_CANCELLED,
+            totals=totals,
+            message=message,
+        )
+        if self._import_center_view is not None:
+            self._import_center_view.set_cancelled_summary(
+                totals, workflow_id=WORKFLOW_NEWS_MESSAGES
+            )
+        self._refresh_import_workflow_views()
+        self.data_refreshed.emit("milestone")
+
+    def _on_message_apply_error(self, message: str) -> None:
+        self._close_message_apply_progress()
+        fail = getattr(self._message_review_view, "fail_save", None)
+        if callable(fail):
+            fail(message)
+        self._fail_workflow_source(WORKFLOW_NEWS_MESSAGES, message)
 
     def _on_message_review_saved(self, result: object) -> None:
         rows = list(result or []) if isinstance(result, list) else []
@@ -1293,6 +1399,14 @@ class MainWindow(QMainWindow):
             self._stats_view.stop_import_worker()
         if self._milestone_view is not None:
             self._milestone_view.stop_import_worker()
+        worker = self._message_scan_worker
+        if worker is not None and worker.isRunning():
+            worker.cancel()
+            worker.wait(3000)
+        apply_worker = self._message_apply_worker
+        if apply_worker is not None and apply_worker.isRunning():
+            apply_worker.cancel()
+            apply_worker.wait(3000)
         super().closeEvent(event)
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from PyQt6.QtWidgets import QApplication
@@ -85,7 +86,15 @@ def test_app_message_save_returns_per_message_result_and_blocks_rescan(
     )
     window._message_fingerprints = {"message-finalization": fingerprint}
 
-    results = window._save_approved_messages([parsed])
+    results: list[object] = []
+    window._message_review_view = SimpleNamespace(
+        finish_save=lambda rows: results.extend(rows)
+    )
+    window._save_approved_messages([parsed])
+    worker = window._message_apply_worker
+    assert worker is not None
+    assert worker.wait(3000)
+    QApplication.processEvents()
     window._on_message_review_saved(results)
 
     assert len(results) == 1

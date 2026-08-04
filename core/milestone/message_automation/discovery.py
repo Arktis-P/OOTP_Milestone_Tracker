@@ -392,13 +392,18 @@ def discover_messages(
 
 
 def _default_messages_dat_path(directory: Path) -> Path | None:
-    candidate = directory / MESSAGES_DAT_FILENAME
-    if candidate.is_file():
-        return candidate
-    parent_candidate = directory.parent / MESSAGES_DAT_FILENAME
-    if parent_candidate.is_file():
-        return parent_candidate
-    return candidate
+    fallback = directory / MESSAGES_DAT_FILENAME
+    current = directory
+    # Inbox text commonly lives below news/html/messages while messages.dat
+    # may live at the league root. Keep lookup bounded and non-recursive.
+    for _ in range(5):
+        candidate = current / MESSAGES_DAT_FILENAME
+        if candidate.is_file():
+            return candidate
+        if current.parent == current:
+            break
+        current = current.parent
+    return fallback
 
 
 @dataclass(frozen=True)

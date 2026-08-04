@@ -56,10 +56,20 @@ ReanalyzeCallback = Callable[[MessageReviewItem], ParsedMessage]
 
 
 class MessageReviewView(QWidget):
-    """Standalone preview/approval screen for message automation results."""
+    """Standalone preview/approval screen for message automation results.
+
+    ``save_callback`` is treated as fire-and-forget: it is expected to
+    dispatch persistence asynchronously (e.g. a QThread worker in
+    ``gui.app``) and later report back through ``finish_save``/
+    ``cancel_save``/``fail_save`` rather than returning a result directly --
+    this keeps a long-running save off the UI thread without this view
+    knowing anything about threads.
+    """
 
     review_changed = pyqtSignal()
     save_completed = pyqtSignal(object)
+    save_cancelled = pyqtSignal(object)
+    save_failed = pyqtSignal(str)
     reanalysis_requested = pyqtSignal(str)
     exclusions_requested = pyqtSignal(object)
 
@@ -78,6 +88,8 @@ class MessageReviewView(QWidget):
         self._reanalyze_callback = reanalyze_callback
         self._selected_row = -1
         self._visible_model_rows: list[int] = []
+        self._pending_save_items: list[MessageReviewItem] = []
+        self._save_in_progress = False
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -333,6 +345,8 @@ class MessageReviewView(QWidget):
         return changed
 
     def save_approved(self) -> Any:
+        if self._save_in_progress:
+            return None
         approved = self.model.approved_items()
         counts = self.model.summary_counts()
         can_finalize_without_records = not any(
@@ -344,11 +358,64 @@ class MessageReviewView(QWidget):
             return None
         if self._save_callback is None:
             return None
+        self._pending_save_items = approved
+        self._save_in_progress = True
+        self._update_button_state()
         result = self._save_callback([item.parsed for item in approved])
-        self.model.mark_applied(approved, result)
-        self.save_completed.emit(result)
+        # Keep compatibility with synchronous embedders/tests while the app's
+        # production callback returns None and completes through finish_save.
+        if result is not None:
+            rows = list(result) if isinstance(result, list) else [result]
+            self.finish_save(rows)
+            return result
+        return None
+
+    def finish_save(self, results: list[Any]) -> None:
+        """Report a fully completed async save (see class docstring)."""
+
+        self._apply_save_results(results)
+        self._save_in_progress = False
+        self._pending_save_items = []
+        self.save_completed.emit(results)
         self.refresh()
-        return result
+
+    def cancel_save(self, results: list[Any]) -> None:
+        """Report a user-cancelled async save; already-persisted rows in
+        ``results`` are still marked applied, the rest stay approved so the
+        user can resume saving them later."""
+
+        self._apply_save_results(results)
+        self._save_in_progress = False
+        self._pending_save_items = []
+        self.save_cancelled.emit(results)
+        self.refresh()
+
+    def fail_save(self, message: str) -> None:
+        """Report an async save that raised before persisting anything."""
+
+        self._save_in_progress = False
+        self._pending_save_items = []
+        self.save_failed.emit(message)
+        self.refresh()
+
+    def _apply_save_results(self, results: list[Any]) -> None:
+        if not self._pending_save_items:
+            return
+        # Only rows `results` actually reports on were persisted -- e.g. a
+        # cancelled save's tail never ran and must stay `approved` so the
+        # user can resume saving it later, not be marked applied outright.
+        processed_ids = {
+            source_id
+            for result in (results or [])
+            if (source_id := str(getattr(result, "source_id", "")))
+        }
+        applied = (
+            [item for item in self._pending_save_items if item.source_id in processed_ids]
+            if processed_ids
+            else list(self._pending_save_items) if results else []
+        )
+        if applied:
+            self.model.mark_applied(applied, results)
 
     def refresh(self) -> None:
         self._populate_table()
@@ -414,23 +481,29 @@ class MessageReviewView(QWidget):
 
     def _update_button_state(self) -> None:
         selected = [self.model[row] for row in self.selected_rows() if 0 <= row < len(self.model)]
-        self.approve_button.setEnabled(any(item.can_approve() for item in selected))
-        self.exclude_button.setEnabled(any(item.status not in (STATUS_APPLIED, STATUS_ERROR) for item in selected))
-        self.edit_button.setEnabled(len(selected) == 1 and bool(selected[0].parsed.forms))
+        busy = self._save_in_progress
+        self.approve_button.setEnabled(not busy and any(item.can_approve() for item in selected))
+        self.exclude_button.setEnabled(
+            not busy and any(item.status not in (STATUS_APPLIED, STATUS_ERROR) for item in selected)
+        )
+        self.edit_button.setEnabled(not busy and len(selected) == 1 and bool(selected[0].parsed.forms))
         has_reanalyze_callback = self._reanalyze_callback is not None
-        self.reanalyze_button.setEnabled(has_reanalyze_callback and bool(selected))
+        self.reanalyze_button.setEnabled(not busy and has_reanalyze_callback and bool(selected))
         self.reanalyze_button.setToolTip(
             "" if has_reanalyze_callback else tr("Reanalysis is unavailable in this session.")
         )
-        self.assign_date_button.setEnabled(any(item.status == STATUS_DATE_NEEDED for item in selected))
-        self.approve_all_button.setEnabled(any(item.can_approve() for item in self.model.items))
+        self.assign_date_button.setEnabled(
+            not busy and any(item.status == STATUS_DATE_NEEDED for item in selected)
+        )
+        self.approve_all_button.setEnabled(not busy and any(item.can_approve() for item in self.model.items))
         counts = self.model.summary_counts()
         can_finalize_without_records = not any(
             int(counts.get(key, 0) or 0)
             for key in ("candidates", "date_needed", "errors")
         )
         self.save_button.setEnabled(
-            self._save_callback is not None
+            not busy
+            and self._save_callback is not None
             and (bool(self.model.approved_items()) or can_finalize_without_records)
         )
 
