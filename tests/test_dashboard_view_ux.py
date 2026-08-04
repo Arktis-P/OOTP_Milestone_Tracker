@@ -13,6 +13,8 @@ from gui.views.import_center_view import ImportCenterView
 from gui.widgets.import_workflow_status import (
     IMPORT_WORKFLOW_STEPS,
     ImportResultSummary,
+    WorkflowStep,
+    WorkflowStepRow,
     WorkflowStatusPanel,
 )
 
@@ -56,6 +58,35 @@ def dashboard(qapp):
 def test_dashboard_exposes_six_step_workflow_panel(dashboard) -> None:
     assert isinstance(dashboard.workflow_panel, WorkflowStatusPanel)
     assert dashboard.workflow_panel.row_count() == 6
+    assert dashboard.workflow_panel.compact is True
+
+
+def test_dashboard_places_compact_workflow_panel_after_primary_content(dashboard) -> None:
+    layout = dashboard.layout()
+
+    assert layout.itemAt(layout.count() - 1).widget() is dashboard.workflow_panel
+
+
+def test_compact_workflow_row_keeps_details_on_one_line_with_tooltips(qapp) -> None:
+    row = WorkflowStepRow(
+        WorkflowStep(
+            key="news",
+            title="News scan",
+            status="warning",
+            reason="Award messages need review before records are updated.",
+            last_run="Today 19:46",
+            action_label="Review",
+            target_label="Import center",
+        ),
+        compact=True,
+    )
+    try:
+        assert row.compact is True
+        assert row.reason_label.wordWrap() is False
+        assert row.reason_label.toolTip() == row.reason_label.text()
+        assert row.layout().count() == 6
+    finally:
+        row.deleteLater()
 
 
 def test_dashboard_workflow_actions_preserve_navigation_signals(dashboard) -> None:

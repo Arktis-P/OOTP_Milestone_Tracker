@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -88,20 +89,28 @@ def status_style(status: str) -> str:
 
 
 class WorkflowStepRow(QFrame):
-    """Compact row used by workflow panels."""
+    """Workflow step row, with an optional single-line compact presentation."""
 
     action_requested = pyqtSignal(str)
     target_requested = pyqtSignal(str)
 
-    def __init__(self, step: WorkflowStep, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        step: WorkflowStep,
+        parent: QWidget | None = None,
+        *,
+        compact: bool = False,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("workflowStepRow")
         self.step_key = step.key
+        self.compact = compact
 
-        layout = QGridLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setHorizontalSpacing(10)
-        layout.setVerticalSpacing(4)
+        layout = QHBoxLayout(self) if compact else QGridLayout(self)
+        layout.setContentsMargins(10, 6 if compact else 8, 10, 6 if compact else 8)
+        layout.setSpacing(8 if compact else 10)
+        if not compact:
+            layout.setVerticalSpacing(4)
 
         self.title_label = QLabel(step.title)
         self.title_label.setObjectName("workflowStepTitle")
@@ -113,7 +122,7 @@ class WorkflowStepRow(QFrame):
         self.last_run_label.setStyleSheet(hint_style(TEXT_SECONDARY))
         self.reason_label = QLabel(step.reason or tr("No issue reported."))
         self.reason_label.setObjectName("workflowReason")
-        self.reason_label.setWordWrap(True)
+        self.reason_label.setWordWrap(not compact)
         self.reason_label.setStyleSheet(hint_style(TEXT_SECONDARY))
 
         action_text = step.action_label or tr("Start")
@@ -126,14 +135,27 @@ class WorkflowStepRow(QFrame):
         self.target_button.setObjectName("workflowTargetButton")
         self.target_button.clicked.connect(lambda: self.target_requested.emit(step.key))
 
-        layout.addWidget(self.status_badge, 0, 0, 2, 1)
-        layout.addWidget(self.title_label, 0, 1)
-        layout.addWidget(self.last_run_label, 0, 2)
-        layout.addWidget(self.action_button, 0, 3)
-        layout.addWidget(self.target_button, 0, 4)
-        layout.addWidget(self.reason_label, 1, 1, 1, 4)
-        layout.setColumnStretch(1, 2)
-        layout.setColumnStretch(2, 1)
+        if compact:
+            self.status_badge.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            self.title_label.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+            self.reason_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+            self.last_run_label.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+            self.reason_label.setMinimumWidth(80)
+            layout.addWidget(self.status_badge)
+            layout.addWidget(self.title_label)
+            layout.addWidget(self.reason_label, stretch=1)
+            layout.addWidget(self.last_run_label)
+            layout.addWidget(self.action_button)
+            layout.addWidget(self.target_button)
+        else:
+            layout.addWidget(self.status_badge, 0, 0, 2, 1)
+            layout.addWidget(self.title_label, 0, 1)
+            layout.addWidget(self.last_run_label, 0, 2)
+            layout.addWidget(self.action_button, 0, 3)
+            layout.addWidget(self.target_button, 0, 4)
+            layout.addWidget(self.reason_label, 1, 1, 1, 4)
+            layout.setColumnStretch(1, 2)
+            layout.setColumnStretch(2, 1)
 
         self.update_step(step)
 
@@ -146,6 +168,9 @@ class WorkflowStepRow(QFrame):
         self.reason_label.setText(step.reason or tr("No issue reported."))
         self.action_button.setText(step.action_label or tr("Start"))
         self.target_button.setText(step.target_label or tr("Open"))
+        self.title_label.setToolTip(self.title_label.text())
+        self.reason_label.setToolTip(self.reason_label.text())
+        self.last_run_label.setToolTip(self.last_run_label.text())
 
 
 class WorkflowStatusPanel(CardPanel):
@@ -160,21 +185,25 @@ class WorkflowStatusPanel(CardPanel):
         description: str,
         steps: Iterable[WorkflowStep],
         parent: QWidget | None = None,
+        *,
+        compact: bool = False,
     ) -> None:
         super().__init__(title, parent=parent)
         self.setObjectName("workflowStatusPanel")
         self._rows: dict[str, WorkflowStepRow] = {}
+        self.compact = compact
 
         desc = QLabel(description)
         desc.setObjectName("workflowDescription")
-        desc.setWordWrap(True)
+        desc.setWordWrap(not compact)
+        desc.setToolTip(description)
         desc.setStyleSheet(hint_style(TEXT_SECONDARY))
         self.add_widget(desc)
 
         self.rows_container = QWidget()
         self.rows_layout = QVBoxLayout(self.rows_container)
         self.rows_layout.setContentsMargins(0, 0, 0, 0)
-        self.rows_layout.setSpacing(6)
+        self.rows_layout.setSpacing(3 if compact else 6)
         self.add_widget(self.rows_container)
         self.set_steps(list(steps))
 
@@ -186,7 +215,7 @@ class WorkflowStatusPanel(CardPanel):
                 widget.deleteLater()
         self._rows.clear()
         for step in steps:
-            row = WorkflowStepRow(step)
+            row = WorkflowStepRow(step, compact=self.compact)
             row.action_requested.connect(self.action_requested.emit)
             row.target_requested.connect(self.target_requested.emit)
             self.rows_layout.addWidget(row)

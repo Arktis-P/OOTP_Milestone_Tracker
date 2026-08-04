@@ -189,6 +189,7 @@ class DashboardView(QWidget):
             tr("Import Workflow Status"),
             tr("Use this panel to decide the next safe action before records are changed."),
             self._build_workflow_steps(),
+            compact=True,
         )
         self.workflow_panel.action_requested.connect(self._on_workflow_action)
         self.workflow_panel.target_requested.connect(self._on_workflow_target)
@@ -268,10 +269,12 @@ class DashboardView(QWidget):
         layout.addWidget(self.banner)
         layout.addWidget(control_card)
         layout.addWidget(self.readiness_card)
-        layout.addWidget(self.workflow_panel)
         layout.addWidget(self.progress_card)
         layout.addWidget(streak_card, stretch=1)
         layout.addWidget(splitter, stretch=1)
+        # Workflow guidance is useful, but secondary to the dashboard's live
+        # records. Keep it compact and below the primary summaries.
+        layout.addWidget(self.workflow_panel)
 
         self.update_status_summary()
 
