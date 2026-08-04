@@ -345,9 +345,11 @@ def test_reimport_cross_season_uses_the_matching_synthetic_game(
 def test_past_reimport_is_rejected_without_any_database_change(
     aggregator: Aggregator,
 ) -> None:
-    for game_id in (13, 14):
-        path = SAMPLES_BOX / f"game_box_{game_id}.html"
-        aggregator.import_boxscore(BoxscoreHTMLParser(path).parse(), season=2026)
+    target = BoxscoreHTMLParser(SAMPLES_BOX / "game_box_13.html").parse()
+    later = BoxscoreHTMLParser(SAMPLES_BOX / "game_box_14.html").parse()
+    later.meta.date = "2026-03-28"
+    aggregator.import_boxscore(target, season=2026)
+    aggregator.import_boxscore(later, season=2026)
     before = aggregator.conn.serialize()
 
     result = aggregator.reimport_boxscore_file(
@@ -359,29 +361,57 @@ def test_past_reimport_is_rejected_without_any_database_change(
     assert aggregator.conn.serialize() == before
 
 
-def test_same_date_higher_id_reimport_is_also_rejected_without_changes(
+def test_same_date_unrelated_game_does_not_block_reimport(
     aggregator: Aggregator, tmp_path: Path
 ) -> None:
-    for game_id in (13, 14):
-        target = tmp_path / f"game_box_{game_id}.html"
-        target.write_bytes(
-            (SAMPLES_BOX / f"game_box_{game_id}.html").read_bytes()
-        )
+    target = tmp_path / "game_box_13.html"
+    peer = tmp_path / "game_box_14.html"
+    target.write_bytes((SAMPLES_BOX / target.name).read_bytes())
+    peer.write_bytes((SAMPLES_BOX / peer.name).read_bytes())
     aggregator.import_all_new(tmp_path, season=2026)
-    path = tmp_path / "game_box_14.html"
-    stored_mtime = aggregator.conn.execute(
-        "SELECT mtime FROM processed_boxscores WHERE filename = ?", (path.name,)
-    ).fetchone()[0]
+
+    result = aggregator.reimport_boxscore_file(target, season=2026)
+
+    assert result.error is None
+    assert result.replaced is True
+
+
+def test_same_date_shared_team_reimport_is_rejected_without_changes(
+    aggregator: Aggregator,
+) -> None:
+    target = BoxscoreHTMLParser(SAMPLES_BOX / "game_box_13.html").parse()
+    same_team_peer = BoxscoreHTMLParser(SAMPLES_BOX / "game_box_14.html").parse()
+    same_team_peer.meta.away_team = target.meta.away_team
+    aggregator.import_boxscore(target, season=2026)
+    aggregator.import_boxscore(same_team_peer, season=2026)
     before = aggregator.conn.serialize()
 
-    result = aggregator.reimport_boxscore_file(path, season=2026)
+    result = aggregator.reimport_boxscore_file(
+        SAMPLES_BOX / "game_box_13.html", season=2026
+    )
 
     assert result.error is not None
     assert "same-date ambiguous" in result.error
     assert aggregator.conn.serialize() == before
-    assert aggregator.conn.execute(
-        "SELECT mtime FROM processed_boxscores WHERE filename = ?", (path.name,)
-    ).fetchone()[0] == stored_mtime
+
+
+def test_same_date_shared_player_reimport_is_rejected_without_changes(
+    aggregator: Aggregator,
+) -> None:
+    target = BoxscoreHTMLParser(SAMPLES_BOX / "game_box_13.html").parse()
+    same_player_peer = BoxscoreHTMLParser(SAMPLES_BOX / "game_box_14.html").parse()
+    same_player_peer.away_batting[0].player_id = target.away_batting[0].player_id
+    aggregator.import_boxscore(target, season=2026)
+    aggregator.import_boxscore(same_player_peer, season=2026)
+    before = aggregator.conn.serialize()
+
+    result = aggregator.reimport_boxscore_file(
+        SAMPLES_BOX / "game_box_13.html", season=2026
+    )
+
+    assert result.error is not None
+    assert "same-date ambiguous" in result.error
+    assert aggregator.conn.serialize() == before
 
 
 def test_latest_reimport_can_be_rolled_back_after_downstream_failure(
@@ -563,6 +593,11 @@ def test_batch_rewrite_of_earlier_game_is_rejected_without_advancing_mtime(
             (SAMPLES_BOX / f"game_box_{game_id}.html").read_bytes()
         )
     aggregator.import_all_new(tmp_path, season=2026)
+    aggregator.conn.execute(
+        "UPDATE games SET date = ? WHERE game_id = ? AND season = ?",
+        ("2026-03-28", 14, 2026),
+    )
+    aggregator.conn.commit()
     path = tmp_path / "game_box_13.html"
     stored_mtime = aggregator.conn.execute(
         "SELECT mtime FROM processed_boxscores WHERE filename = ?", (path.name,)
