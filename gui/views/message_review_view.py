@@ -29,6 +29,7 @@ from core.i18n import tr
 from core.milestone.message_automation.parser import ParsedMessage
 from gui.widgets.card_panel import CardPanel
 from gui.widgets.message_review_model import (
+    FILTER_CHANGED_REVIEW_NEEDED,
     STATUS_APPLIED,
     STATUS_APPROVED,
     STATUS_CANDIDATE,
@@ -107,9 +108,10 @@ class MessageReviewView(QWidget):
         self.filter_combo.setObjectName("messageReviewFilter")
         self._filter_items = [
             ("all", tr("All")),
-            (STATUS_CANDIDATE, tr("Candidates")),
+            (STATUS_CANDIDATE, tr("New candidates")),
             (STATUS_APPROVED, tr("Approved")),
             (STATUS_DATE_NEEDED, tr("Date needed")),
+            (FILTER_CHANGED_REVIEW_NEEDED, tr("Source changed")),
             (STATUS_EXCLUDED, tr("Excluded")),
             (STATUS_APPLIED, tr("Already applied")),
             (STATUS_ERROR, tr("Errors")),
@@ -382,7 +384,8 @@ class MessageReviewView(QWidget):
         self.summary_label.setText(
             tr(
                 "Total {total} | Candidates {candidates} | Approved {approved} | "
-                "Applied {applied} | Excluded {excluded} | Date needed {date_needed} | Errors {errors}"
+                "Applied {applied} | Excluded {excluded} | Date needed {date_needed} | "
+                "Source changed {changed_review_needed} | Errors {errors}"
             ).format(**counts)
         )
 

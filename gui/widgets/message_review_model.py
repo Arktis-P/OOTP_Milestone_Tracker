@@ -41,6 +41,17 @@ REVIEW_STATUSES = (
     STATUS_ERROR,
 )
 
+# Virtual filter key (not a `MessageReviewItem.status` value): selects rows
+# whose source text changed since they were last scanned/applied, i.e.
+# `MessageReviewItem.notice == NOTICE_CHANGED_SOURCE`.
+FILTER_CHANGED_REVIEW_NEEDED = "changed_review_needed"
+NOTICE_CHANGED_SOURCE = "changed_source"
+
+# Virtual filter key aliasing the scan-layer "new" vocabulary
+# (`gui.workers.message_scan_worker.SCAN_NEW`) onto the existing
+# `STATUS_CANDIDATE` status so callers can filter with either name.
+FILTER_NEW = "new"
+
 
 @dataclass
 class MessageReviewItem:
@@ -93,7 +104,13 @@ class MessageReviewItem:
         return ""
 
     def can_approve(self) -> bool:
-        return self.status == STATUS_CANDIDATE and self.generated_count > 0
+        if self.status != STATUS_CANDIDATE or self.generated_count == 0:
+            return False
+        # A message whose source file changed since the last scan/apply must
+        # be explicitly reanalyzed or edited (which clears `notice`) before
+        # the reviewer can approve it -- otherwise stale extracted values
+        # could be saved without ever being looked at again.
+        return self.notice != NOTICE_CHANGED_SOURCE
 
     def can_save(self) -> bool:
         return self.status == STATUS_APPROVED and self.generated_count > 0
@@ -137,6 +154,14 @@ class MessageReviewModel:
     def filtered_indexes(self, filter_key: str = "all") -> list[int]:
         if filter_key == "all":
             return list(range(len(self._items)))
+        if filter_key == FILTER_CHANGED_REVIEW_NEEDED:
+            return [
+                index
+                for index, item in enumerate(self._items)
+                if item.notice == NOTICE_CHANGED_SOURCE
+            ]
+        if filter_key == FILTER_NEW:
+            filter_key = STATUS_CANDIDATE
         return [
             index
             for index, item in enumerate(self._items)
@@ -147,6 +172,9 @@ class MessageReviewModel:
         """Return the directive-required summary buckets."""
 
         counts = Counter(item.status for item in self._items)
+        changed_review_needed = sum(
+            1 for item in self._items if item.notice == NOTICE_CHANGED_SOURCE
+        )
         return {
             "total": len(self._items),
             "candidates": counts[STATUS_CANDIDATE] + counts[STATUS_APPROVED],
@@ -154,6 +182,7 @@ class MessageReviewModel:
             "applied": counts[STATUS_APPLIED],
             "excluded": counts[STATUS_EXCLUDED],
             "date_needed": counts[STATUS_DATE_NEEDED],
+            "changed_review_needed": changed_review_needed,
             "errors": counts[STATUS_ERROR],
         }
 
@@ -201,6 +230,9 @@ class MessageReviewModel:
             item.raw_text = raw_text
         item.error = ""
         item.manually_edited = False
+        # Reanalysis is the explicit review a changed-source row was waiting
+        # on, so the "source changed" flag no longer applies.
+        item.notice = ""
         if was_applied:
             item.status = STATUS_APPLIED
         else:
@@ -230,6 +262,9 @@ class MessageReviewModel:
             item.error = ""
             item.created_record_ids = []
             item.manually_edited = True
+            # A manual guided-field edit is itself the explicit review a
+            # changed-source row was waiting on.
+            item.notice = ""
             item.status = STATUS_CANDIDATE
         except ValueError as exc:
             item.error = str(exc)
