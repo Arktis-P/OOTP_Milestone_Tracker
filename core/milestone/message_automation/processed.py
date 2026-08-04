@@ -35,12 +35,17 @@ class ProcessedMessage:
 
     @property
     def is_already_applied(self) -> bool:
-        return bool(self.created_record_ids or self.duplicate_record_ids) and self.status == "applied"
+        return bool(self.created_record_ids or self.duplicate_record_ids) and self.status in {
+            "applied",
+            "duplicate",
+        }
 
     def has_source_changed(self, fingerprint: MessageSourceFingerprint) -> bool:
-        if not self.source_hash:
-            return False
-        return self.source_hash != fingerprint.source_hash or self.source_mtime != fingerprint.source_mtime
+        if self.source_hash and fingerprint.source_hash:
+            return self.source_hash != fingerprint.source_hash
+        if self.source_mtime and fingerprint.source_mtime:
+            return self.source_mtime != fingerprint.source_mtime
+        return False
 
 
 @dataclass(frozen=True)
@@ -90,6 +95,28 @@ def ensure_processed_messages_schema(conn: Any) -> None:
         )
         """
     )
+    existing = {
+        str(row["name"] if hasattr(row, "keys") else row[1])
+        for row in conn.execute("PRAGMA table_info(processed_messages)").fetchall()
+    }
+    migrations = {
+        "source_path": "ALTER TABLE processed_messages ADD COLUMN source_path TEXT NOT NULL DEFAULT ''",
+        "source_hash": "ALTER TABLE processed_messages ADD COLUMN source_hash TEXT NOT NULL DEFAULT ''",
+        "source_mtime": "ALTER TABLE processed_messages ADD COLUMN source_mtime REAL NOT NULL DEFAULT 0.0",
+        "status": "ALTER TABLE processed_messages ADD COLUMN status TEXT NOT NULL DEFAULT 'candidate'",
+        "category": "ALTER TABLE processed_messages ADD COLUMN category TEXT NOT NULL DEFAULT ''",
+        "exclusion_reason": "ALTER TABLE processed_messages ADD COLUMN exclusion_reason TEXT",
+        "created_record_ids": "ALTER TABLE processed_messages ADD COLUMN created_record_ids TEXT NOT NULL DEFAULT '[]'",
+        "duplicate_record_ids": "ALTER TABLE processed_messages ADD COLUMN duplicate_record_ids TEXT NOT NULL DEFAULT '[]'",
+        "errors": "ALTER TABLE processed_messages ADD COLUMN errors TEXT NOT NULL DEFAULT '[]'",
+        "parsed_at": "ALTER TABLE processed_messages ADD COLUMN parsed_at TEXT",
+        "applied_at": "ALTER TABLE processed_messages ADD COLUMN applied_at TEXT",
+        "last_seen_at": "ALTER TABLE processed_messages ADD COLUMN last_seen_at TEXT",
+        "updated_at": "ALTER TABLE processed_messages ADD COLUMN updated_at TEXT",
+    }
+    for column, statement in migrations.items():
+        if column not in existing:
+            conn.execute(statement)
 
 
 def fingerprint_message_file(path: str | Path) -> MessageSourceFingerprint:

@@ -383,6 +383,7 @@ class MilestoneChecker:
         form,
         *,
         source: MilestoneRecordSource = "manual",
+        commit: bool = True,
     ) -> int:
         from core.milestone.manual_entry import ManualMilestoneFormData
 
@@ -427,7 +428,8 @@ class MilestoneChecker:
                 _normalize_record_source(source),
             ),
         )
-        conn.commit()
+        if commit:
+            conn.commit()
         return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
     def record_manual_transfer(
@@ -435,6 +437,7 @@ class MilestoneChecker:
         form,
         *,
         source: MilestoneRecordSource = "manual",
+        commit: bool = True,
     ) -> list[int]:
         from core.milestone.manual_entry import (
             ManualTransferFormData,
@@ -486,7 +489,8 @@ class MilestoneChecker:
                 ),
             )
             ids.append(int(conn.execute("SELECT last_insert_rowid()").fetchone()[0]))
-        conn.commit()
+        if commit:
+            conn.commit()
         return ids
 
     def record_manual_injury(
@@ -494,6 +498,7 @@ class MilestoneChecker:
         form,
         *,
         source: MilestoneRecordSource = "manual",
+        commit: bool = True,
     ) -> int:
         from core.milestone.manual_entry import (
             ManualInjuryFormData,
@@ -542,7 +547,8 @@ class MilestoneChecker:
                 _normalize_record_source(source),
             ),
         )
-        conn.commit()
+        if commit:
+            conn.commit()
         return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
     def record_manual_team_milestone(

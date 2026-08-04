@@ -60,38 +60,78 @@ def record_parsed_message_result(
         )
         return MessageApplyResult(source_id=source_id)
 
+    conn = checker.aggregator.conn
     created_ids: list[int] = []
     duplicate_ids: list[int] = []
     errors: list[str] = []
+    conn.execute("SAVEPOINT message_automation_apply")
     for form in parsed.forms:
-        try:
-            _seed_form_players(checker.aggregator.conn, form, parsed.player_names)
-        except Exception as exc:  # pragma: no cover - defensive reporting path
-            errors.append(str(exc))
-            continue
-        existing = _form_existing_record_ids(checker.aggregator.conn, form)
+        existing = _form_existing_record_ids(conn, form)
         if existing:
             duplicate_ids.extend(existing)
             continue
         try:
+            _seed_form_players(conn, form, parsed.player_names)
+        except Exception as exc:  # pragma: no cover - defensive reporting path
+            errors.append(str(exc))
+            break
+        try:
             if isinstance(form, ManualTransferFormData):
-                created_ids.extend(checker.record_manual_transfer(form, source="message_auto"))
+                created_ids.extend(
+                    checker.record_manual_transfer(
+                        form,
+                        source="message_auto",
+                        commit=False,
+                    )
+                )
             elif isinstance(form, ManualInjuryFormData):
-                created_ids.append(checker.record_manual_injury(form, source="message_auto"))
+                created_ids.append(
+                    checker.record_manual_injury(
+                        form,
+                        source="message_auto",
+                        commit=False,
+                    )
+                )
             elif isinstance(form, ManualMilestoneFormData):
-                created_ids.append(checker.record_manual_milestone(form, source="message_auto"))
+                created_ids.append(
+                    checker.record_manual_milestone(
+                        form,
+                        source="message_auto",
+                        commit=False,
+                    )
+                )
             else:
                 raise TypeError(f"Unsupported form type: {type(form)!r}")
         except Exception as exc:  # pragma: no cover - defensive reporting path
             errors.append(str(exc))
+            break
     result = MessageApplyResult(
         source_id=source_id,
-        created_record_ids=created_ids,
+        created_record_ids=[] if errors else created_ids,
         duplicate_record_ids=duplicate_ids,
         errors=errors,
     )
+    if errors:
+        conn.execute("ROLLBACK TO SAVEPOINT message_automation_apply")
+        conn.execute("RELEASE SAVEPOINT message_automation_apply")
+    else:
+        upsert_processed_message(
+            conn,
+            fingerprint=fingerprint,
+            status=result.status,
+            category=parsed.category,
+            exclusion_reason=parsed.exclusion_reason,
+            created_record_ids=result.created_record_ids,
+            duplicate_record_ids=result.duplicate_record_ids,
+            errors=result.errors,
+            mark_applied=bool(result.created_record_ids or result.duplicate_record_ids),
+            commit=False,
+        )
+        conn.execute("RELEASE SAVEPOINT message_automation_apply")
+        conn.commit()
+        return result
     upsert_processed_message(
-        checker.aggregator.conn,
+        conn,
         fingerprint=fingerprint,
         status=result.status,
         category=parsed.category,
