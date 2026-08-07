@@ -359,6 +359,10 @@ OOTP 메시지 부상명은 영어이므로, **한글 이름 매핑과 같은 �
 | 방출 / 웨이버 / 선수 구매 | 인박스 뉴스 없음 (제외 확정) |
 | 추적 팀과 무관한 이벤트 | 기본 필터 |
 
+제외된 메시지는 사용자가 제외하거나 정책상 제외가 확정된 경우 `processed_messages.status='excluded'`와
+fingerprint가 저장된다. 날짜가 필요한데 `messages.dat`나 사용자가 지정한 날짜로 복구하지 못한
+메시지는 영구 제외하지 않고 검토 화면에서 날짜 지정 대상으로 남긴다.
+
 ---
 
 ## 11. 요약 매트릭스
@@ -393,6 +397,22 @@ OOTP 메시지 부상명은 영어이므로, **한글 이름 매핑과 같은 �
 | 팀 포스트시즌 | `record_manual_team_milestone()` 또는 team target의 `record_manual_milestone()` |
 
 중복: 기존 `check_duplicate` / `(player, key, season)` · `(team, key, season)` 규칙 준수.
+
+저장 경로는 메시지별 원자성을 보장한다. `record_parsed_message_result()`는 각 메시지에
+savepoint를 만들고, 모든 form이 성공하거나 중복으로 확인된 경우에만 `milestone_records`와
+`processed_messages`를 함께 commit한다. 중간 오류가 발생하면 해당 메시지에서 생성한 기록을
+롤백하고 `processed_messages.status='error'`와 오류 목록만 저장한다.
+
+재스캔 상태는 다음 의미로 UI에 전달된다.
+
+| 상태 | 의미 |
+|------|------|
+| `new` | 처리 이력이 없는 새 메시지 |
+| `already_applied` | 동일 fingerprint로 이미 기록 생성 또는 중복 확인 완료 |
+| `changed_review_needed` | 같은 source_id의 원본 hash/mtime이 바뀌어 재검토 필요 |
+| `excluded` | 정책 또는 사용자 결정으로 제외 확정 |
+| `error` | 이전 처리 오류 또는 파일 읽기 오류 |
+| `unresolved` / `date_needed` | 후보이지만 날짜 등 사람이 보완해야 하는 정보가 남음 |
 
 ---
 

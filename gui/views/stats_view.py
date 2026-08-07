@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
 from core.config import AppSettings
 from core.config.settings_manager import SettingsManager
 from core.i18n import tr
+from core.import_workflow import OUTCOME_CANCELLED, OUTCOME_FAILED
 from core.db.meta import get_init_season_coverage
 from core.milestone.definitions import MilestoneDefinitions
 from core.stats.player_detail import load_player_detail
@@ -50,11 +51,12 @@ from gui.widgets.player_milestone_timeline import PlayerMilestoneTimeline
 from gui.widgets.table_widgets import SortableTable
 from gui.theme import TEXT_SECONDARY, header_panel_style, hint_style
 from gui.widgets.card_panel import CardPanel, section_label
+from gui.widgets.import_errors_dialog import ImportErrorsDialog
 from gui.workers.import_worker import ImportFinishedPayload, ImportWorker
 
 
 class StatsView(QWidget):
-    import_finished = pyqtSignal(str)
+    import_finished = pyqtSignal(object)
 
     BATTING_COLUMNS = [
         "G", "AB", "H", "2B", "3B", "HR", "RBI", "R", "BB", "K", "SB", "AVG", "OBP", "SLG", "OPS"
@@ -139,6 +141,9 @@ class StatsView(QWidget):
         self.player_search.setToolTip(
             tr("Filter list by name or ID. Does not re-query DB on each input.")
         )
+        self.player_filter_summary = QLabel("")
+        self.player_filter_summary.setObjectName("mutedLabel")
+        self.player_filter_summary.setStyleSheet(hint_style(TEXT_SECONDARY))
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(250)
@@ -151,9 +156,17 @@ class StatsView(QWidget):
         self.player_header.setWordWrap(True)
         self.player_header.setTextFormat(Qt.TextFormat.RichText)
         self.player_header.setStyleSheet(header_panel_style())
+        self.player_context_label = QLabel(tr("Select a player to see role, mode, and source context."))
+        self.player_context_label.setObjectName("playerContextLabel")
+        self.player_context_label.setWordWrap(True)
+        self.player_context_label.setStyleSheet(hint_style(TEXT_SECONDARY))
 
         self.info_label = QLabel()
         self.info_label.setWordWrap(True)
+        self.recent_events_label = QLabel(tr("Recent events are shown in the Milestones tab after a player is selected."))
+        self.recent_events_label.setObjectName("recentEventsSummary")
+        self.recent_events_label.setWordWrap(True)
+        self.recent_events_label.setStyleSheet(hint_style(TEXT_SECONDARY))
 
         self.batting_table = SortableTable([tr("Stat")] + self.BATTING_COLUMNS)
         self.pitching_table = SortableTable([tr("Stat")] + self.PITCHING_COLUMNS)
@@ -194,6 +207,7 @@ class StatsView(QWidget):
         filter_row.addWidget(section_label(tr("Position")))
         filter_row.addWidget(self.position_combo)
         filter_row.addWidget(self.player_search, stretch=1)
+        filter_row.addWidget(self.player_filter_summary)
 
         toolbar_card = CardPanel()
         toolbar_card.content_layout.addLayout(import_row)
@@ -204,8 +218,10 @@ class StatsView(QWidget):
 
         detail_card = CardPanel()
         detail_card.content_layout.addWidget(self.player_header)
+        detail_card.content_layout.addWidget(self.player_context_label)
         detail_card.content_layout.addWidget(self.player_detail_summary)
         detail_card.content_layout.addWidget(self.info_label)
+        detail_card.content_layout.addWidget(self.recent_events_label)
         detail_card.content_layout.addWidget(self.stats_tabs, stretch=1)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -241,7 +257,8 @@ class StatsView(QWidget):
         self._refresh_player_stats()
 
     def _on_search_text_changed(self, _text: str) -> None:
-        self._search_timer.start()
+        self._search_timer.stop()
+        self._apply_player_filter()
 
     def _on_career_toggled(self, checked: bool) -> None:
         self._career_mode = checked
@@ -290,6 +307,7 @@ class StatsView(QWidget):
         if not self._players:
             self.player_list.clear()
             self.player_header.setText(tr("Please select a player."))
+            self.player_context_label.setText(tr("No player selected."))
             self.info_label.setText("")
             self.batting_table.setRowCount(0)
             self.pitching_table.setRowCount(0)
@@ -357,6 +375,7 @@ class StatsView(QWidget):
         needle = self.player_search.text().strip().lower()
         position_group = str(self.position_combo.currentData() or "")
         previous_id = self._selected_player_id()
+        matched_count = 0
         self.player_list.blockSignals(True)
         self.player_list.clear()
         for player in self._players:
@@ -372,24 +391,43 @@ class StatsView(QWidget):
             item = QListWidgetItem(format_player_list_label(player))
             item.setData(Qt.ItemDataRole.UserRole, int(player["player_id"]))
             self.player_list.addItem(item)
+            matched_count += 1
+        selection_restored = False
         if previous_id is not None:
             for row in range(self.player_list.count()):
                 item = self.player_list.item(row)
                 if item and int(item.data(Qt.ItemDataRole.UserRole)) == previous_id:
                     self.player_list.setCurrentRow(row)
+                    selection_restored = True
                     break
-        elif self.player_list.count():
+        if not selection_restored and self.player_list.count():
             self.player_list.setCurrentRow(0)
         self.player_list.blockSignals(False)
+        self._update_player_filter_summary(matched_count)
         if self.player_list.currentRow() >= 0:
             self._refresh_player_stats()
         else:
             self.player_header.setText(tr("Please select a player."))
-            self.info_label.setText("")
+            self.player_context_label.setText(tr("No player selected."))
+            if self._players:
+                self.info_label.setText(
+                    tr("No players match this search or position filter. Clear the filter to recover the list.")
+                )
+            else:
+                self.info_label.setText("")
             self.batting_table.setRowCount(0)
             self.pitching_table.setRowCount(0)
             self.player_detail_summary.clear()
             self.milestone_timeline.load_player(None)
+
+    def _update_player_filter_summary(self, matched_count: int) -> None:
+        total_count = len(self._players)
+        if not total_count:
+            self.player_filter_summary.setText("")
+            return
+        self.player_filter_summary.setText(
+            tr("{shown}/{total} players").format(shown=matched_count, total=total_count)
+        )
 
     def _on_list_selection(self, row: int) -> None:
         if row >= 0:
@@ -412,6 +450,7 @@ class StatsView(QWidget):
         player_id = self._selected_player_id()
         if player_id is None or player is None:
             self.player_header.setText(tr("Please select a player."))
+            self.player_context_label.setText(tr("No player selected."))
             self.info_label.setText("")
             self.batting_table.setRowCount(0)
             self.pitching_table.setRowCount(0)
@@ -430,6 +469,7 @@ class StatsView(QWidget):
             roster_names=roster_names,
         )
         self.player_header.setText(format_player_header(player, korean_name=korean_name))
+        self.player_context_label.setText(self._player_context_text(player, player_id))
         self.player_detail_summary.load_detail(
             load_player_detail(
                 self.aggregator,
@@ -481,6 +521,17 @@ class StatsView(QWidget):
                     )
                 )
             self._fill_season_tables(player_id, season)
+
+    def _player_context_text(self, player: dict, player_id: int) -> str:
+        team = str(player.get("team") or player.get("team_abbr") or tr("Team unknown"))
+        position = str(player.get("primary_position") or player.get("position") or tr("Position unknown"))
+        mode = tr("Postseason") if self._postseason_mode else tr("Career") if self._career_mode else tr("Season")
+        return tr("ID {player_id} · {team} · {position} · {mode} view").format(
+            player_id=player_id,
+            team=team,
+            position=position,
+            mode=mode,
+        )
 
     def _detail_season(self) -> int:
         season_data = self.season_combo.currentData()
@@ -617,8 +668,19 @@ class StatsView(QWidget):
         if not data:
             table.setRowCount(0)
             return
-        row = [tr("Stats")] + [data.get(mapping[col], "") for col in mapping]
+        row = [tr("Stats")] + [
+            StatsView._format_stat_value(col, data.get(mapping[col], ""))
+            for col in mapping
+        ]
         table.populate([row])
+
+    @staticmethod
+    def _format_stat_value(column: str, value: object) -> object:
+        if column in {"AVG", "OBP", "SLG", "OPS"} and isinstance(value, float):
+            return f"{value:.3f}"
+        if column in {"ERA", "WHIP"} and isinstance(value, float):
+            return f"{value:.2f}"
+        return value
 
     def _open_game_logs(self, _row: int, _col: int) -> None:
         if self._career_mode or self._postseason_mode:
@@ -674,9 +736,7 @@ class StatsView(QWidget):
             parent=self,
         )
         self._import_worker.progress.connect(self._on_import_progress)
-        self._import_worker.completed.connect(self._on_import_finished)
-        self._import_worker.cancelled.connect(self._on_import_cancelled)
-        self._import_worker.error.connect(self._on_import_error)
+        self._import_worker.workflow_finished.connect(self._on_import_finished)
         self._import_worker.finished.connect(
             lambda worker=self._import_worker: self._finish_import_worker(worker)
         )
@@ -715,13 +775,7 @@ class StatsView(QWidget):
         self.reload_players()
 
         result = payload.batch
-        parts = [tr("{count} games added").format(count=result.imported)]
-        if result.skipped_non_mlb:
-            parts.append(tr("{count} non-MLB skipped").format(count=result.skipped_non_mlb))
-        if result.skipped_spring_training:
-            parts.append(
-                tr("{count} spring training skipped").format(count=result.skipped_spring_training)
-            )
+        parts = [payload.message]
         if payload.milestones_recorded:
             team_count = sum(
                 1
@@ -739,11 +793,25 @@ class StatsView(QWidget):
             )
             parts.append(tr("{count} milestones achieved").format(count=label))
         message = " · ".join(parts)
-        self.import_finished.emit(message)
+        self.import_finished.emit(payload)
 
-        if result.errors:
+        if payload.outcome == OUTCOME_CANCELLED:
+            self.banner.show_info(message)
+        elif payload.outcome == OUTCOME_FAILED:
+            self.banner.show_error(
+                message,
+                [
+                    (
+                        tr("View Errors ({count})").format(count=payload.errors),
+                        lambda: ImportErrorsDialog(result.errors, self).exec(),
+                    )
+                ]
+                if result.errors
+                else None,
+            )
+        elif result.errors:
             self.banner.show_warning(
-                tr("Some errors: {count} — ").format(count=len(result.errors))
+                payload.message + " - "
                 + (result.errors[0].error if result.errors else "")
             )
         elif result.imported == 0 and not payload.milestones:

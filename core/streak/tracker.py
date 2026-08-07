@@ -781,8 +781,8 @@ class StreakTracker:
                 player_id, milestone_key, milestone_label, scope,
                 season, game_id, achieved_date, achieved_value,
                 team, notes, description, is_manual,
-                streak_type, streak_run_id, streak_event_type
-            ) VALUES (?, ?, ?, 'streak', ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
+                streak_type, streak_run_id, streak_event_type, source
+            ) VALUES (?, ?, ?, 'streak', ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'boxscore_auto')
             """,
             (
                 player_id,

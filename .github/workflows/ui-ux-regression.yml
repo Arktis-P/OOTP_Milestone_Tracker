@@ -1,0 +1,70 @@
+name: UI UX regression
+
+on:
+  push:
+    branches:
+      - master
+      - codex/ui-ux-audit-improvements
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  full-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install Qt runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest -q
+
+  windows-ui-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QT_SCALE_FACTOR: "1.25"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - name: Run workflow, migration, localization, and UI smoke tests
+        run: >-
+          python -m pytest -q
+          tests/test_import_workflow_state.py
+          tests/test_state_persistence_boundaries.py
+          tests/test_processed_messages.py
+          tests/test_milestone_record_source.py
+          tests/test_message_review_ui.py
+          tests/test_message_date_recovery.py
+          tests/test_message_workflow_completion.py
+          tests/test_dashboard_message_pending_count.py
+          tests/test_boxscore_workflow_outcomes.py
+          tests/test_season_finalize_workflow.py
+          tests/test_import_result_routing.py
+          tests/test_guided_record_editor.py
+          tests/test_ui_translation_completeness.py
+          tests/test_responsive_layout.py
+      - name: Capture scaled Korean and English UI evidence
+        run: python scripts/capture_ui_ux_screenshots.py --language both
+      - name: Upload Windows UI captures
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-ui-125-captures
+          path: docs/ux/screenshots/final

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import json
 from pathlib import Path
 
 from core.db.sqlite_config import configure_sqlite_connection
@@ -171,6 +172,7 @@ CREATE TABLE IF NOT EXISTS milestone_records (
     achieved_value  REAL NOT NULL,
     notes           TEXT,
     team            TEXT,
+    source          TEXT NOT NULL DEFAULT 'boxscore_auto',
     recorded_at     TEXT DEFAULT (datetime('now'))
 );
 """
@@ -187,6 +189,7 @@ CREATE TABLE IF NOT EXISTS milestone_records_v2 (
     achieved_date   TEXT NOT NULL,
     achieved_value  REAL NOT NULL,
     notes           TEXT,
+    source          TEXT NOT NULL DEFAULT 'migration',
     recorded_at     TEXT DEFAULT (datetime('now'))
 );
 """
@@ -227,6 +230,7 @@ def _migrate_post_schema(conn: sqlite3.Connection) -> None:
     _ensure_batting_substitute_column(conn)
     _ensure_milestone_records_team(conn)
     _ensure_milestone_records_manual_columns(conn)
+    _ensure_milestone_records_source(conn)
     _ensure_pitching_holds_columns(conn)
     _ensure_batting_grand_slam_column(conn)
     _ensure_streak_schema(conn)
@@ -421,13 +425,37 @@ def _migrate_milestone_records(conn: sqlite3.Connection) -> None:
         "achieved_date",
         "achieved_value",
         ("notes" if "notes" in old_cols else "NULL AS notes"),
+        (
+            "source"
+            if "source" in old_cols
+            else (
+                "CASE "
+                + (
+                    "WHEN notes LIKE '%source:%' THEN 'message_auto' "
+                    if "notes" in old_cols
+                    else ""
+                )
+                +
+                "WHEN COALESCE(is_manual, 0) = 1 THEN 'manual' "
+                "WHEN "
+                + ("game_id" if "game_id" in old_cols else "NULL")
+                + " IS NULL AND "
+                + (
+                    "scope" if "scope" in old_cols else "'career'"
+                )
+                + " IN ('season', 'season_ratio', 'team_season') THEN 'season_final' "
+                "ELSE 'migration' END AS source"
+                if "is_manual" in old_cols
+                else "'migration' AS source"
+            )
+        ),
         ("recorded_at" if "recorded_at" in old_cols else "datetime('now') AS recorded_at"),
     ]
     conn.execute(
         f"""
         INSERT INTO milestone_records_v2 (
             id, player_id, milestone_key, milestone_label, scope,
-            season, game_id, achieved_date, achieved_value, notes, recorded_at
+            season, game_id, achieved_date, achieved_value, notes, source, recorded_at
         )
         SELECT {", ".join(select_parts)}
         FROM milestone_records
@@ -606,6 +634,89 @@ def _ensure_milestone_records_manual_columns(conn: sqlite3.Connection) -> None:
             conn.execute(
                 f"ALTER TABLE milestone_records ADD COLUMN {name} {col_type}"
             )
+
+
+def _ensure_milestone_records_source(conn: sqlite3.Connection) -> None:
+    columns = _table_columns(conn, "milestone_records")
+    if not columns:
+        return
+    if "source" not in columns:
+        conn.execute(
+            "ALTER TABLE milestone_records ADD COLUMN source TEXT NOT NULL DEFAULT 'boxscore_auto'"
+        )
+        columns = _table_columns(conn, "milestone_records")
+
+    has_is_manual = "is_manual" in columns
+    has_notes = "notes" in columns
+    if has_notes:
+        conn.execute(
+            """
+            UPDATE milestone_records
+            SET source = 'message_auto'
+            WHERE COALESCE(notes, '') LIKE '%source:%'
+              AND (source IS NULL OR source = '' OR source IN ('boxscore_auto', 'manual', 'migration'))
+            """
+        )
+    if has_is_manual:
+        notes_guard = (
+            "AND COALESCE(notes, '') NOT LIKE '%source:%'" if has_notes else ""
+        )
+        conn.execute(
+            f"""
+            UPDATE milestone_records
+            SET source = 'manual'
+            WHERE COALESCE(is_manual, 0) = 1
+              {notes_guard}
+              AND (source IS NULL OR source = '' OR source IN ('boxscore_auto', 'migration'))
+            """
+        )
+    conn.execute(
+        """
+        UPDATE milestone_records
+        SET source = 'season_final'
+        WHERE (source IS NULL OR source = '' OR source IN ('boxscore_auto', 'migration'))
+          AND game_id IS NULL
+          AND scope IN ('season', 'season_ratio', 'team_season')
+          AND (is_manual IS NULL OR COALESCE(is_manual, 0) = 0)
+        """
+    )
+    _store_milestone_source_migration_report(conn)
+
+
+def _store_milestone_source_migration_report(conn: sqlite3.Connection) -> None:
+    """Persist an idempotent source classification summary for support tools."""
+
+    counts = {
+        str(row[0] or "migration"): int(row[1])
+        for row in conn.execute(
+            """
+            SELECT COALESCE(NULLIF(source, ''), 'migration'), COUNT(*)
+            FROM milestone_records
+            GROUP BY COALESCE(NULLIF(source, ''), 'migration')
+            """
+        ).fetchall()
+    }
+    report = {
+        "boxscore_auto": counts.get("boxscore_auto", 0),
+        "message_auto": counts.get("message_auto", 0),
+        "manual": counts.get("manual", 0),
+        "season_final": counts.get("season_final", 0),
+        "migration": counts.get("migration", 0),
+    }
+    conn.execute(
+        """
+        INSERT INTO db_meta (key, value) VALUES ('milestone_source_migration_report', ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (json.dumps(report, sort_keys=True),),
+    )
+    conn.execute(
+        """
+        UPDATE milestone_records
+        SET source = 'boxscore_auto'
+        WHERE source IS NULL OR source = ''
+        """
+    )
 
 
 def _ensure_processed_boxscores(conn: sqlite3.Connection) -> None:

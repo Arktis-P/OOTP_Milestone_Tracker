@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDialog,
+    QDialogButtonBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -67,6 +68,7 @@ from gui.widgets.manual_entry_fields import (
     tracked_team_names,
     apply_completer,
 )
+from gui.widgets.guided_milestone_form import GuidedMilestoneForm
 from gui.widgets.single_record_dialogs import (
     SingleInjuryEntryDialog,
     SingleMilestoneEntryDialog,
@@ -170,13 +172,30 @@ class ManualMilestoneDialog(QDialog):
         self.stack.addWidget(self._build_transfer_page())
         self.stack.addWidget(self._build_injury_page())
 
+        self.mode_stack = QStackedWidget()
+        self.single_mode_page = self._build_single_mode_page()
+        self.mode_stack.addWidget(self.single_mode_page)
+        self.mode_stack.addWidget(self.stack)
+
         buttons = make_button_box(save=True, save_text="Save All")
+        self.bulk_save_button = next(
+            (
+                button
+                for button in buttons.buttons()
+                if buttons.buttonRole(button) == QDialogButtonBox.ButtonRole.AcceptRole
+            ),
+            None,
+        )
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
 
         content_card = CardPanel(tr("Manual Entry"))
         content_card.add_widget(self.tabs)
-        content_card.add_widget(self.stack)
+        content_card.add_widget(self.mode_stack)
+        self.bulk_status_label = QLabel("")
+        self.bulk_status_label.setObjectName("mutedLabel")
+        self.bulk_status_label.setWordWrap(True)
+        content_card.add_widget(self.bulk_status_label)
 
         layout = init_dialog_layout(self)
         layout.addWidget(content_card, stretch=1)
@@ -186,6 +205,69 @@ class ManualMilestoneDialog(QDialog):
         self.tabs.setCurrentIndex(initial_tab)
         self.tabs.blockSignals(False)
         self._on_tab_changed(initial_tab)
+        self._show_single_mode()
+
+    def _build_single_mode_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+
+        hint = QLabel(
+            tr(
+                "Add one record at a time. Choose a type below; the form shows only "
+                "the fields needed for that record type. Message review corrections use the same guided fields."
+            )
+        )
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        action_row = QHBoxLayout()
+        self.single_milestone_button = QPushButton(tr("Add Milestone"))
+        self.single_milestone_button.clicked.connect(lambda: self._open_single_entry_for_tab(_TAB_MILESTONE))
+        self.single_award_button = QPushButton(tr("Add Award"))
+        self.single_award_button.clicked.connect(lambda: self._open_single_entry_for_tab(_TAB_AWARD))
+        self.single_transfer_button = QPushButton(tr("Add Team Move"))
+        self.single_transfer_button.clicked.connect(lambda: self._open_single_entry_for_tab(_TAB_TRANSFER))
+        self.single_injury_button = QPushButton(tr("Add Injury"))
+        self.single_injury_button.clicked.connect(lambda: self._open_single_entry_for_tab(_TAB_INJURY))
+        for button in (
+            self.single_milestone_button,
+            self.single_award_button,
+            self.single_transfer_button,
+            self.single_injury_button,
+        ):
+            action_row.addWidget(button)
+        action_row.addStretch()
+        layout.addLayout(action_row)
+
+        self.bulk_mode_button = QPushButton(tr("Several records at once"))
+        self.bulk_mode_button.setObjectName("linkButton")
+        self.bulk_mode_button.clicked.connect(self._show_bulk_mode)
+        layout.addWidget(self.bulk_mode_button, alignment=Qt.AlignmentFlag.AlignLeft)
+        layout.addStretch()
+        return page
+
+    def _show_single_mode(self) -> None:
+        self.mode_stack.setCurrentWidget(self.single_mode_page)
+        if self.bulk_save_button is not None:
+            self.bulk_save_button.setVisible(False)
+        self.bulk_status_label.setText(
+            tr("Default mode: add one record with a guided form. Use bulk mode only for multiple records.")
+        )
+
+    def _show_bulk_mode(self) -> None:
+        self.mode_stack.setCurrentWidget(self.stack)
+        if self.bulk_save_button is not None:
+            self.bulk_save_button.setVisible(True)
+        self._update_bulk_status()
+
+    def _open_single_entry_for_tab(self, tab: int) -> None:
+        self.tabs.setCurrentIndex(tab)
+        if tab in (_TAB_MILESTONE, _TAB_AWARD):
+            self._open_single_milestone_dialog()
+        elif tab == _TAB_TRANSFER:
+            self._open_single_transfer_dialog()
+        elif tab == _TAB_INJURY:
+            self._open_single_injury_dialog()
 
     # ── Milestone / Award page ──────────────────────────────────────────
 
@@ -333,6 +415,7 @@ class ManualMilestoneDialog(QDialog):
         table.setCellWidget(row, _M_NOTES, QLineEdit())
 
         self._refresh_milestone_row_values(row)
+        self._update_bulk_status()
         return row
 
     def _on_milestone_row_milestone_changed(self) -> None:
@@ -373,6 +456,7 @@ class ManualMilestoneDialog(QDialog):
         for row in rows:
             self.milestone_table.removeRow(row)
         self._ensure_milestone_trailing_row()
+        self._update_bulk_status()
 
     def _refresh_milestone_pool_for_all_rows(self) -> None:
         pool = self._milestone_pool()
@@ -478,6 +562,7 @@ class ManualMilestoneDialog(QDialog):
             notes_edit.setText(form.notes)
 
         self._ensure_milestone_trailing_row()
+        self._update_bulk_status()
 
     def _player_display_name(self, player_id: int | None) -> str:
         if player_id is None:
@@ -729,6 +814,7 @@ class ManualMilestoneDialog(QDialog):
         table.setCellWidget(row, _T_DESC, desc_edit)
         table.setCellWidget(row, _T_NOTES, QLineEdit())
 
+        self._update_bulk_status()
         return row
 
     def _update_transfer_row_description(self, row: int) -> None:
@@ -769,6 +855,7 @@ class ManualMilestoneDialog(QDialog):
         for row in rows:
             self.transfer_table.removeRow(row)
         self._ensure_transfer_trailing_row()
+        self._update_bulk_status()
 
     def _open_single_transfer_dialog(self) -> None:
         common_date = ""
@@ -827,6 +914,7 @@ class ManualMilestoneDialog(QDialog):
             notes_edit.setText(form.notes)
 
         self._ensure_transfer_trailing_row()
+        self._update_bulk_status()
 
     def _collect_transfer_entries(self) -> list[ManualTransferFormData] | None:
         entries: list[ManualTransferFormData] = []
@@ -991,6 +1079,7 @@ class ManualMilestoneDialog(QDialog):
         table.setCellWidget(row, _I_DESC, QLineEdit())
         table.setCellWidget(row, _I_NOTES, QLineEdit())
 
+        self._update_bulk_status()
         return row
 
     def _update_injury_row_description(self, row: int) -> None:
@@ -1021,6 +1110,7 @@ class ManualMilestoneDialog(QDialog):
         for row in rows:
             self.injury_table.removeRow(row)
         self._ensure_injury_trailing_row()
+        self._update_bulk_status()
 
     def _open_single_injury_dialog(self) -> None:
         common_date = ""
@@ -1076,6 +1166,7 @@ class ManualMilestoneDialog(QDialog):
             notes_edit.setText(form.notes)
 
         self._ensure_injury_trailing_row()
+        self._update_bulk_status()
 
     def _collect_injury_entries(self) -> list[ManualInjuryFormData] | None:
         entries: list[ManualInjuryFormData] = []
@@ -1152,6 +1243,73 @@ class ManualMilestoneDialog(QDialog):
             self.stack.setCurrentIndex(1)
         elif index == _TAB_INJURY:
             self.stack.setCurrentIndex(2)
+        self._update_bulk_status()
+
+    def _bulk_entry_count(self) -> int:
+        tab = self.tabs.currentIndex()
+        if tab in (_TAB_MILESTONE, _TAB_AWARD):
+            return sum(
+                0 if self._row_is_blank_milestone(row) else 1
+                for row in range(self.milestone_table.rowCount())
+            )
+        if tab == _TAB_TRANSFER:
+            return sum(
+                0 if self._row_is_blank_transfer(row) else 1
+                for row in range(self.transfer_table.rowCount())
+            )
+        return sum(
+            0 if self._row_is_blank_injury(row) else 1
+            for row in range(self.injury_table.rowCount())
+        )
+
+    def _update_bulk_status(self) -> None:
+        if not hasattr(self, "bulk_status_label"):
+            return
+        if self.mode_stack.currentWidget() is self.single_mode_page:
+            return
+        count = self._bulk_entry_count()
+        self.bulk_status_label.setText(
+            tr("Bulk mode: {count} record(s) ready to validate and save. Row errors are shown before saving.").format(
+                count=count
+            )
+        )
+
+    def add_extracted_milestone(
+        self, form: ManualMilestoneFormData, milestone: MilestoneDefinition
+    ) -> None:
+        """Reusable entry point for message extraction review screens."""
+        self.tabs.setCurrentIndex(_TAB_AWARD if self._is_award_milestone(milestone) else _TAB_MILESTONE)
+        self._show_bulk_mode()
+        self._populate_milestone_row_from_form(form, milestone)
+
+    def add_extracted_transfer(self, form: ManualTransferFormData) -> None:
+        """Reusable entry point for message extraction review screens."""
+        self.tabs.setCurrentIndex(_TAB_TRANSFER)
+        self._show_bulk_mode()
+        self._populate_transfer_row_from_form(form)
+
+    def add_extracted_injury(self, form: ManualInjuryFormData) -> None:
+        """Reusable entry point for message extraction review screens."""
+        self.tabs.setCurrentIndex(_TAB_INJURY)
+        self._show_bulk_mode()
+        self._populate_injury_row_from_form(form)
+
+    def create_guided_form_for_extracted(self, forms: list[object]) -> GuidedMilestoneForm:
+        """Shared guided editor used by message extraction review dialogs."""
+        return GuidedMilestoneForm(
+            forms,
+            intro=tr("Review and correct only the fields needed for this record."),
+            parent=self,
+            aggregator=self.aggregator,
+            settings=self.settings,
+            milestones=self.milestones,
+        )
+
+    @staticmethod
+    def _is_award_milestone(milestone: MilestoneDefinition) -> bool:
+        key = str(milestone.key).lower()
+        label = str(milestone.label).lower()
+        return "award" in key or "award" in label or "수상" in label
 
     def _checker(self) -> MilestoneChecker:
         return MilestoneChecker(

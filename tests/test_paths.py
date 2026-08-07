@@ -31,6 +31,12 @@ def test_dev_mode_uses_project_data_dir(monkeypatch, tmp_path: Path) -> None:
     assert resolve_data_path("records.db") == data_dir / "records.db"
 
 
+def test_resolve_data_path_preserves_absolute_paths(tmp_path: Path) -> None:
+    absolute = (tmp_path / "custom" / "records.db").resolve()
+
+    assert resolve_data_path(str(absolute)) == absolute
+
+
 def test_frozen_mode_uses_appdata(monkeypatch, tmp_path: Path) -> None:
     bundle = tmp_path / "bundle"
     bundle_data = bundle / "data"

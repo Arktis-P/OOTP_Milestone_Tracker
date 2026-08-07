@@ -40,6 +40,24 @@ from core.stats.qualifiers import (
 )
 
 Direction = Literal["higher", "lower"]
+MilestoneRecordSource = Literal[
+    "boxscore_auto",
+    "message_auto",
+    "manual",
+    "season_final",
+    "migration",
+    "validation",
+]
+VALID_MILESTONE_RECORD_SOURCES: frozenset[str] = frozenset(
+    {
+        "boxscore_auto",
+        "message_auto",
+        "manual",
+        "season_final",
+        "migration",
+        "validation",
+    }
+)
 
 SEASON_COUNT_STATS = {
     "season_hr": ("batting", "season_hr", "home_runs"),
@@ -240,6 +258,7 @@ class MilestoneChecker:
         *,
         game_logs_dir: str | None = None,
         commit: bool = True,
+        source: MilestoneRecordSource | None = None,
     ) -> int:
         """Persist achievements, optionally leaving commit to an external owner.
 
@@ -266,8 +285,8 @@ class MilestoneChecker:
                     player_id, milestone_key, milestone_label, scope,
                     season, game_id, achieved_date, achieved_value, team, notes,
                     opponent_team, opponent_player, description,
-                    games_at_achievement, is_manual
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    games_at_achievement, is_manual, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
                 """,
                 (
                     item.player_id,
@@ -284,6 +303,7 @@ class MilestoneChecker:
                     item.opponent_player,
                     item.description,
                     item.games_at_achievement,
+                    _normalize_record_source(source or _automatic_record_source(item)),
                 ),
             )
             recorded += 1
@@ -321,7 +341,8 @@ class MilestoneChecker:
                    mr.opponent_player,
                    mr.description,
                    mr.games_at_achievement,
-                   mr.is_manual
+                   mr.is_manual,
+                   mr.source
             FROM milestone_records mr
             LEFT JOIN players p ON p.player_id = mr.player_id
             WHERE 1 = 1
@@ -357,7 +378,13 @@ class MilestoneChecker:
         rows = self.aggregator.conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
 
-    def record_manual_milestone(self, form) -> int:
+    def record_manual_milestone(
+        self,
+        form,
+        *,
+        source: MilestoneRecordSource = "manual",
+        commit: bool = True,
+    ) -> int:
         from core.milestone.manual_entry import ManualMilestoneFormData
 
         if not isinstance(form, ManualMilestoneFormData):
@@ -380,8 +407,8 @@ class MilestoneChecker:
                 player_id, milestone_key, milestone_label, scope,
                 season, game_id, achieved_date, achieved_value,
                 team, notes, opponent_team, opponent_player,
-                description, games_at_achievement, is_manual
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                description, games_at_achievement, is_manual, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
             """,
             (
                 player_id,
@@ -398,12 +425,20 @@ class MilestoneChecker:
                 form.opponent_player or None,
                 form.description or None,
                 form.games_at_achievement,
+                _normalize_record_source(source),
             ),
         )
-        conn.commit()
+        if commit:
+            conn.commit()
         return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
-    def record_manual_transfer(self, form) -> list[int]:
+    def record_manual_transfer(
+        self,
+        form,
+        *,
+        source: MilestoneRecordSource = "manual",
+        commit: bool = True,
+    ) -> list[int]:
         from core.milestone.manual_entry import (
             ManualTransferFormData,
             build_transfer_records,
@@ -432,8 +467,8 @@ class MilestoneChecker:
                     player_id, milestone_key, milestone_label, scope,
                     season, game_id, achieved_date, achieved_value,
                     team, notes, opponent_team, opponent_player,
-                    description, games_at_achievement, is_manual
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    description, games_at_achievement, is_manual, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
                 """,
                 (
                     item.player_id,
@@ -450,13 +485,21 @@ class MilestoneChecker:
                     None,
                     item.description or None,
                     None,
+                    _normalize_record_source(source),
                 ),
             )
             ids.append(int(conn.execute("SELECT last_insert_rowid()").fetchone()[0]))
-        conn.commit()
+        if commit:
+            conn.commit()
         return ids
 
-    def record_manual_injury(self, form) -> int:
+    def record_manual_injury(
+        self,
+        form,
+        *,
+        source: MilestoneRecordSource = "manual",
+        commit: bool = True,
+    ) -> int:
         from core.milestone.manual_entry import (
             ManualInjuryFormData,
             build_injury_description,
@@ -483,8 +526,8 @@ class MilestoneChecker:
                 player_id, milestone_key, milestone_label, scope,
                 season, game_id, achieved_date, achieved_value,
                 team, notes, opponent_team, opponent_player,
-                description, games_at_achievement, is_manual
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                description, games_at_achievement, is_manual, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
             """,
             (
                 player_id,
@@ -501,9 +544,11 @@ class MilestoneChecker:
                 None,
                 description,
                 None,
+                _normalize_record_source(source),
             ),
         )
-        conn.commit()
+        if commit:
+            conn.commit()
         return int(conn.execute("SELECT last_insert_rowid()").fetchone()[0])
 
     def record_manual_team_milestone(
@@ -531,7 +576,7 @@ class MilestoneChecker:
         )
         if self._achievement_exists(item):
             return False
-        return self.record_achievements([item]) == 1
+        return self.record_achievements([item], source="manual") == 1
 
     def _check_single_game(self, game_id: int, season: int) -> list[MilestoneAchievement]:
         game = self.aggregator.conn.execute(
@@ -1126,6 +1171,20 @@ def _pitching_game_contribution(stat: str, row: dict[str, Any]) -> float:
         from core.stats.ip_utils import outs_to_ip_float
         return outs_to_ip_float(int(row.get("ip_outs", 0) or 0))
     return 0.0
+
+
+def _normalize_record_source(source: str) -> str:
+    if source not in VALID_MILESTONE_RECORD_SOURCES:
+        raise ValueError(f"Unsupported milestone record source: {source}")
+    return source
+
+
+def _automatic_record_source(item: MilestoneAchievement) -> MilestoneRecordSource:
+    if item.game_id is not None:
+        return "boxscore_auto"
+    if item.milestone.scope in {"season", "season_ratio", "team_season"}:
+        return "season_final"
+    return "boxscore_auto"
 
 
 def _best_ratio_achievements(

@@ -340,9 +340,7 @@ class SetupView(QWidget):
         ootp_card.content_layout.addLayout(season_games_row)
         ootp_card.content_layout.addWidget(self.selected_path_label)
 
-        self._init_db_reset_widgets()
-
-        tools_card = CardPanel(tr("🛠️  Advanced Modules & Data Tools"))
+        tools_card = CardPanel(tr("Name mappings and milestone criteria"))
         tools_card.add_widget(
             tool_row(
                 tr("Korean Name Auto-mapping"),
@@ -373,7 +371,6 @@ class SetupView(QWidget):
                 self.bundle_updates_button,
             )
         )
-        tools_card.add_widget(self._build_dev_tools_panel())
 
         columns = QHBoxLayout()
         columns.setSpacing(12)

@@ -15,7 +15,11 @@ from PyQt6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPlainTextEdit,
     QProgressBar,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
     QTableView,
     QVBoxLayout,
     QWidget,
@@ -40,6 +44,7 @@ from core.roster.korean_names import KoreanNameMapper, load_korean_name_mapper
 from core.roster.ootp_format import player_display_name
 from core.roster.position_filter import POSITION_GROUP_OPTIONS, matches_position_group
 from core.stats.aggregator import Aggregator
+from gui.utils.file_open import open_path_in_default_app
 from gui.ui_compact import scale_size
 from gui.widgets.app_dialog import (
     add_dialog_footer,
@@ -62,6 +67,250 @@ from gui.widgets.bulk_rating_table import (
     BulkRatingTableModel,
     FameRadioDelegate,
 )
+
+
+PREVIEW_ROW_LIMIT = 500
+
+
+def _field_label(header: str, occurrence: int) -> str:
+    occurrence_label = f" #{occurrence + 1}" if occurrence else ""
+    return f"{header}{occurrence_label}"
+
+
+class BulkRatingPreviewDialog(QDialog):
+    """Before-save preview that keeps destructive bulk edits reviewable."""
+
+    def __init__(
+        self,
+        plan: BulkRatingPlan,
+        player_names: dict[int, str],
+        parent: QWidget | None = None,
+        *,
+        row_limit: int = PREVIEW_ROW_LIMIT,
+    ) -> None:
+        super().__init__(parent)
+        self.plan = plan
+        self.player_names = player_names
+        self.row_limit = row_limit
+        self.setWindowTitle(tr("Confirm Rating Changes"))
+        self.resize(*scale_size(1200, 900))
+
+        summary = summary_label(
+            tr(
+                "Changed {players:,} players / {cells:,} cells · "
+                "Unchanged {unchanged:,} · Skipped {skipped:,} · "
+                "Invalid cells {skipped_cells:,}"
+            ).format(
+                players=plan.changed_player_count,
+                cells=plan.changed_cell_count,
+                unchanged=len(plan.unchanged),
+                skipped=len(plan.skipped),
+                skipped_cells=plan.skipped_cell_count,
+            )
+        )
+        summary.setWordWrap(True)
+
+        self.change_table = QTableWidget(0, 4)
+        self.change_table.setHorizontalHeaderLabels(
+            [tr("Player"), tr("Field"), tr("Before"), tr("After")]
+        )
+        self.change_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.change_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.change_table.setAlternatingRowColors(True)
+        header = self.change_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self._populate_change_table()
+
+        shown_cells = self.change_table.rowCount()
+        if plan.changed_cell_count > shown_cells:
+            limit_note_text = tr(
+                "Showing the first {shown:,} changed cells. {remaining:,} more changed cells will also be applied."
+            ).format(
+                shown=shown_cells,
+                remaining=plan.changed_cell_count - shown_cells,
+            )
+        else:
+            limit_note_text = tr("All changed cells are shown.")
+        limit_note = muted_label(limit_note_text)
+
+        self.detail_text = QPlainTextEdit()
+        self.detail_text.setReadOnly(True)
+        self.detail_text.setMinimumHeight(100)
+        self.detail_text.setMaximumHeight(160)
+        self.detail_text.setPlainText(self._detail_text())
+
+        self.buttons = make_button_box(save=True, save_text="Apply and Save")
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        cancel = self.buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        if cancel is not None:
+            cancel.setDefault(True)
+            cancel.setAutoDefault(True)
+        apply_button = next(
+            button
+            for button in self.buttons.buttons()
+            if self.buttons.buttonRole(button) == QDialogButtonBox.ButtonRole.AcceptRole
+        )
+        apply_button.setDefault(False)
+        apply_button.setAutoDefault(False)
+
+        layout = init_dialog_layout(self)
+        layout.addWidget(summary)
+        layout.addWidget(
+            muted_label(tr("Review the exact before/after rating changes before saving."))
+        )
+        layout.addWidget(table_card(tr("Rating Changes"), self.change_table), stretch=1)
+        layout.addWidget(limit_note)
+        layout.addWidget(table_card(tr("Unchanged and Skipped Details"), self.detail_text))
+        add_dialog_footer(layout, self.buttons)
+
+    def _player_name(self, player_id: int) -> str:
+        return str(self.player_names.get(player_id, player_id))
+
+    def _populate_change_table(self) -> None:
+        rows: list[tuple[str, str, str, str]] = []
+        for player_change in self.plan.changes:
+            name = self._player_name(player_change.player_id)
+            for cell in player_change.cells:
+                rows.append(
+                    (name, _field_label(cell.header, cell.occurrence), cell.before, cell.after)
+                )
+                if len(rows) >= self.row_limit:
+                    break
+            if len(rows) >= self.row_limit:
+                break
+
+        self.change_table.setRowCount(len(rows))
+        for row_idx, row_values in enumerate(rows):
+            for col_idx, value in enumerate(row_values):
+                item = QTableWidgetItem(value)
+                item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                self.change_table.setItem(row_idx, col_idx, item)
+
+    def _detail_text(self) -> str:
+        sections: list[str] = []
+
+        def add_player_reason_section(title: str, rows: tuple[tuple[int, str], ...]) -> None:
+            sections.append(title)
+            if rows:
+                sections.extend(
+                    f"- {self._player_name(player_id)} (ID {player_id}): {reason}"
+                    for player_id, reason in rows
+                )
+            else:
+                sections.append(tr("- None"))
+            sections.append("")
+
+        add_player_reason_section(tr("Unchanged targets"), self.plan.unchanged)
+        add_player_reason_section(tr("Skipped players"), self.plan.skipped)
+        sections.append(tr("Skipped cells"))
+        if self.plan.skipped_cells:
+            for cell in self.plan.skipped_cells:
+                sections.append(
+                    f"- {self._player_name(cell.player_id)} (ID {cell.player_id}) "
+                    f"{_field_label(cell.header, cell.occurrence)}: {cell.reason}"
+                )
+        else:
+            sections.append(tr("- None"))
+        return "\n".join(sections).strip()
+
+
+class BulkRatingSaveResultDialog(QDialog):
+    """Post-save result with safe follow-up actions for outputs and backups."""
+
+    def __init__(
+        self,
+        *,
+        changed_players: int,
+        changed_cells: int,
+        output_paths,
+        backup_paths,
+        parent: QWidget | None = None,
+        opener=open_path_in_default_app,
+    ) -> None:
+        super().__init__(parent)
+        self._opener = opener
+        self.output_paths = [path for path in output_paths if path is not None]
+        self.backup_paths = [path for path in backup_paths if path is not None]
+        self.setWindowTitle(tr("Rating Changes Saved"))
+        self.resize(*scale_size(980, 620))
+
+        summary = summary_label(
+            tr("Changed {players:,} players / {cells:,} cells").format(
+                players=changed_players,
+                cells=changed_cells,
+            )
+        )
+        self.warning_label = QLabel("")
+        self.warning_label.setObjectName("errorLabel")
+        self.warning_label.setWordWrap(True)
+        self.warning_label.hide()
+
+        self.detail_text = QPlainTextEdit()
+        self.detail_text.setReadOnly(True)
+        self.detail_text.setPlainText(self._detail_text())
+
+        self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close = self.buttons.button(QDialogButtonBox.StandardButton.Close)
+        if close is not None:
+            close.setDefault(True)
+        self.output_button = QPushButton(tr("Open Output Folder"))
+        self.backup_button = QPushButton(tr("Open Backup Folder"))
+        output_folder = self._first_existing_parent(self.output_paths)
+        backup_folder = self._first_existing_parent(self.backup_paths)
+        if output_folder is not None and backup_folder is not None and output_folder == backup_folder:
+            self.output_button.setText(tr("Open Output and Backup Folder"))
+            self.buttons.addButton(self.output_button, QDialogButtonBox.ButtonRole.ActionRole)
+            self.output_button.clicked.connect(lambda: self._open_folder(output_folder))
+        else:
+            if output_folder is not None:
+                self.buttons.addButton(self.output_button, QDialogButtonBox.ButtonRole.ActionRole)
+                self.output_button.clicked.connect(lambda: self._open_folder(output_folder))
+            if backup_folder is not None:
+                self.buttons.addButton(self.backup_button, QDialogButtonBox.ButtonRole.ActionRole)
+                self.backup_button.clicked.connect(lambda: self._open_folder(backup_folder))
+        self.buttons.rejected.connect(self.reject)
+
+        layout = init_dialog_layout(self)
+        layout.addWidget(summary)
+        layout.addWidget(muted_label(tr("Saved roster outputs and backups are listed below.")))
+        layout.addWidget(table_card(tr("Save Result"), self.detail_text), stretch=1)
+        layout.addWidget(self.warning_label)
+        add_dialog_footer(layout, self.buttons)
+
+    def _detail_text(self) -> str:
+        lines = [tr("Output files")]
+        if self.output_paths:
+            lines.extend(f"- {path}" for path in self.output_paths)
+        else:
+            lines.append(tr("- None"))
+        lines.extend(("", tr("Backup files")))
+        if self.backup_paths:
+            lines.extend(f"- {path}" for path in self.backup_paths)
+            lines.extend(("", tr("Use these backups to restore the original roster files.")))
+        else:
+            lines.append(tr("- None"))
+        return "\n".join(lines)
+
+    @staticmethod
+    def _first_existing_parent(paths):
+        for path in paths:
+            parent = path.parent
+            if parent.exists():
+                return parent
+        return None
+
+    def _open_folder(self, folder) -> None:
+        if not self._opener(folder):
+            self.warning_label.setText(
+                tr("Could not open folder. Use the path shown above: {path}").format(
+                    path=folder
+                )
+            )
+            self.warning_label.show()
 
 
 class BulkRatingDialog(QDialog):
@@ -335,28 +584,9 @@ class BulkRatingDialog(QDialog):
         return "\n".join(lines)
 
     def _confirm_plan(self, plan: BulkRatingPlan) -> bool:
-        message = QMessageBox(self)
-        message.setIcon(QMessageBox.Icon.Question)
-        message.setWindowTitle(tr("Confirm Rating Changes"))
-        message.setText(
-            tr(
-                "Apply changes to {players:,} players / {cells:,} cells? "
-                "{unchanged:,} targets are unchanged, {skipped:,} players and "
-                "{skipped_cells:,} invalid cells are skipped."
-            ).format(
-                players=plan.changed_player_count,
-                cells=plan.changed_cell_count,
-                unchanged=len(plan.unchanged),
-                skipped=len(plan.skipped),
-                skipped_cells=plan.skipped_cell_count,
-            )
-        )
-        message.setDetailedText(self._preview_text(plan))
-        message.setStandardButtons(
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel
-        )
-        message.setDefaultButton(QMessageBox.StandardButton.Cancel)
-        return message.exec() == QMessageBox.StandardButton.Yes
+        names = {meta.player_id: meta.display_name for meta in self._player_indices}
+        dialog = BulkRatingPreviewDialog(plan, names, self)
+        return dialog.exec() == QDialog.DialogCode.Accepted
 
     def _show_no_changes_plan(self, plan: BulkRatingPlan) -> None:
         message = QMessageBox(self)
@@ -425,27 +655,13 @@ class BulkRatingDialog(QDialog):
             return
 
         self.progress.setValue(plan.changed_player_count)
-        parts = [
-            tr("Changed {players:,} players / {cells:,} cells").format(
-                players=plan.changed_player_count, cells=plan.changed_cell_count
-            )
-        ]
-        if result.mlb_output:
-            parts.append(f"MLB: {result.mlb_output.name}")
-        if result.kbo_output:
-            parts.append(f"KBO: {result.kbo_output.name}")
-        if result.backups:
-            parts.append(
-                tr("Backups: {names}").format(
-                    names=", ".join(path.name for path in result.backups)
-                )
-            )
-
         self.progress.setVisible(False)
         self.progress_label.setVisible(False)
-        QMessageBox.information(
-            self,
-            tr("Saved"),
-            "\n".join(parts),
-        )
+        BulkRatingSaveResultDialog(
+            changed_players=plan.changed_player_count,
+            changed_cells=plan.changed_cell_count,
+            output_paths=[path for path in (result.mlb_output, result.kbo_output) if path],
+            backup_paths=list(result.backups),
+            parent=self,
+        ).exec()
         self.accept()

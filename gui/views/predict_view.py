@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QShowEvent
+from PyQt6.QtGui import QShowEvent
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSplitter,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -30,7 +31,6 @@ from core.roster.korean_names import (
     load_roster_player_names,
 )
 from core.stats.aggregator import Aggregator
-from gui.theme import RED_BG, RED_TEXT
 from gui.widgets.card_panel import CardPanel, section_label
 from gui.widgets.error_banner import ErrorBanner
 from gui.widgets.grade_styles import apply_grade_style
@@ -44,6 +44,17 @@ from gui.widgets.table_widgets import NumericSortItem, SortableTable
 _GRADE_COL = 3
 _PROGRESS_COL = 4
 _SEASON_COL = 6
+PREDICTION_DETAIL_ROLE = Qt.ItemDataRole.UserRole + 20
+
+
+def _grade_label(grade: str) -> str:
+    return {
+        "common": tr("Common"),
+        "uncommon": tr("Uncommon"),
+        "rare": tr("Rare"),
+        "epic": tr("Epic"),
+        "legendary": tr("Legendary"),
+    }.get(grade, tr(grade.title()) if grade else "")
 
 
 class PredictView(QWidget):
@@ -64,6 +75,8 @@ class PredictView(QWidget):
 
         self.banner = ErrorBanner(self)
         self.refresh_button = QPushButton(tr("🔄 Regenerate List"))
+        self.refresh_button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.refresh_button.setAccessibleName(tr("Regenerate prediction list"))
         self.refresh_button.setToolTip(
             tr(
                 "Rebuilds the career milestone tracking list from scratch.\n"
@@ -73,15 +86,21 @@ class PredictView(QWidget):
         self.refresh_button.clicked.connect(lambda: self.refresh(force_reseed=True))
 
         self.player_filter = QComboBox()
+        self.player_filter.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.player_filter.setAccessibleName(tr("Player filter"))
         self.player_filter.addItem(tr("All Players"), None)
         self.grade_filter = QComboBox()
+        self.grade_filter.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.grade_filter.setAccessibleName(tr("Grade filter"))
         self.grade_filter.addItem(tr("All Grades"), "")
         for grade in ("common", "uncommon", "rare", "epic", "legendary"):
-            self.grade_filter.addItem(grade, grade)
+            self.grade_filter.addItem(_grade_label(grade), grade)
         self.player_filter.currentIndexChanged.connect(self.refresh)
         self.grade_filter.currentIndexChanged.connect(self.refresh)
 
         self.near_only_checkbox = QCheckBox(tr("🔥 Near Only"))
+        self.near_only_checkbox.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.near_only_checkbox.setAccessibleName(tr("Show near milestones only"))
         self.near_only_checkbox.toggled.connect(self.refresh)
 
         title = QLabel(tr("Achievement Predictions (Career)"))
@@ -113,18 +132,37 @@ class PredictView(QWidget):
             ]
         )
         self.table.setToolTip(tr("Double-click a prediction to open player details."))
+        self.table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.table.setAccessibleName(tr("Career prediction table"))
+        self.table.setAccessibleDescription(
+            tr(
+                "Each row shows the record scope, current value, target, remaining value, progress, and status."
+            )
+        )
         self.table.cellDoubleClicked.connect(self._open_player_details)
+        self.table.currentCellChanged.connect(self._update_basis_panel)
         self._progress_delegate = MilestoneProgressDelegate(self.table)
         self.table.setItemDelegateForColumn(_PROGRESS_COL, self._progress_delegate)
         table_card = CardPanel(tr("Career Achievement Predictions"))
         table_card.add_widget(self.table)
+        self.basis_label = QLabel(tr("Select a prediction to see the calculation basis."))
+        self.basis_label.setObjectName("predictionBasisPanel")
+        self.basis_label.setWordWrap(True)
+        detail_card = CardPanel(tr("Prediction Basis"))
+        detail_card.add_widget(self.basis_label)
+
+        content_splitter = QSplitter(Qt.Orientation.Horizontal)
+        content_splitter.addWidget(table_card)
+        content_splitter.addWidget(detail_card)
+        content_splitter.setStretchFactor(0, 3)
+        content_splitter.setStretchFactor(1, 1)
 
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.banner)
         layout.addWidget(filter_card)
-        layout.addWidget(table_card, stretch=1)
+        layout.addWidget(content_splitter, stretch=1)
 
         self._reload_player_filter()
 
@@ -204,24 +242,28 @@ class PredictView(QWidget):
         self.table.setRowCount(len(predictions))
         for row_idx, item in enumerate(predictions):
             grade = item.milestone.grade if item.milestone else item.grade
-            status = tr("🔥 Near") if item.is_near else ""
+            status = tr("Near") if item.is_near else ""
             korean_name = korean_display_for_player(
                 mapper,
                 full_name=full_names.get(item.player_id),
                 player_id=item.player_id,
                 roster_names=roster_names,
             )
-            progress_label = tr("{remaining:,.0f} remaining").format(
-                remaining=item.remaining
-            )
             progress_tooltip = tr("{current:,.0f} / {target:,.0f}  ·  {pct:.1f}%").format(
                 current=item.current_value, target=item.threshold, pct=item.progress_pct
+            )
+            progress_label = tr(
+                "{current:,.0f} / {target:,.0f} · {remaining:,.0f} remaining"
+            ).format(
+                current=item.current_value,
+                target=item.threshold,
+                remaining=item.remaining,
             )
             values = [
                 item.player_name,
                 korean_name,
                 item.milestone_label,
-                grade,
+                _grade_label(grade),
                 progress_label,
                 status,
                 render_season_note(item.season_note),
@@ -238,12 +280,25 @@ class PredictView(QWidget):
                     cell = QTableWidgetItem(str(value))
                 cell.setFlags(cell.flags() & ~Qt.ItemFlag.ItemIsEditable)
                 cell.setData(Qt.ItemDataRole.UserRole, int(item.player_id))
+                cell.setData(
+                    PREDICTION_DETAIL_ROLE,
+                    {
+                        "player": item.player_name,
+                        "milestone": item.milestone_label,
+                        "grade": _grade_label(grade),
+                        "current": item.current_value,
+                        "target": item.threshold,
+                        "remaining": item.remaining,
+                        "basis": render_season_basis(item.season_note),
+                    },
+                )
                 if col_idx == _GRADE_COL:
                     apply_grade_style(cell, grade)
                 if col_idx == _SEASON_COL:
                     cell.setToolTip(render_season_basis(item.season_note))
                 self.table.setItem(row_idx, col_idx, cell)
         self.table.setSortingEnabled(True)
+        self._update_basis_panel(self.table.currentRow(), 0, -1, -1)
 
     def _open_player_details(self, row: int, _column: int) -> None:
         cell = self.table.item(row, 0)
@@ -252,6 +307,38 @@ class PredictView(QWidget):
         player_id = int(cell.data(Qt.ItemDataRole.UserRole) or 0)
         if player_id > 0:
             self.player_detail_requested.emit(player_id)
+
+    def _update_basis_panel(
+        self,
+        current_row: int,
+        _current_column: int,
+        _previous_row: int,
+        _previous_column: int,
+    ) -> None:
+        if current_row < 0:
+            self.basis_label.setText(tr("Select a prediction to see the calculation basis."))
+            return
+        cell = self.table.item(current_row, 0)
+        detail = cell.data(PREDICTION_DETAIL_ROLE) if cell is not None else None
+        if not isinstance(detail, dict):
+            self.basis_label.setText(tr("Prediction basis is unavailable for this row."))
+            return
+        self.basis_label.setText(
+            tr(
+                "{player} · {milestone}\n"
+                "Grade: {grade}\n"
+                "Current {current:,.0f} / Target {target:,.0f} · Remaining {remaining:,.0f}\n"
+                "Basis: {basis}"
+            ).format(
+                player=detail["player"],
+                milestone=detail["milestone"],
+                grade=detail["grade"],
+                current=detail["current"],
+                target=detail["target"],
+                remaining=detail["remaining"],
+                basis=detail["basis"],
+            )
+        )
 
     def focus_player(
         self, player_id: int | None = None, *, near_only: bool = False

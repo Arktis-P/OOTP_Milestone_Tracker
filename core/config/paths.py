@@ -110,6 +110,9 @@ def ensure_user_data_dir() -> Path:
 
 def resolve_data_path(relative: str) -> Path:
     """Resolve a settings-relative path (e.g. ``data/records.db``) under user data."""
+    candidate = Path(relative).expanduser()
+    if candidate.is_absolute():
+        return candidate
     if not _USER_DATA_READY:
         ensure_user_data_dir()
     return get_user_data_dir() / _normalize_data_relative(relative)

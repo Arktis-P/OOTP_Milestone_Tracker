@@ -310,22 +310,80 @@ class Aggregator:
             return ImportResult(game_id=target_id or filename_game_id, error=str(exc))
 
     def _has_later_season_game(self, game_id: int, season: int) -> bool:
+        """Return whether replacing a game could invalidate chronological data.
+
+        Games from a later calendar date are always unsafe to replace in-place.
+        For games on the same date, only a shared team or player makes the
+        ordering ambiguous (for example, a doubleheader).  Independent games
+        from the same MLB slate cannot affect each other's player or team
+        totals, so they may be refreshed safely.
+        """
         target = self._conn.execute(
-            "SELECT date, game_id FROM games WHERE game_id = ? AND season = ?",
+            """
+            SELECT date, game_id, away_team, home_team
+            FROM games
+            WHERE game_id = ? AND season = ?
+            """,
             (game_id, season),
         ).fetchone()
         if target is None:
             return False
-        row = self._conn.execute(
+        later = self._conn.execute(
             """
             SELECT 1 FROM games
             WHERE season = ?
-              AND (date > ? OR (date = ? AND game_id <> ?))
+              AND date > ?
             LIMIT 1
             """,
-            (season, target["date"], target["date"], game_id),
+            (season, target["date"]),
         ).fetchone()
-        return row is not None
+        if later is not None:
+            return True
+
+        same_day = self._conn.execute(
+            """
+            SELECT game_id, away_team, home_team
+            FROM games
+            WHERE season = ? AND date = ? AND game_id <> ?
+            """,
+            (season, target["date"], game_id),
+        ).fetchall()
+        target_teams = {str(target["away_team"]), str(target["home_team"])}
+        peer_ids: list[int] = []
+        for peer in same_day:
+            if target_teams.intersection((str(peer["away_team"]), str(peer["home_team"]))):
+                return True
+            peer_ids.append(int(peer["game_id"]))
+
+        if not peer_ids:
+            return False
+
+        target_players = {
+            int(row["player_id"])
+            for row in self._conn.execute(
+                """
+                SELECT player_id FROM batting_logs WHERE game_id = ?
+                UNION
+                SELECT player_id FROM pitching_logs WHERE game_id = ?
+                """,
+                (game_id, game_id),
+            ).fetchall()
+        }
+        if not target_players:
+            return False
+        placeholders = ", ".join("?" for _ in peer_ids)
+        peer_players = {
+            int(row["player_id"])
+            for row in self._conn.execute(
+                f"""
+                SELECT player_id FROM batting_logs WHERE game_id IN ({placeholders})
+                UNION
+                SELECT player_id FROM pitching_logs WHERE game_id IN ({placeholders})
+                """,
+                (*peer_ids, *peer_ids),
+            ).fetchall()
+        }
+        return bool(target_players.intersection(peer_players))
 
     def refresh_batting_events_from_file(
         self, filepath: str | Path, season: int, *, commit: bool = True
@@ -763,6 +821,7 @@ class Aggregator:
         *,
         since_mtime: float | None = None,  # kept for backward compat; superseded by processed_boxscores
         mlb_only: bool = True,
+        source_snapshot: Iterable[BoxscoreFileSnapshot] | None = None,
         progress_callback: Any | None = None,
         should_cancel: Callable[[], bool] | None = None,
         commit: bool = True,
@@ -774,7 +833,11 @@ class Aggregator:
             )
 
         t_start = time.monotonic()
-        files = self._snapshot_boxscore_files(directory)
+        files = (
+            list(source_snapshot)
+            if source_snapshot is not None
+            else self._snapshot_boxscore_files(directory)
+        )
         logger.debug(
             "boxscore_import_start season=%s files=%s directory=%s mlb_only=%s",
             season,
@@ -887,27 +950,20 @@ class Aggregator:
                         )
                         continue
                     if stored_mtime is not None:
-                        target_id, target_error = self._find_reimport_target(
-                            fname, game_id, season, data
+                        # Reuse the parsed, stable snapshot for both ordinary
+                        # imports and safe replacements.  _replace_parsed_boxscore
+                        # identifies the original game, keeps manual records, and
+                        # uses a savepoint when the worker owns the outer
+                        # transaction.  It also persists this exact snapshot's
+                        # mtime only after the replacement succeeds.
+                        import_result = self._replace_parsed_boxscore(
+                            file_path,
+                            data,
+                            season,
+                            is_mlb=mlb_only,
+                            mtime=file_mtime,
+                            commit=commit,
                         )
-                        if target_error:
-                            import_result = ImportResult(
-                                game_id=game_id, error=target_error
-                            )
-                        elif target_id is not None:
-                            import_result = ImportResult(
-                                game_id=target_id,
-                                error=tr(
-                                    "A changed imported game requires the safe single-game re-import workflow."
-                                ),
-                            )
-                        else:
-                            # A processed spring/non-MLB placeholder can become a
-                            # genuinely new regular-season game. No prior raw game
-                            # exists, so this remains a normal atomic insert.
-                            import_result = self.import_boxscore(
-                                data, season, is_mlb=mlb_only, commit=commit
-                            )
                     else:
                         import_result = self.import_boxscore(
                             data, season, is_mlb=mlb_only, commit=commit

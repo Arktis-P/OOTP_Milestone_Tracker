@@ -27,20 +27,28 @@ from gui.theme import (
 def _nav_sections() -> list[tuple[str | None, list[tuple[int, str, str]]]]:
     return [
         (
-            tr("Record Inspector"),
+            tr("Records"),
             [
                 (0, "📊", tr("Dashboard")),
                 (1, "🏆", tr("Achievement Records")),
                 (2, "👤", tr("Player Stats")),
                 (3, "🔮", tr("Achievement Predictions")),
+                (4, "🔥", tr("Streak Records")),
             ],
         ),
         (
-            tr("Tools & Settings"),
+            tr("Data Management"),
             [
-                (4, "📂", tr("Import Existing Records")),
-                (5, "✍️", tr("Rating Editor")),
-                (6, "⚙️", tr("Settings")),
+                (5, "📂", tr("Record Import Center")),
+                (6, "✍️", tr("Manual Records")),
+                (7, "🧰", tr("Rating Editor")),
+            ],
+        ),
+        (
+            tr("Settings"),
+            [
+                (8, "⚙️", tr("Settings")),
+                (9, "🛠️", tr("Advanced Tools")),
             ],
         ),
     ]
@@ -51,12 +59,18 @@ class SidebarNav(QWidget):
 
     page_changed = pyqtSignal(int)
 
-    SETUP_PAGE_INDEX = 6
+    SETUP_PAGE_INDEX = 8
+    ADVANCED_TOOLS_PAGE_INDEX = 9
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("sidebarNav")
-        self.setFixedWidth(200)
+        self.setMinimumWidth(200)
+        self.setMaximumWidth(280)
+        self.setAccessibleName(tr("Main navigation"))
+        self.setAccessibleDescription(
+            tr("Use Tab to move through navigation items and Space or Enter to open a page.")
+        )
 
         self._buttons: dict[int, QPushButton] = {}
         self._setup_badge: QLabel | None = None
@@ -75,6 +89,8 @@ class SidebarNav(QWidget):
                     root.addWidget(line)
                     root.addSpacing(4)
                 header = QLabel(section_title.upper())
+                header.setObjectName("sectionTitle")
+                header.setAccessibleName(section_title)
                 header.setStyleSheet(
                     f"color: {TEXT_MUTED}; font-size: 10px; font-weight: 700;"
                     "letter-spacing: 0.05em; padding: 4px 8px;"
@@ -85,6 +101,13 @@ class SidebarNav(QWidget):
                 btn = QPushButton(f"  {icon}  {label}")
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn.setFlat(True)
+                btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+                btn.setAccessibleName(label)
+                btn.setAccessibleDescription(
+                    tr("Navigation item. Press Space or Enter to open {page}.").format(
+                        page=label
+                    )
+                )
                 btn.clicked.connect(lambda _checked=False, i=index: self.set_current_index(i))
                 self._buttons[index] = btn
 
@@ -98,6 +121,7 @@ class SidebarNav(QWidget):
                     self._setup_badge.setStyleSheet("color: #f14c4c; font-size: 10px;")
                     self._setup_badge.setVisible(False)
                     self._setup_badge.setToolTip(tr("Bundle update available"))
+                    self._setup_badge.setAccessibleName(tr("Bundle update available"))
                     row_layout.addWidget(self._setup_badge)
                     root.addWidget(row)
                 else:
@@ -114,12 +138,14 @@ class SidebarNav(QWidget):
         self._status_line.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 11px; font-weight: 700;")
         self._status_line.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._context_line = QLabel("")
+        self._context_line.setWordWrap(True)
         self._context_line.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 9px;")
         self._context_line.setAlignment(Qt.AlignmentFlag.AlignCenter)
         footer_layout.addWidget(self._status_line)
         footer_layout.addWidget(self._context_line)
         footer.setToolTip("")
         self._footer = footer
+        self._footer.setAccessibleName(tr("Data readiness status"))
         root.addWidget(footer)
 
         self.set_current_index(0, emit=False)
@@ -130,6 +156,12 @@ class SidebarNav(QWidget):
         self._active_index = index
         for i, btn in self._buttons.items():
             btn.setObjectName("navBtnActive" if i == index else "navBtnIdle")
+            btn.setAccessibleDescription(
+                tr("{state}. Press Space or Enter to open {page}.").format(
+                    state=tr("Selected") if i == index else tr("Not selected"),
+                    page=btn.accessibleName(),
+                )
+            )
             btn.style().unpolish(btn)
             btn.style().polish(btn)
         if emit:
@@ -152,6 +184,13 @@ class SidebarNav(QWidget):
         self._status_line.setText(status_text)
         self._status_line.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: 700;")
         self._context_line.setText(context_text)
+        self._footer.setAccessibleDescription(
+            tr("{level} status: {status}. {context}").format(
+                level=level,
+                status=status_text,
+                context=context_text,
+            )
+        )
         self._footer.setToolTip(tooltip)
 
     def set_setup_badge_visible(self, visible: bool, tooltip: str = "") -> None:
